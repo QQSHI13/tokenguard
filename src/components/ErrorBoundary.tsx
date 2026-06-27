@@ -17,16 +17,17 @@ export default class ErrorBoundary extends Component<Props, State> {
     console.error("UI error:", error, info);
   }
   render() {
-    if (this.state.error) {
+    const e = this.state.error;
+    if (e) {
       return (
         <div className="p-6 text-neutral-200">
           <h2 className="text-sm font-semibold text-red-400">
             UI crashed — paste this to Nova
           </h2>
           <pre className="mt-2 whitespace-pre-wrap text-xs text-neutral-400">
-            {this.state.error.message}
+            {e.message}
             {"\n"}
-            {this.state.error.stack}
+            {e.stack}
           </pre>
           <button
             className="mt-3 rounded bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700"
