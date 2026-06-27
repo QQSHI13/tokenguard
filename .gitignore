@@ -1,0 +1,20 @@
+# node / frontend
+node_modules/
+dist/
+
+# rust / tauri
+src-tauri/target/
+src-tauri/gen/
+
+# runtime data
+*.db
+*.db-shm
+*.db-wal
+
+# os
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
