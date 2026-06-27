@@ -45,10 +45,6 @@ pub fn status(name: &str) -> (bool, Option<String>) {
     }
 }
 
-pub fn has(name: &str) -> bool {
-    status(name).0
-}
-
 pub fn delete(name: &str) -> Result<(), String> {
     let entry = Entry::new(SERVICE, name).map_err(|e| format!("Entry::new: {e}"))?;
     match entry.delete_credential() {
