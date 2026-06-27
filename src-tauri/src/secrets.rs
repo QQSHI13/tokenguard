@@ -37,11 +37,16 @@ pub fn get(name: &str) -> Result<String, String> {
     entry.get_password().map_err(|e| format!("get_password: {e}"))
 }
 
-/// (key_exists, error_if_any). Use this in the UI to surface failures.
+/// (key_exists, error_if_any). NoEntry is the normal "no key yet" state,
+/// not an error — surfaced as (false, None) so the UI shows "no key".
 pub fn status(name: &str) -> (bool, Option<String>) {
-    match get(name) {
+    let Ok(entry) = Entry::new(SERVICE, name) else {
+        return (false, Some("Entry::new failed".into()));
+    };
+    match entry.get_password() {
         Ok(_) => (true, None),
-        Err(e) => (false, Some(e)),
+        Err(keyring::Error::NoEntry) => (false, None),
+        Err(e) => (false, Some(e.to_string())),
     }
 }
 
