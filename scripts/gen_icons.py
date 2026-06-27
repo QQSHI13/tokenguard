@@ -6,27 +6,26 @@ import os
 OUT = os.path.join(os.path.dirname(__file__), "..", "src-tauri", "icons")
 os.makedirs(OUT, exist_ok=True)
 
-def shield(size: int, fill=(37, 150, 190), stroke=(255, 255, 255)):
+def shield(size: int, fill=(37, 150, 90), stroke=(255, 255, 255)):
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    m = size * 0.08
-    # shield polygon (point at bottom)
+    pad = size * 0.06
     pts = [
-        (size * 0.5, size * 0.10),          # top center
-        (size - m, size * 0.22),            # top right
-        (size - m, size * 0.55),            # right
-        (size * 0.5, size - m),             # bottom point
-        (m, size * 0.55),                   # left
-        (m, size * 0.22),                   # top left
+        (size * 0.5, size * 0.08),   # top center
+        (size - pad, size * 0.20),  # top right
+        (size - pad, size * 0.55),  # right
+        (size * 0.5, size * 0.92),  # bottom point
+        (pad, size * 0.55),         # left
+        (pad, size * 0.20),         # top left
     ]
-    sw = max(1, size // 16)
+    sw = max(2, int(size * 0.12))
     d.polygon(pts, fill=fill, outline=stroke, width=sw)
-    # white "T" mark
-    tw = size * 0.34
-    cx, cy = size * 0.5, size * 0.42
-    th = max(2, size // 20)
+    # bold white "T" — proportions chosen to survive 16px downscale
+    tw = size * 0.46
+    cx, cy = size * 0.5, size * 0.40
+    th = max(3, int(size * 0.16))
     d.line((cx - tw / 2, cy, cx + tw / 2, cy), fill=stroke, width=th)
-    d.line((cx, cy, cx, cy + size * 0.28), fill=stroke, width=th)
+    d.line((cx, cy, cx, cy + size * 0.32), fill=stroke, width=th)
     return img
 
 GREEN = (37, 150, 90)

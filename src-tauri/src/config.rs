@@ -3,9 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum ProviderFormat {
+    #[serde(rename = "openai")]
     OpenAI,
+    #[serde(rename = "anthropic")]
     Anthropic,
 }
 
@@ -47,15 +48,6 @@ impl AuthScheme {
             _ => Self::Bearer,
         }
     }
-    /// Default auth scheme for a given format.
-    pub fn for_format(f: ProviderFormat) -> Self {
-        match f {
-            ProviderFormat::Anthropic => Self::XApiKey,
-            _ => Self::Bearer,
-        }
-    }
-}
-
 /// A configured LLM provider. The API key is *never* stored in this struct or
 /// the database — it lives only in the OS keychain, keyed by `name`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
