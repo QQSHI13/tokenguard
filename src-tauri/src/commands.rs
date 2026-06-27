@@ -14,6 +14,7 @@ pub struct SettingsDto {
     pub paused: bool,
     pub proxy_url: String,
     pub provider_count: usize,
+    pub accurate_streaming: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -114,6 +115,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         paused: state.inner().paused.load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: format!("http://localhost:{}", cfg.port),
         provider_count: cfg.providers.len(),
+        accurate_streaming: cfg.accurate_streaming,
     })
 }
 
@@ -167,9 +169,13 @@ pub fn get_today_spend(state: State<'_, Arc<AppState>>) -> Result<SpendDto, Stri
 }
 
 #[tauri::command]
-pub fn get_logs(state: State<'_, Arc<AppState>>, limit: Option<u64>) -> Result<Vec<LogRow>, String> {
+pub fn get_logs(
+    state: State<'_, Arc<AppState>>,
+    limit: Option<u64>,
+    days: Option<u64>,
+) -> Result<Vec<LogRow>, String> {
     let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
-    db::list_logs(&conn, limit.unwrap_or(100)).map_err(|e| e.to_string())
+    db::list_logs(&conn, limit.unwrap_or(5000), days).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -189,4 +195,128 @@ pub fn get_models(state: State<'_, Arc<AppState>>) -> Result<Vec<ModelInfo>, Str
         }
     }
     Ok(out)
+}
+
+#[tauri::command]
+pub fn set_accurate_streaming(
+    state: State<'_, Arc<AppState>>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "accurate_streaming", if enabled { "true" } else { "false" })
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .accurate_streaming = enabled;
+    Ok(())
+}
+
+/// Export logs as CSV or JSON text (frontend triggers a Blob download).
+#[tauri::command]
+pub fn export_logs(
+    state: State<'_, Arc<AppState>>,
+    format: String,
+    days: Option<u64>,
+) -> Result<String, String> {
+    let rows = {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::list_logs(&conn, 100_000, days).map_err(|e| e.to_string())?
+    };
+    match format.as_str() {
+        "json" => Ok(serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?),
+        _ => {
+            // CSV
+            let mut w = String::from(
+                "timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n",
+            );
+            for r in rows.iter().rev() {
+                w.push_str(&format!(
+                    "{},{},{},{},{},{:.6},{}\n",
+                    r.ts,
+                    csv_escape(&r.provider),
+                    csv_escape(&r.model),
+                    r.prompt_tokens,
+                    r.completion_tokens,
+                    r.cost,
+                    r.project_tag.as_deref().unwrap_or(""),
+                ));
+            }
+            Ok(w)
+        }
+    }
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Fetch the provider's /v1/models, persist the discovered model list, reload
+/// config. Returns the new model list.
+#[tauri::command]
+pub async fn refresh_models(
+    state: State<'_, Arc<AppState>>,
+    id: i64,
+) -> Result<Vec<String>, String> {
+    let provider = {
+        let cfg = state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?;
+        cfg.providers
+            .iter()
+            .find(|p| p.id == id)
+            .cloned()
+            .ok_or("provider not found")?
+    };
+    let api_key = crate::secrets::get(&provider.name)?;
+    let base = provider.base_url.trim_end_matches('/');
+    let url = format!("{base}/v1/models");
+    let mut req = state.inner().client.get(&url);
+    req = match provider.auth {
+        crate::config::AuthScheme::Bearer => req.bearer_auth(&api_key),
+        crate::config::AuthScheme::XApiKey => {
+            req.header("x-api-key", &api_key).header("anthropic-version", "2023-06-01")
+        }
+        crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
+    };
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("provider returned {status}: {}", &body[..body.len().min(200)]));
+    }
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let mut models: Vec<String> = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|x| x.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    models.sort();
+    {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::update_provider_models(&conn, id, &models).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state
+            .inner()
+            .config
+            .write()
+            .map_err(|e| e.to_string())? = new_cfg;
+    }
+    Ok(models)
 }

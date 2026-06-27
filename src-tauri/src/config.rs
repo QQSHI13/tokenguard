@@ -91,6 +91,7 @@ pub struct Config {
     pub providers: Vec<Provider>,
     pub port: u16,
     pub budget: f64,
+    pub accurate_streaming: bool,
 }
 
 impl Default for Config {
@@ -99,6 +100,7 @@ impl Default for Config {
             providers: Vec::new(),
             port: 3742,
             budget: 0.0,
+            accurate_streaming: true,
         }
     }
 }

@@ -78,6 +78,7 @@ impl AppState {
         prompt: u64,
         completion: u64,
         cost: f64,
+        project_tag: Option<String>,
     ) {
         tokio::task::spawn_blocking(move || {
             if let Ok(conn) = self.db.lock() {
@@ -88,7 +89,7 @@ impl AppState {
                     prompt,
                     completion,
                     cost,
-                    None,
+                    project_tag.as_deref(),
                 );
             }
             self.refresh_tray();

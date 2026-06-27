@@ -48,6 +48,10 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     }
     let path = req.uri().path().to_string();
     let req_headers = req.headers().clone();
+    let project_tag = req_headers
+        .get("x-tokenguard-project")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     // 32 MiB ceiling — large prompts happen.
     let body = match axum::body::to_bytes(req.into_body(), 32 * 1024 * 1024).await {
@@ -86,7 +90,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
         }
     };
 
-    forwarder::forward(state, path, body, req_headers, provider, api_key).await
+    forwarder::forward(state, path, body, req_headers, provider, api_key, project_tag).await
 }
 
 async fn handle_models(State(state): State<Arc<AppState>>) -> Response {

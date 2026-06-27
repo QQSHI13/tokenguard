@@ -94,6 +94,20 @@ export default function Providers({ onChange }: { onChange: () => void }) {
     onChange();
   };
 
+  const [refreshing, setRefreshing] = useState<number | null>(null);
+  const refreshModels = async (id: number) => {
+    setRefreshing(id);
+    try {
+      await invoke<string[]>("refresh_models", { id });
+      refresh();
+      onChange();
+    } catch (err) {
+      alert("Model refresh failed: " + String(err));
+    } finally {
+      setRefreshing(null);
+    }
+  };
+
   const applyPreset = (p: (typeof PRESETS)[number]) => {
     setForm((f) => ({
       ...f,
@@ -151,12 +165,22 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => remove(p.id, p.name)}
-                className="text-neutral-500 hover:text-red-400"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => refreshModels(p.id)}
+                  disabled={refreshing === p.id}
+                  title="Fetch /v1/models from this provider"
+                  className="text-neutral-500 hover:text-sky-400 disabled:opacity-40"
+                >
+                  {refreshing === p.id ? "⋯" : "↻"}
+                </button>
+                <button
+                  onClick={() => remove(p.id, p.name)}
+                  className="text-neutral-500 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
         </div>

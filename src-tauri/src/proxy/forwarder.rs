@@ -20,12 +20,14 @@ pub async fn forward(
     req_headers: HeaderMap,
     provider: Provider,
     api_key: String,
+    project_tag: Option<String>,
 ) -> Response {
     let base = provider.base_url.trim_end_matches('/');
     let url = format!("{base}{path}");
     let client = state.client.clone();
+    let accurate = state.config.read().unwrap().accurate_streaming;
 
-    let (final_body, model, _is_stream) = prepare_body(&body, provider.format);
+    let (final_body, model, _is_stream) = prepare_body(&body, provider.format, accurate);
 
     let mut req = client.post(&url);
     req = apply_auth(req, provider.auth, &api_key);
@@ -80,7 +82,7 @@ pub async fn forward(
                 prov.input_cost_per_1k,
                 prov.output_cost_per_1k,
             );
-            st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c)
+            st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c, project_tag.clone())
                 .await;
         };
 
@@ -102,7 +104,7 @@ pub async fn forward(
             provider.output_cost_per_1k,
         );
         state
-            .log_request(provider.clone(), model.clone(), usage.prompt, usage.completion, c)
+            .log_request(provider.clone(), model.clone(), usage.prompt, usage.completion, c, project_tag.clone())
             .await;
         let mut builder = Response::builder().status(status);
         for (k, v) in headers.iter() {
@@ -118,7 +120,7 @@ pub async fn forward(
 /// inject `stream_options: {"include_usage": true}` (the one documented,
 /// opt-out exception to "no request modification"). Bytes are otherwise
 /// forwarded unchanged.
-fn prepare_body(body: &Bytes, format: ProviderFormat) -> (Bytes, String, bool) {
+fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes, String, bool) {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
         return (body.clone(), String::new(), false);
     };
@@ -129,7 +131,7 @@ fn prepare_body(body: &Bytes, format: ProviderFormat) -> (Bytes, String, bool) {
         .to_string();
     let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
 
-    if format == ProviderFormat::OpenAI && is_stream && v.get("stream_options").is_none() {
+    if accurate && format == ProviderFormat::OpenAI && is_stream && v.get("stream_options").is_none() {
         let mut v = v;
         v["stream_options"] = serde_json::json!({"include_usage": true});
         if let Ok(new_body) = serde_json::to_vec(&v) {

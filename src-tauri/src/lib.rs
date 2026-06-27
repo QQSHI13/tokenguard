@@ -29,6 +29,9 @@ pub fn run() {
             commands::get_today_spend,
             commands::get_logs,
             commands::get_models,
+            commands::set_accurate_streaming,
+            commands::export_logs,
+            commands::refresh_models,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

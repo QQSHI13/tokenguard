@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 type Settings = {
@@ -7,6 +7,7 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
+  accurate_streaming: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -18,7 +19,12 @@ export default function SettingsTab({
 }) {
   const [budget, setBudget] = useState(String(settings?.budget ?? 0));
   const [port, setPort] = useState(String(settings?.port ?? 3742));
+  const [accurate, setAccurate] = useState(settings?.accurate_streaming ?? true);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (settings) setAccurate(settings.accurate_streaming);
+  }, [settings]);
 
   const saveBudget = async () => {
     await invoke("set_budget", { budget: Number(budget) || 0 });
@@ -26,6 +32,11 @@ export default function SettingsTab({
   };
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
+    onChanged();
+  };
+  const toggleAccurate = async (v: boolean) => {
+    setAccurate(v);
+    await invoke("set_accurate_streaming", { enabled: v });
     onChanged();
   };
   const copy = async () => {
@@ -105,6 +116,24 @@ export default function SettingsTab({
             Save
           </button>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
+        <h2 className="text-sm font-semibold text-neutral-200">Streaming accuracy</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          Inject <code className="text-neutral-400">stream_options.include_usage</code> into
+          OpenAI streaming requests so token counts are exact. This is the one
+          documented request-side exception to “read-only”. Turn off for strict
+          read-only (OpenAI stream counts may be 0).
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-300">
+          <input
+            type="checkbox"
+            checked={accurate}
+            onChange={(e) => toggleAccurate(e.target.checked)}
+          />
+          Accurate OpenAI streaming counts (recommended)
+        </label>
       </section>
 
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-[11px] leading-relaxed text-neutral-500">

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 type Log = {
@@ -12,12 +12,21 @@ type Log = {
   project_tag: string | null;
 };
 
+type Range = "today" | "7d" | "30d" | "all";
+const RANGES: { id: Range; label: string }[] = [
+  { id: "today", label: "Today" },
+  { id: "7d", label: "7 Days" },
+  { id: "30d", label: "30 Days" },
+  { id: "all", label: "All Time" },
+];
+
 export default function Dashboard() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [spend, setSpend] = useState({ today: 0, budget: 0 });
+  const [range, setRange] = useState<Range>("today");
 
   const refresh = useCallback(() => {
-    invoke<Log[]>("get_logs", { limit: 200 }).then(setLogs).catch(console.error);
+    invoke<Log[]>("get_logs", { limit: 5000 }).then(setLogs).catch(console.error);
     invoke<{ today: number; budget: number }>("get_today_spend")
       .then(setSpend)
       .catch(console.error);
@@ -29,20 +38,66 @@ export default function Dashboard() {
     return () => clearInterval(i);
   }, [refresh]);
 
-  const totalTokens = logs.reduce(
+  const shown = useMemo(() => {
+    const now = Date.now();
+    return logs.filter((l) => {
+      const t = new Date(l.ts).getTime();
+      if (range === "all") return true;
+      if (range === "today")
+        return new Date(l.ts).toDateString() === new Date().toDateString();
+      const days = range === "7d" ? 7 : 30;
+      return t >= now - days * 86_400_000;
+    });
+  }, [logs, range]);
+
+  const totalCost = shown.reduce((a, l) => a + l.cost, 0);
+  const totalTokens = shown.reduce(
     (a, l) => a + l.prompt_tokens + l.completion_tokens,
     0
   );
+
+  const download = (name: string, content: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCsv = () => {
+    const header =
+      "timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n";
+    const rows = shown
+      .slice()
+      .reverse()
+      .map(
+        (l) =>
+          `${l.ts},${esc(l.provider)},${esc(l.model)},${l.prompt_tokens},${
+            l.completion_tokens
+          },${l.cost.toFixed(6)},${esc(l.project_tag ?? "")}`
+      )
+      .join("\n");
+    download(
+      `tokenguard-${range}.csv`,
+      header + rows,
+      "text/csv"
+    );
+  };
+
+  const exportJson = () =>
+    download(
+      `tokenguard-${range}.json`,
+      JSON.stringify(shown, null, 2),
+      "application/json"
+    );
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Today" value={`$${spend.today.toFixed(4)}`} accent="emerald" />
         <Stat label="Budget" value={`$${spend.budget.toFixed(2)}`} accent="neutral" />
-        <Stat label="Requests" value={String(logs.length)} accent="sky" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Total tokens (last 200)" value={totalTokens.toLocaleString()} accent="violet" />
         <Stat
           label="Budget used"
           value={
@@ -52,6 +107,44 @@ export default function Dashboard() {
           }
           accent="amber"
         />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1">
+          {RANGES.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setRange(r.id)}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                range === r.id
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={exportCsv}
+            className="rounded-md bg-neutral-800 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-700"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={exportJson}
+            className="rounded-md bg-neutral-800 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-700"
+          >
+            Export JSON
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label={`Cost (${range})`} value={`$${totalCost.toFixed(4)}`} accent="violet" />
+        <Stat label={`Tokens (${range})`} value={totalTokens.toLocaleString()} accent="sky" />
+        <Stat label={`Requests (${range})`} value={String(shown.length)} accent="neutral" />
       </div>
 
       <div className="overflow-hidden rounded-lg border border-neutral-800">
@@ -64,22 +157,23 @@ export default function Dashboard() {
               <th className="px-3 py-2 text-right font-medium">Prompt</th>
               <th className="px-3 py-2 text-right font-medium">Completion</th>
               <th className="px-3 py-2 text-right font-medium">Cost</th>
+              <th className="px-3 py-2 font-medium">Project</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-800">
-            {logs.length === 0 && (
+            {shown.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-neutral-600">
-                  No requests yet. Point your LLM client at{" "}
+                <td colSpan={7} className="px-3 py-6 text-center text-neutral-600">
+                  No requests in this range. Point your LLM client at{" "}
                   <code className="text-neutral-400">http://localhost:3742</code>{" "}
                   and send a request.
                 </td>
               </tr>
             )}
-            {logs.map((l) => (
+            {shown.map((l) => (
               <tr key={l.id} className="hover:bg-neutral-900/60">
                 <td className="px-3 py-1.5 text-neutral-400">
-                  {new Date(l.ts).toLocaleTimeString()}
+                  {new Date(l.ts).toLocaleString()}
                 </td>
                 <td className="px-3 py-1.5 text-neutral-300">{l.provider}</td>
                 <td className="px-3 py-1.5 font-mono text-neutral-400">
@@ -94,6 +188,9 @@ export default function Dashboard() {
                 <td className="px-3 py-1.5 text-right font-medium text-emerald-400">
                   ${l.cost.toFixed(6)}
                 </td>
+                <td className="px-3 py-1.5 text-neutral-500">
+                  {l.project_tag ?? "—"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -101,6 +198,12 @@ export default function Dashboard() {
       </div>
     </div>
   );
+}
+
+function esc(s: string): string {
+  if (s.includes(",") || s.includes('"') || s.includes("\n"))
+    return `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
 
 function Stat({

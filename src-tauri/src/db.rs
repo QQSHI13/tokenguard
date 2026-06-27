@@ -65,24 +65,47 @@ pub struct LogRow {
     pub project_tag: Option<String>,
 }
 
-pub fn list_logs(conn: &Connection, limit: u64) -> rusqlite::Result<Vec<LogRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, project_tag \
-         FROM logs ORDER BY id DESC LIMIT ?1",
+fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
+    Ok(LogRow {
+        id: row.get(0)?,
+        ts: row.get(1)?,
+        provider: row.get(2)?,
+        model: row.get(3)?,
+        prompt_tokens: row.get(4)?,
+        completion_tokens: row.get(5)?,
+        cost: row.get(6)?,
+        project_tag: row.get(7)?,
+    })
+}
+
+pub fn list_logs(conn: &Connection, limit: u64, days: Option<u64>) -> rusqlite::Result<Vec<LogRow>> {
+    if let Some(d) = days {
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, project_tag \
+             FROM logs WHERE ts >= datetime('now', ?2) ORDER BY id DESC LIMIT ?1",
+        )?;
+        let modifier = format!("-{d} days");
+        stmt.query_map(params![limit, modifier], row_to_log)?.collect()
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, project_tag \
+             FROM logs ORDER BY id DESC LIMIT ?1",
+        )?;
+        stmt.query_map(params![limit], row_to_log)?.collect()
+    }
+}
+
+pub fn update_provider_models(
+    conn: &Connection,
+    id: i64,
+    models: &[String],
+) -> rusqlite::Result<()> {
+    let s = serde_json::to_string(models).unwrap_or_default();
+    conn.execute(
+        "UPDATE providers SET models = ?1 WHERE id = ?2",
+        params![s, id],
     )?;
-    let rows = stmt.query_map(params![limit], |row| {
-        Ok(LogRow {
-            id: row.get(0)?,
-            ts: row.get(1)?,
-            provider: row.get(2)?,
-            model: row.get(3)?,
-            prompt_tokens: row.get(4)?,
-            completion_tokens: row.get(5)?,
-            cost: row.get(6)?,
-            project_tag: row.get(7)?,
-        })
-    })?;
-    rows.collect()
+    Ok(())
 }
 
 pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
@@ -175,9 +198,13 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let budget = get_setting(conn, "budget")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
+    let accurate_streaming = get_setting(conn, "accurate_streaming")
+        .map(|v| v == "true" || v.is_empty())
+        .unwrap_or(true);
     Ok(Config {
         providers,
         port,
         budget,
+        accurate_streaming,
     })
 }
