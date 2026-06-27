@@ -103,6 +103,56 @@ pub fn set_provider_key(name: String, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn update_provider(
+    state: State<'_, Arc<AppState>>,
+    id: i64,
+    input: ProviderInput,
+) -> Result<ProviderDto, String> {
+    // current name, to handle rename + key move
+    let old_name = {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        providers
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .ok_or("provider not found")?
+    };
+    // key handling: new key wins; otherwise move existing key on rename
+    if !input.api_key.is_empty() {
+        secrets::set(&input.name, &input.api_key)?;
+        if old_name != input.name {
+            let _ = secrets::delete(&old_name);
+        }
+    } else if old_name != input.name {
+        if let Ok(k) = secrets::get(&old_name) {
+            secrets::set(&input.name, &k)?;
+            let _ = secrets::delete(&old_name);
+        }
+    }
+    {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::update_provider(&conn, id, &input).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    let p = {
+        let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+        cfg.providers
+            .iter()
+            .find(|p| p.id == id)
+            .cloned()
+            .ok_or("provider not found after update")?
+    };
+    Ok(ProviderDto {
+        provider: p,
+        api_key_set: secrets::has(&input.name),
+    })
+}
+
+#[tauri::command]
 pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, String> {
     let cfg = state
         .inner()

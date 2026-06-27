@@ -144,6 +144,35 @@ pub fn update_provider_models(
     Ok(())
 }
 
+pub fn update_provider(
+    conn: &Connection,
+    id: i64,
+    p: &crate::config::ProviderInput,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE providers SET name = ?1, base_url = ?2, format = ?3, auth = ?4, \
+         models = ?5, input_cost = ?6, output_cost = ?7, is_default = ?8 WHERE id = ?9",
+        params![
+            p.name,
+            p.base_url,
+            p.format.as_db_str(),
+            p.auth.as_db_str(),
+            serde_json::to_string(&p.models).unwrap_or_default(),
+            p.input_cost_per_1k,
+            p.output_cost_per_1k,
+            p.is_default as i64,
+            id,
+        ],
+    )?;
+    if p.is_default {
+        conn.execute(
+            "UPDATE providers SET is_default = 0 WHERE id != ?1 AND format = ?2",
+            params![id, p.format.as_db_str()],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
     // date('now','start of day') is UTC midnight — matches Utc::now() logging.
     conn.query_row(

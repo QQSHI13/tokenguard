@@ -49,7 +49,8 @@ const PRESETS: {
     base_url: "https://api.anthropic.com",
     format: "anthropic",
     auth: "x_api_key",
-    models: "claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229",
+    models:
+      "claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229",
   },
   {
     name: "OpenRouter",
@@ -60,10 +61,40 @@ const PRESETS: {
   },
 ];
 
+function blank(): Input {
+  return {
+    name: "",
+    base_url: "https://api.openai.com",
+    format: "openai",
+    auth: "bearer",
+    api_key: "",
+    models: [],
+    input_cost_per_1k: null,
+    output_cost_per_1k: null,
+    is_default: true,
+  };
+}
+
+function fromProvider(p: Provider): Input {
+  return {
+    name: p.name,
+    base_url: p.base_url,
+    format: p.format,
+    auth: p.auth,
+    api_key: "", // never have the key client-side; blank = keep current
+    models: [...p.models],
+    input_cost_per_1k: p.input_cost_per_1k,
+    output_cost_per_1k: p.output_cost_per_1k,
+    is_default: p.is_default,
+  };
+}
+
 export default function Providers({ onChange }: { onChange: () => void }) {
   const [providers, setProviders] = useState<ProviderDto[]>([]);
   const [form, setForm] = useState<Input>(blank());
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<number | null>(null);
 
   const refresh = useCallback(() => {
     invoke<ProviderDto[]>("list_providers").then(setProviders).catch(console.error);
@@ -73,12 +104,27 @@ export default function Providers({ onChange }: { onChange: () => void }) {
     refresh();
   }, [refresh]);
 
+  const startEdit = (p: Provider) => {
+    setForm(fromProvider(p));
+    setEditingId(p.id);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setForm(blank());
+    setEditingId(null);
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
-      await invoke("add_provider", { input: form });
-      setForm(blank());
+      if (editingId !== null) {
+        await invoke("update_provider", { id: editingId, input: form });
+      } else {
+        await invoke("add_provider", { input: form });
+      }
+      cancelEdit();
       refresh();
       onChange();
     } catch (err) {
@@ -89,12 +135,12 @@ export default function Providers({ onChange }: { onChange: () => void }) {
   const remove = async (id: number, name: string) => {
     if (!confirm(`Delete provider "${name}"? Its keychain entry will be removed.`))
       return;
+    if (editingId === id) cancelEdit();
     await invoke("delete_provider", { id });
     refresh();
     onChange();
   };
 
-  const [refreshing, setRefreshing] = useState<number | null>(null);
   const refreshModels = async (id: number) => {
     setRefreshing(id);
     try {
@@ -119,6 +165,8 @@ export default function Providers({ onChange }: { onChange: () => void }) {
     }));
   };
 
+  const editing = editingId !== null;
+
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div>
@@ -127,17 +175,19 @@ export default function Providers({ onChange }: { onChange: () => void }) {
         </h2>
         <div className="space-y-2">
           {providers.length === 0 && (
-            <p className="text-xs text-neutral-600">
-              No providers yet. Add one →
-            </p>
+            <p className="text-xs text-neutral-600">No providers yet. Add one →</p>
           )}
           {providers.map(({ provider: p, api_key_set }) => (
             <div
               key={p.id}
-              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2"
+              className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
+                editingId === p.id
+                  ? "border-emerald-600 bg-neutral-900/60"
+                  : "border-neutral-800 bg-neutral-900/40"
+              }`}
             >
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-neutral-200">
                     {p.name}
                   </span>
@@ -167,9 +217,16 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => startEdit(p)}
+                  title="Edit"
+                  className="text-neutral-500 hover:text-emerald-400"
+                >
+                  ✎
+                </button>
+                <button
                   onClick={() => refreshModels(p.id)}
                   disabled={refreshing === p.id}
-                  title="Fetch /v1/models from this provider"
+                  title="Fetch /v1/models"
                   className="text-neutral-500 hover:text-sky-400 disabled:opacity-40"
                 >
                   {refreshing === p.id ? "⋯" : "↻"}
@@ -190,20 +247,35 @@ export default function Providers({ onChange }: { onChange: () => void }) {
         onSubmit={submit}
         className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
       >
-        <h2 className="text-sm font-semibold text-neutral-200">Add provider</h2>
-
-        <div className="flex flex-wrap gap-1">
-          {PRESETS.map((p) => (
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-200">
+            {editing ? "Edit provider" : "Add provider"}
+          </h2>
+          {editing && (
             <button
-              key={p.name}
               type="button"
-              onClick={() => applyPreset(p)}
-              className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+              onClick={cancelEdit}
+              className="text-[11px] text-neutral-500 hover:text-neutral-300"
             >
-              {p.name}
+              cancel
             </button>
-          ))}
+          )}
         </div>
+
+        {!editing && (
+          <div className="flex flex-wrap gap-1">
+            {PRESETS.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <Field label="Name">
           <input
@@ -242,9 +314,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <Field label="Auth header">
             <select
               value={form.auth}
-              onChange={(e) =>
-                setForm({ ...form, auth: e.target.value as AuthScheme })
-              }
+              onChange={(e) => setForm({ ...form, auth: e.target.value as AuthScheme })}
               className={inputCls}
             >
               <option value="bearer">Authorization: Bearer</option>
@@ -253,13 +323,19 @@ export default function Providers({ onChange }: { onChange: () => void }) {
             </select>
           </Field>
         </div>
-        <Field label="API key (stored in OS keychain)">
+        <Field
+          label={
+            editing
+              ? "API key (leave blank to keep current)"
+              : "API key (stored in OS keychain)"
+          }
+        >
           <input
             type="password"
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
             className={inputCls}
-            placeholder="sk-..."
+            placeholder={editing ? "•••••• unchanged" : "sk-..."}
           />
         </Field>
         <Field label="Models (comma-separated, used for routing)">
@@ -287,9 +363,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  input_cost_per_1k: e.target.value
-                    ? Number(e.target.value)
-                    : null,
+                  input_cost_per_1k: e.target.value ? Number(e.target.value) : null,
                 })
               }
               className={inputCls}
@@ -303,9 +377,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  output_cost_per_1k: e.target.value
-                    ? Number(e.target.value)
-                    : null,
+                  output_cost_per_1k: e.target.value ? Number(e.target.value) : null,
                 })
               }
               className={inputCls}
@@ -321,14 +393,12 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           Default for this format family (fallback when no model match)
         </label>
 
-        {error && (
-          <p className="text-xs text-red-400">{error}</p>
-        )}
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <button
           type="submit"
           className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
         >
-          Add provider
+          {editing ? "Save changes" : "Add provider"}
         </button>
       </form>
     </div>
@@ -338,31 +408,11 @@ export default function Providers({ onChange }: { onChange: () => void }) {
 const inputCls =
   "w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none";
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] text-neutral-500">{label}</span>
       {children}
     </label>
   );
-}
-
-function blank(): Input {
-  return {
-    name: "",
-    base_url: "https://api.openai.com",
-    format: "openai",
-    auth: "bearer",
-    api_key: "",
-    models: [],
-    input_cost_per_1k: null,
-    output_cost_per_1k: null,
-    is_default: true,
-  };
 }
