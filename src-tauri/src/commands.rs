@@ -37,9 +37,13 @@ pub fn list_providers(state: State<'_, Arc<AppState>>) -> Result<Vec<ProviderDto
     drop(conn);
     Ok(providers
         .into_iter()
-        .map(|p| ProviderDto {
-            api_key_set: secrets::has(&p.name),
-            provider: p,
+        .map(|p| {
+            let (api_key_set, key_error) = secrets::status(&p.name);
+            ProviderDto {
+                provider: p,
+                api_key_set,
+                key_error,
+            }
         })
         .collect())
 }
@@ -69,9 +73,11 @@ pub fn add_provider(
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
+    let (api_key_set, key_error) = secrets::status(&input.name);
     Ok(ProviderDto {
-        api_key_set: !input.api_key.is_empty(),
         provider,
+        api_key_set,
+        key_error,
     })
 }
 
@@ -146,9 +152,11 @@ pub fn update_provider(
             .cloned()
             .ok_or("provider not found after update")?
     };
+    let (api_key_set, key_error) = secrets::status(&input.name);
     Ok(ProviderDto {
         provider: p,
-        api_key_set: secrets::has(&input.name),
+        api_key_set,
+        key_error,
     })
 }
 

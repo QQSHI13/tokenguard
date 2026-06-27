@@ -70,6 +70,7 @@ pub struct Provider {
 pub struct ProviderDto {
     pub provider: Provider,
     pub api_key_set: bool,
+    pub key_error: Option<String>,
 }
 
 /// Input for creating a provider (includes the API key once, for storage).

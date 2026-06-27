@@ -16,7 +16,7 @@ type Provider = {
   output_cost_per_1k: number | null;
   is_default: boolean;
 };
-type ProviderDto = { provider: Provider; api_key_set: boolean };
+type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
 
 type Input = {
   name: string;
@@ -177,7 +177,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           {providers.length === 0 && (
             <p className="text-xs text-neutral-600">No providers yet. Add one →</p>
           )}
-          {providers.map(({ provider: p, api_key_set }) => (
+          {providers.map(({ provider: p, api_key_set, key_error }) => (
             <div
               key={p.id}
               className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
@@ -196,15 +196,22 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                       default
                     </span>
                   )}
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] ${
-                      api_key_set
-                        ? "bg-sky-500/20 text-sky-300"
-                        : "bg-red-500/20 text-red-300"
-                    }`}
-                  >
-                    {api_key_set ? "key set" : "no key"}
-                  </span>
+                  {key_error ? (
+                    <span
+                      title={key_error}
+                      className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300"
+                    >
+                      key error
+                    </span>
+                  ) : api_key_set ? (
+                    <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
+                      key set
+                    </span>
+                  ) : (
+                    <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
+                      no key
+                    </span>
+                  )}
                 </div>
                 <div className="truncate font-mono text-[11px] text-neutral-500">
                   {p.base_url} · {p.format} · {p.auth}
