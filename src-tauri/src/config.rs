@@ -48,6 +48,8 @@ impl AuthScheme {
             _ => Self::Bearer,
         }
     }
+}
+
 /// A configured LLM provider. The API key is *never* stored in this struct or
 /// the database — it lives only in the OS keychain, keyed by `name`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
