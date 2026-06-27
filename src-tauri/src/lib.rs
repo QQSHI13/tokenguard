@@ -8,6 +8,11 @@ mod proxy;
 mod secrets;
 mod state;
 
+#[cfg(target_os = "windows")]
+mod win_cred;
+#[cfg(not(target_os = "windows"))]
+mod other;
+
 use std::sync::Arc;
 use tauri::Manager;
 
