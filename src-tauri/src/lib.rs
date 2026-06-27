@@ -65,6 +65,17 @@ pub fn run() {
 
             state.refresh_tray();
             tracing::info!("Token Guard started — proxy on http://127.0.0.1:{port}");
+
+            // Graceful Ctrl+C: let WebView2 tear down windows instead of being
+            // force-killed (avoids the "Failed to unregister class" noise).
+            let ah = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    tracing::info!("Ctrl+C received, exiting gracefully");
+                    ah.exit(0);
+                }
+            });
+
             Ok(())
         })
         .on_menu_event(|app, event| state::handle_menu_event(app, event))
