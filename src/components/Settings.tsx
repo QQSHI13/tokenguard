@@ -39,6 +39,10 @@ export default function SettingsTab({
     await invoke("set_accurate_streaming", { enabled: v });
     onChanged();
   };
+  const runSelftest = async () => {
+    const report = await invoke<string>("keyring_selftest");
+    alert(report);
+  };
   const copy = async () => {
     if (!settings) return;
     await navigator.clipboard.writeText(settings.proxy_url);
@@ -134,6 +138,20 @@ export default function SettingsTab({
           />
           Accurate OpenAI streaming counts (recommended)
         </label>
+      </section>
+
+      <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
+        <h2 className="text-sm font-semibold text-neutral-200">Keychain</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          Diagnose API-key storage. Runs a write→read→new-entry-read probe against
+          the OS keychain and reports which step fails.
+        </p>
+        <button
+          onClick={runSelftest}
+          className="mt-3 rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700"
+        >
+          Test keychain
+        </button>
       </section>
 
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-[11px] leading-relaxed text-neutral-500">

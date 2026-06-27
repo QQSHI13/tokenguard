@@ -104,6 +104,11 @@ pub fn delete_provider(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), S
 }
 
 #[tauri::command]
+pub fn keyring_selftest() -> String {
+    crate::secrets::selftest()
+}
+
+#[tauri::command]
 pub fn set_provider_key(name: String, key: String) -> Result<(), String> {
     secrets::set(&name, &key)
 }

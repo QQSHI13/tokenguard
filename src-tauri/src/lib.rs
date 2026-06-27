@@ -36,6 +36,7 @@ pub fn run() {
             commands::list_projects,
             commands::add_project,
             commands::delete_project,
+            commands::keyring_selftest,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

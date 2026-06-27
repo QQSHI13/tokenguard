@@ -58,3 +58,41 @@ pub fn delete(name: &str) -> Result<(), String> {
         Err(e) => Err(format!("delete_credential: {e}")),
     }
 }
+
+/// Step-by-step keychain probe. Returns a human-readable report so the UI
+/// can show exactly which step fails (Entry::new / set / read-back / new-entry).
+pub fn selftest() -> String {
+    let name = "__tokenguard_selftest__";
+    let mut report = String::new();
+    let entry = match Entry::new(SERVICE, name) {
+        Ok(e) => {
+            report.push_str("Entry::new: OK\n");
+            e
+        }
+        Err(e) => return format!("Entry::new FAILED: {e}"),
+    };
+    match entry.set_password("tokenguard-test") {
+        Ok(_) => report.push_str("set_password: OK\n"),
+        Err(e) => return format!("{report}set_password FAILED: {e}"),
+    };
+    match entry.get_password() {
+        Ok(v) => report.push_str(&format!(
+            "read-back (same entry): {}\n",
+            if v == "tokenguard-test" { "OK" } else { "MISMATCH" }
+        )),
+        Err(e) => return format!("{report}read-back FAILED: {e}"),
+    };
+    match Entry::new(SERVICE, name) {
+        Ok(e2) => match e2.get_password() {
+            Ok(v) => report.push_str(&format!(
+                "new-entry read: {}\n",
+                if v == "tokenguard-test" { "OK" } else { "MISMATCH" }
+            )),
+            Err(e) => report.push_str(&format!("new-entry read FAILED: {e}\n")),
+        },
+        Err(e) => report.push_str(&format!("new Entry::new FAILED: {e}\n")),
+    }
+    let _ = entry.delete_credential();
+    report.push_str("(selftest credential cleaned up)");
+    report
+}
