@@ -2,7 +2,8 @@
 //! transparent SSE streaming. Logs usage + cost after the response completes.
 
 use axum::body::Body;
-use axum::http::{HeaderMap, HeaderName, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderName, StatusCode};
+use axum::response::Response;
 use bytes::Bytes;
 use futures::StreamExt;
 use std::sync::Arc;

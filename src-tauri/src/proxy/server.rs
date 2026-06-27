@@ -6,7 +6,6 @@ use axum::http::{header, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use bytes::Bytes;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

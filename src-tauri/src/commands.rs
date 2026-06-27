@@ -1,6 +1,6 @@
 //! Tauri command handlers exposed to the frontend.
 
-use crate::config::{ProviderDto, ProviderFormat, ProviderInput};
+use crate::config::{ProviderDto, ProviderInput};
 use crate::db::{self, LogRow};
 use crate::secrets;
 use crate::state::AppState;

@@ -186,7 +186,7 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
         .icon(icon)
         .tooltip("Token Guard")
         .menu(&menu)
-        .on_tray_event(|tray, event| {
+        .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
