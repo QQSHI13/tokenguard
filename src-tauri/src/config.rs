@@ -68,7 +68,6 @@ pub struct Provider {
 /// Frontend-facing provider with a flag indicating whether a key is stored.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderDto {
-    #[serde(flatten)]
     pub provider: Provider,
     pub api_key_set: bool,
 }

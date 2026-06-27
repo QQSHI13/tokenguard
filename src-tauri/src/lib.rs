@@ -61,6 +61,13 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| state::handle_menu_event(app, event))
+        .on_window_event(|window, event| {
+            // Close → hide to tray (keeps the proxy running).
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running Token Guard");
 }
