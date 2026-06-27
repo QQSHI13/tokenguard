@@ -85,6 +85,9 @@ pub struct ProviderInput {
     pub input_cost_per_1k: Option<f64>,
     pub output_cost_per_1k: Option<f64>,
     pub is_default: bool,
+    /// On update: delete the stored key (api_key is ignored then).
+    #[serde(default)]
+    pub clear_key: bool,
 }
 
 /// A project workspace. `label_key` is the throwaway value the user sets as

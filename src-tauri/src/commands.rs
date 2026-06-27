@@ -130,8 +130,13 @@ pub fn update_provider(
             .map(|p| p.name.clone())
             .ok_or("provider not found")?
     };
-    // key handling: new key wins; otherwise move existing key on rename
-    if !input.api_key.is_empty() {
+    // key handling: explicit clear wins; else new key; else move on rename
+    if input.clear_key {
+        let _ = secrets::delete(&input.name);
+        if old_name != input.name {
+            let _ = secrets::delete(&old_name);
+        }
+    } else if !input.api_key.is_empty() {
         secrets::set(&input.name, &input.api_key)?;
         if old_name != input.name {
             let _ = secrets::delete(&old_name);

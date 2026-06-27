@@ -28,6 +28,7 @@ type Input = {
   input_cost_per_1k: number | null;
   output_cost_per_1k: number | null;
   is_default: boolean;
+  clear_key: boolean;
 };
 
 const PRESETS: {
@@ -72,6 +73,7 @@ function blank(): Input {
     input_cost_per_1k: null,
     output_cost_per_1k: null,
     is_default: true,
+    clear_key: false,
   };
 }
 
@@ -86,6 +88,7 @@ function fromProvider(p: Provider): Input {
     input_cost_per_1k: p.input_cost_per_1k,
     output_cost_per_1k: p.output_cost_per_1k,
     is_default: p.is_default,
+    clear_key: false,
   };
 }
 
@@ -340,11 +343,22 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <input
             type="password"
             value={form.api_key}
-            onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+            onChange={(e) => setForm({ ...form, api_key: e.target.value, clear_key: false })}
             className={inputCls}
             placeholder={editing ? "•••••• unchanged" : "sk-..."}
+            disabled={form.clear_key}
           />
         </Field>
+        {editing && (
+          <label className="flex items-center gap-2 text-xs text-neutral-400">
+            <input
+              type="checkbox"
+              checked={form.clear_key}
+              onChange={(e) => setForm({ ...form, clear_key: e.target.checked })}
+            />
+            Clear stored key (deletes it from the keychain)
+          </label>
+        )}
         <Field label="Models (comma-separated, used for routing)">
           <input
             value={form.models.join(",")}
