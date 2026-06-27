@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import Providers from "./components/Providers";
 import Dashboard from "./components/Dashboard";
 import SettingsTab from "./components/Settings";
+import Projects from "./components/Projects";
 
 type Settings = {
   port: number;
@@ -14,7 +15,7 @@ type Settings = {
 };
 type Spend = { today: number; budget: number };
 
-type Tab = "dashboard" | "providers" | "settings";
+type Tab = "dashboard" | "providers" | "projects" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -41,6 +42,7 @@ export default function App() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "dashboard", label: "Dashboard" },
     { id: "providers", label: "Providers" },
+    { id: "projects", label: "Projects" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -100,6 +102,9 @@ export default function App() {
         {tab === "dashboard" && <Dashboard />}
         {tab === "providers" && (
           <Providers onChange={() => setTick((t) => t + 1)} />
+        )}
+        {tab === "projects" && (
+          <Projects onChange={() => setTick((t) => t + 1)} />
         )}
         {tab === "settings" && (
           <SettingsTab

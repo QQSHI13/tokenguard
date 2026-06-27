@@ -70,6 +70,18 @@ impl AppState {
         db::today_spend(&conn).unwrap_or(0.0)
     }
 
+    /// Map a client-supplied API key (the label_key the user set in their
+    /// coding agent) to a project name. None if no project matches.
+    pub fn project_for_key(&self, key: &str) -> Option<String> {
+        self.config
+            .read()
+            .unwrap()
+            .projects
+            .iter()
+            .find(|p| p.label_key == key)
+            .map(|p| p.name.clone())
+    }
+
     /// Insert a request log from a background thread, then refresh the tray.
     pub async fn log_request(
         self: Arc<Self>,

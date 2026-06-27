@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS providers (
   is_default INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  label_key TEXT NOT NULL UNIQUE
+);
 CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
 ";
 
@@ -85,14 +90,45 @@ pub fn list_logs(conn: &Connection, limit: u64, days: Option<u64>) -> rusqlite::
              FROM logs WHERE ts >= datetime('now', ?2) ORDER BY id DESC LIMIT ?1",
         )?;
         let modifier = format!("-{d} days");
-        stmt.query_map(params![limit, modifier], row_to_log)?.collect()
+        let rows = stmt.query_map(params![limit, modifier], row_to_log)?;
+        rows.collect::<rusqlite::Result<Vec<LogRow>>>()
     } else {
         let mut stmt = conn.prepare(
             "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, project_tag \
              FROM logs ORDER BY id DESC LIMIT ?1",
         )?;
-        stmt.query_map(params![limit], row_to_log)?.collect()
+        let rows = stmt.query_map(params![limit], row_to_log)?;
+        rows.collect::<rusqlite::Result<Vec<LogRow>>>()
     }
+}
+
+pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<crate::config::Project>> {
+    let mut stmt = conn.prepare("SELECT id, name, label_key FROM projects ORDER BY id")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(crate::config::Project {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            label_key: row.get(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn insert_project(
+    conn: &Connection,
+    name: &str,
+    label_key: &str,
+) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO projects (name, label_key) VALUES (?1, ?2)",
+        params![name, label_key],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn delete_project(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+    Ok(())
 }
 
 pub fn update_provider_models(
@@ -192,6 +228,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Resul
 
 pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let providers = list_providers(conn)?;
+    let projects = list_projects(conn)?;
     let port = get_setting(conn, "port")
         .and_then(|v| v.parse().ok())
         .unwrap_or(3742);
@@ -203,6 +240,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         .unwrap_or(true);
     Ok(Config {
         providers,
+        projects,
         port,
         budget,
         accurate_streaming,

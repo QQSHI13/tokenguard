@@ -86,9 +86,26 @@ pub struct ProviderInput {
     pub is_default: bool,
 }
 
+/// A project workspace. `label_key` is the throwaway value the user sets as
+/// OPENAI_API_KEY (or x-api-key) in their coding agent; the proxy maps it to
+/// `name` for tagging. The real provider key stays in the keychain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: i64,
+    pub name: String,
+    pub label_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProjectInput {
+    pub name: String,
+    pub label_key: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub providers: Vec<Provider>,
+    pub projects: Vec<Project>,
     pub port: u16,
     pub budget: f64,
     pub accurate_streaming: bool,
@@ -98,6 +115,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             providers: Vec::new(),
+            projects: Vec::new(),
             port: 3742,
             budget: 0.0,
             accurate_streaming: true,

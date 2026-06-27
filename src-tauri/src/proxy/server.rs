@@ -48,10 +48,17 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     }
     let path = req.uri().path().to_string();
     let req_headers = req.headers().clone();
-    let project_tag = req_headers
-        .get("x-tokenguard-project")
+
+    // Project tagging by the client's API key: the user sets a project's
+    // label_key as OPENAI_API_KEY in their agent. We never forward this key —
+    // the real provider key comes from the keychain in forward().
+    let client_key = req_headers
+        .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+        .and_then(|s| s.strip_prefix("Bearer ").map(str::to_string))
+        .or_else(|| req_headers.get("x-api-key").and_then(|v| v.to_str().ok()).map(str::to_string))
+        .or_else(|| req_headers.get("api-key").and_then(|v| v.to_str().ok()).map(str::to_string));
+    let project_tag = client_key.as_ref().and_then(|k| state.project_for_key(k));
 
     // 32 MiB ceiling — large prompts happen.
     let body = match axum::body::to_bytes(req.into_body(), 32 * 1024 * 1024).await {

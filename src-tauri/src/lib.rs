@@ -32,6 +32,9 @@ pub fn run() {
             commands::set_accurate_streaming,
             commands::export_logs,
             commands::refresh_models,
+            commands::list_projects,
+            commands::add_project,
+            commands::delete_project,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

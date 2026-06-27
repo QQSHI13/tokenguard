@@ -1,6 +1,6 @@
 //! Tauri command handlers exposed to the frontend.
 
-use crate::config::{ProviderDto, ProviderInput};
+use crate::config::{Project, ProjectDto, ProjectInput, ProviderInput};
 use crate::db::{self, LogRow};
 use crate::secrets;
 use crate::state::AppState;
@@ -319,4 +319,50 @@ pub async fn refresh_models(
             .map_err(|e| e.to_string())? = new_cfg;
     }
     Ok(models)
+}
+
+// ---- projects ----
+
+#[tauri::command]
+pub fn list_projects(state: State<'_, Arc<AppState>>) -> Result<Vec<Project>, String> {
+    let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+    db::list_projects(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_project(
+    state: State<'_, Arc<AppState>>,
+    input: ProjectInput,
+) -> Result<Project, String> {
+    if input.name.trim().is_empty() || input.label_key.trim().is_empty() {
+        return Err("name and label_key are required".into());
+    }
+    let id = {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::insert_project(&conn, &input.name, &input.label_key).map_err(|e| e.to_string())?
+    };
+    // reload config
+    {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    Ok(Project {
+        id,
+        name: input.name,
+        label_key: input.label_key,
+    })
+}
+
+#[tauri::command]
+pub fn delete_project(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
+    {
+        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        db::delete_project(&conn, id).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    Ok(())
 }
