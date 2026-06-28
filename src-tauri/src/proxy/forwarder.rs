@@ -11,7 +11,9 @@ use std::sync::Arc;
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
 use crate::proxy::sse;
-use crate::state::AppState;
+use crate::state::{remote_model_name, AppState};
+use crate::tokens;
+use serde_json::Value;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn forward(
@@ -39,6 +41,12 @@ pub async fn forward(
     };
 
     let (final_body, model, _is_stream) = prepare_body(&body, provider.format, accurate);
+    let remote_model = remote_model_name(&provider, &model);
+    let body_json = serde_json::from_slice::<Value>(&body).ok();
+    let prompt_tokens_fallback = body_json
+        .as_ref()
+        .map(|v| tokens::count_prompt(&model, provider.format, v))
+        .unwrap_or(0);
 
     let mut req = client.post(&url);
     req = apply_auth(req, provider.auth, &api_key);
@@ -69,6 +77,8 @@ pub async fn forward(
         // Stream bytes to the client unchanged; parse usage as they pass.
         let prov = provider.clone();
         let model_owned = model.clone();
+        let remote_model_owned = remote_model_name(&prov, &model_owned);
+        let prompt_fallback = prompt_tokens_fallback;
         let stream = async_stream::stream! {
             let mut s = resp.bytes_stream();
             let mut parser = sse::SseUsageParser::new(prov.format);
@@ -84,9 +94,16 @@ pub async fn forward(
                     }
                 }
             }
-            let usage = parser.usage.clone();
+            let mut usage = parser.usage.clone();
+            if usage.prompt == 0 {
+                usage.prompt = prompt_fallback;
+            }
+            if usage.completion == 0 && !parser.content.is_empty() {
+                usage.completion = tokens::count_text(&model_owned, &parser.content);
+            }
             let c = cost::estimate(
                 &model_owned,
+                &remote_model_owned,
                 usage.prompt,
                 usage.completion,
                 prov.input_cost_per_1k,
@@ -108,9 +125,18 @@ pub async fn forward(
                 )
             }
         };
-        let usage = sse::extract_json(&bytes, provider.format);
+        let mut usage = sse::extract_json(&bytes, provider.format);
+        if usage.prompt == 0 {
+            usage.prompt = prompt_tokens_fallback;
+        }
+        if usage.completion == 0 {
+            if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
+                usage.completion = tokens::count_completion_json(&model, provider.format, &v);
+            }
+        }
         let c = cost::estimate(
             &model,
+            &remote_model,
             usage.prompt,
             usage.completion,
             provider.input_cost_per_1k,

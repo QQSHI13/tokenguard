@@ -2,6 +2,7 @@
 
 use crate::config::{Config, Limit, LimitMetric, LimitScope, Project, Provider, ProviderFormat};
 use crate::db::{self, DbPool};
+use crate::notifications;
 
 /// Pure routing logic, extracted for unit testing.
 pub fn route_in_list(
@@ -274,6 +275,11 @@ impl AppState {
     pub fn toggle_pause(&self) -> bool {
         let new = !self.paused.load(Ordering::Relaxed);
         self.paused.store(new, Ordering::Relaxed);
+        if new {
+            notifications::proxy_paused(&self.app);
+        } else {
+            notifications::proxy_resumed(&self.app);
+        }
         self.refresh_tray();
         new
     }

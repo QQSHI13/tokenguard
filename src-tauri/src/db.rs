@@ -60,6 +60,11 @@ CREATE INDEX IF NOT EXISTS idx_logs_project ON logs(project_tag);
 fn setup_connection(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     conn.execute_batch(SCHEMA)?;
+    // Migration: older DBs created before duration_ms existed.
+    let _ = conn.execute(
+        "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
     Ok(())
 }
 

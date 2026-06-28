@@ -8,6 +8,7 @@
 //!   carries `usage.output_tokens`.
 
 use crate::config::ProviderFormat;
+use crate::tokens;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Default)]
@@ -20,6 +21,7 @@ pub struct SseUsageParser {
     _format: ProviderFormat,
     buf: Vec<u8>,
     pub usage: Usage,
+    pub content: String,
 }
 
 impl SseUsageParser {
@@ -28,6 +30,7 @@ impl SseUsageParser {
             _format: format,
             buf: Vec::new(),
             usage: Usage::default(),
+            content: String::new(),
         }
     }
 
@@ -51,6 +54,7 @@ impl SseUsageParser {
         }
         if let Ok(v) = serde_json::from_str::<Value>(data) {
             self.extract(&v);
+            self.content.push_str(&tokens::extract_stream_delta(&v));
         }
     }
 

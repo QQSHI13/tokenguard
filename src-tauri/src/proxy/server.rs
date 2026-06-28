@@ -10,8 +10,11 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::config::{LimitAction, ProviderFormat};
+use crate::notifications;
 use crate::proxy::forwarder;
-use crate::state::AppState;
+use crate::state::{remote_model_name, AppState};
+use crate::tokens;
+use serde_json::Value;
 
 /// Bind the loopback proxy and serve until the app exits.
 pub async fn serve(state: Arc<AppState>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
@@ -126,14 +129,21 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     // Token limits are enforced reactively: a single request that pushes usage
     // over the cap will still go through, and the *next* request will be blocked.
     // This avoids parsing/tokenizing the request body twice.
+    let body_json = serde_json::from_slice::<Value>(&body).ok();
+    let prompt_tokens = body_json
+        .as_ref()
+        .map(|v| tokens::count_prompt(&model, family, v))
+        .unwrap_or(0);
+    let remote_model = remote_model_name(&provider, &model);
     let estimated_cost = crate::cost::estimate(
         &model,
-        0,
+        &remote_model,
+        prompt_tokens,
         0,
         provider.input_cost_per_1k,
         provider.output_cost_per_1k,
     );
-    let estimated_tokens = 0;
+    let estimated_tokens = prompt_tokens;
     let duration_ms = start.elapsed().as_millis() as u64;
     let violations = state.check_limits(
         provider.id,
@@ -145,6 +155,12 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     for v in &violations {
         match v.limit.action {
             LimitAction::Block => {
+                notifications::limit_blocked(
+                    &state.app,
+                    &v.limit.name,
+                    v.used,
+                    v.limit.cap,
+                );
                 return super::error_resp(
                     StatusCode::TOO_MANY_REQUESTS,
                     &format!(
@@ -154,6 +170,12 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 );
             }
             LimitAction::Pause => {
+                notifications::limit_paused(
+                    &state.app,
+                    &v.limit.name,
+                    v.used,
+                    v.limit.cap,
+                );
                 state.toggle_pause();
                 return super::error_resp(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -161,6 +183,12 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 );
             }
             LimitAction::Warn => {
+                notifications::limit_warning(
+                    &state.app,
+                    &v.limit.name,
+                    v.used,
+                    v.limit.cap,
+                );
                 tracing::warn!(
                     "limit warning: {} ({:.0}/{:.0})",
                     v.limit.name,

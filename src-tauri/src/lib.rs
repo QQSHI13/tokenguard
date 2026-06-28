@@ -4,9 +4,11 @@ mod commands;
 mod config;
 mod cost;
 mod db;
+mod notifications;
 mod proxy;
 mod secrets;
 mod state;
+mod tokens;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Wry};
@@ -31,6 +33,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::list_providers,
             commands::add_provider,

@@ -46,16 +46,18 @@ fn lookup(model: &str) -> Option<(f64, f64)> {
 /// `input_per_1k` / `output_per_1k` override the hardcoded table when set
 /// (used for custom / local providers).
 pub fn estimate(
-    model: &str,
+    model_local: &str,
+    model_remote: &str,
     prompt_tokens: u64,
     completion_tokens: u64,
     input_per_1k: Option<f64>,
     output_per_1k: Option<f64>,
 ) -> f64 {
-    let (i, o) = match (input_per_1k, output_per_1k) {
-        (Some(i), Some(o)) => (i, o),
-        _ => lookup(model).unwrap_or((0.0, 0.0)),
-    };
+    let (table_i, table_o) = lookup(model_local)
+        .or_else(|| lookup(model_remote))
+        .unwrap_or((0.0, 0.0));
+    let i = input_per_1k.unwrap_or(table_i);
+    let o = output_per_1k.unwrap_or(table_o);
     (prompt_tokens as f64 * i + completion_tokens as f64 * o) / 1000.0
 }
 
@@ -66,26 +68,26 @@ mod tests {
     #[test]
     fn estimate_known_model() {
         // gpt-4o: $2.50 / 1K input, $10.00 / 1K output
-        let cost = estimate("gpt-4o", 1000, 500, None, None);
+        let cost = estimate("gpt-4o", "gpt-4o", 1000, 500, None, None);
         assert!((cost - 7.5).abs() < 0.001, "expected ~7.5, got {cost}");
     }
 
     #[test]
     fn estimate_unknown_model_falls_back_to_zero() {
-        let cost = estimate("some-local-model", 1000, 500, None, None);
+        let cost = estimate("some-local-model", "some-local-model", 1000, 500, None, None);
         assert_eq!(cost, 0.0);
     }
 
     #[test]
     fn estimate_override_wins() {
-        let cost = estimate("gpt-4o", 1000, 500, Some(1.0), Some(2.0));
+        let cost = estimate("gpt-4o", "gpt-4o", 1000, 500, Some(1.0), Some(2.0));
         assert!((cost - 2.0).abs() < 0.001, "expected ~2.0, got {cost}");
     }
 
     #[test]
-    fn estimate_partial_override_uses_table() {
-        // Only one override supplied -> fall back to lookup table.
-        let cost = estimate("gpt-4o-mini", 1000, 500, Some(1.0), None);
-        assert!((cost - 0.45).abs() < 0.001, "expected ~0.45, got {cost}");
+    fn estimate_partial_override_uses_table_for_missing_side() {
+        let cost = estimate("gpt-4o-mini", "gpt-4o-mini", 1000, 500, Some(1.0), None);
+        // input override 1.0, output falls back to table 0.60 -> 1.0 + 0.3 = 1.3
+        assert!((cost - 1.3).abs() < 0.001, "expected ~1.3, got {cost}");
     }
 }
