@@ -8,7 +8,6 @@ mod notifications;
 mod proxy;
 mod secrets;
 mod state;
-mod tokens;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Wry};

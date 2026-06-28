@@ -13,8 +13,6 @@ use crate::config::{LimitAction, ProviderFormat};
 use crate::notifications;
 use crate::proxy::forwarder;
 use crate::state::{remote_model_name, AppState};
-use crate::tokens;
-use serde_json::Value;
 
 /// Bind the loopback proxy and serve until the app exits.
 pub async fn serve(state: Arc<AppState>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
@@ -128,22 +126,16 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     // Estimate cost/tokens for limit checking before spending anything.
     // Token limits are enforced reactively: a single request that pushes usage
     // over the cap will still go through, and the *next* request will be blocked.
-    // This avoids parsing/tokenizing the request body twice.
-    let body_json = serde_json::from_slice::<Value>(&body).ok();
-    let prompt_tokens = body_json
-        .as_ref()
-        .map(|v| tokens::count_prompt(&model, family, v))
-        .unwrap_or(0);
     let remote_model = remote_model_name(&provider, &model);
     let estimated_cost = crate::cost::estimate(
         &model,
         &remote_model,
-        prompt_tokens,
+        0,
         0,
         provider.input_cost_per_1k,
         provider.output_cost_per_1k,
     );
-    let estimated_tokens = prompt_tokens;
+    let estimated_tokens = 0;
     let duration_ms = start.elapsed().as_millis() as u64;
     let violations = state.check_limits(
         provider.id,
