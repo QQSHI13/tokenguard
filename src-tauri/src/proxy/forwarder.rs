@@ -67,22 +67,26 @@ pub async fn forward(
         .unwrap_or(false);
 
     if is_sse {
-        // Stream bytes to the client unchanged; parse usage as they pass.
+        // Consume the upstream stream in a dedicated task so logging always runs
+        // even if the client drops the response body after reading the content.
         let prov = provider.clone();
         let model_owned = model.clone();
         let remote_model_owned = remote_model_name(&prov, &model_owned);
-        let stream = async_stream::stream! {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>(32);
+        tauri::async_runtime::spawn(async move {
             let mut s = resp.bytes_stream();
             let mut parser = sse::SseUsageParser::new(prov.format);
             while let Some(chunk) = s.next().await {
                 match chunk {
                     Ok(bytes) => {
                         parser.feed(&bytes);
-                        yield Ok::<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>(bytes);
+                        if tx.send(Ok(bytes)).await.is_err() {
+                            break;
+                        }
                     }
                     Err(e) => {
-                        yield Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync + 'static>);
-                        return;
+                        let _ = tx.send(Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)).await;
+                        break;
                     }
                 }
             }
@@ -98,8 +102,9 @@ pub async fn forward(
             let duration_ms = start.elapsed().as_millis() as u64;
             st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c, duration_ms, project_tag.clone())
                 .await;
-        };
+        });
 
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
         build_response(status, headers, Body::from_stream(stream))
     } else {
         let bytes = match resp.bytes().await {
