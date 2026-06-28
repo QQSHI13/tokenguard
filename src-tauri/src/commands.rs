@@ -1,6 +1,9 @@
 //! Tauri command handlers exposed to the frontend.
 
-use crate::config::{Project, ProjectInput, ProviderDto, ProviderInput};
+use crate::config::{
+    Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod, LimitScope, Project, ProjectInput,
+    ProviderDto, ProviderInput,
+};
 use crate::db::{self, LogRow};
 use crate::secrets;
 use crate::state::AppState;
@@ -29,11 +32,23 @@ pub struct ModelInfo {
     pub provider: String,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct LimitStatusDto {
+    pub limit: Limit,
+    pub used: f64,
+    pub ratio: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LimitPreset {
+    pub name: String,
+    pub input: LimitInput,
+}
+
 #[tauri::command]
 pub fn list_providers(state: State<'_, Arc<AppState>>) -> Result<Vec<ProviderDto>, String> {
-    let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
-    let providers =
-        db::list_providers(&conn).map_err(|e| e.to_string())?;
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
     drop(conn);
     Ok(providers
         .into_iter()
@@ -57,7 +72,7 @@ pub fn add_provider(
         secrets::set(&input.name, &input.api_key)?;
     }
     let provider = {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let id = db::insert_provider(&conn, &input).map_err(|e| e.to_string())?;
         let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
         drop(conn);
@@ -68,7 +83,7 @@ pub fn add_provider(
     };
     // reload config into memory
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
@@ -85,16 +100,19 @@ pub fn add_provider(
 pub fn delete_provider(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
     // also wipe keychain entry (need provider name first)
     let name = {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
         drop(conn);
-        providers.iter().find(|p| p.id == id).map(|p| p.name.clone())
+        providers
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
     };
     if let Some(name) = name {
         let _ = secrets::delete(&name);
     }
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::delete_provider(&conn, id).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
@@ -121,7 +139,7 @@ pub fn update_provider(
 ) -> Result<ProviderDto, String> {
     // current name, to handle rename + key move
     let old_name = {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         providers
@@ -148,7 +166,7 @@ pub fn update_provider(
         }
     }
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::update_provider(&conn, id, &input).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
@@ -172,15 +190,14 @@ pub fn update_provider(
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, String> {
-    let cfg = state
-        .inner()
-        .config
-        .read()
-        .map_err(|e| e.to_string())?;
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
     Ok(SettingsDto {
         port: cfg.port,
         budget: cfg.budget,
-        paused: state.inner().paused.load(std::sync::atomic::Ordering::Relaxed),
+        paused: state
+            .inner()
+            .paused
+            .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: format!("http://localhost:{}", cfg.port),
         provider_count: cfg.providers.len(),
         accurate_streaming: cfg.accurate_streaming,
@@ -190,7 +207,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
 #[tauri::command]
 pub fn set_budget(state: State<'_, Arc<AppState>>, budget: f64) -> Result<(), String> {
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::set_setting(&conn, "budget", &budget.to_string()).map_err(|e| e.to_string())?;
         drop(conn);
     }
@@ -207,7 +224,7 @@ pub fn set_budget(state: State<'_, Arc<AppState>>, budget: f64) -> Result<(), St
 #[tauri::command]
 pub fn set_port(state: State<'_, Arc<AppState>>, port: u16) -> Result<(), String> {
     // Persist; applied on next app launch (listener is bound at startup).
-    let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     db::set_setting(&conn, "port", &port.to_string()).map_err(|e| e.to_string())?;
     state
         .inner()
@@ -242,22 +259,23 @@ pub fn get_logs(
     limit: Option<u64>,
     days: Option<u64>,
 ) -> Result<Vec<LogRow>, String> {
-    let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     db::list_logs(&conn, limit.unwrap_or(5000), days).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_models(state: State<'_, Arc<AppState>>) -> Result<Vec<ModelInfo>, String> {
-    let cfg = state
-        .inner()
-        .config
-        .read()
-        .map_err(|e| e.to_string())?;
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
     let mut out: Vec<ModelInfo> = Vec::new();
     for p in &cfg.providers {
         for m in &p.models {
             out.push(ModelInfo {
-                id: m.clone(),
+                id: m.local.clone(),
                 provider: p.name.clone(),
             });
         }
@@ -271,9 +289,13 @@ pub fn set_accurate_streaming(
     enabled: bool,
 ) -> Result<(), String> {
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "accurate_streaming", if enabled { "true" } else { "false" })
-            .map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(
+            &conn,
+            "accurate_streaming",
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|e| e.to_string())?;
         drop(conn);
     }
     state
@@ -293,7 +315,7 @@ pub fn export_logs(
     days: Option<u64>,
 ) -> Result<String, String> {
     let rows = {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::list_logs(&conn, 100_000, days).map_err(|e| e.to_string())?
     };
     match format.as_str() {
@@ -334,13 +356,9 @@ fn csv_escape(s: &str) -> String {
 pub async fn refresh_models(
     state: State<'_, Arc<AppState>>,
     id: i64,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<crate::config::ModelMapping>, String> {
     let provider = {
-        let cfg = state
-            .inner()
-            .config
-            .read()
-            .map_err(|e| e.to_string())?;
+        let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
         cfg.providers
             .iter()
             .find(|p| p.id == id)
@@ -353,19 +371,22 @@ pub async fn refresh_models(
     let mut req = state.inner().client.get(&url);
     req = match provider.auth {
         crate::config::AuthScheme::Bearer => req.bearer_auth(&api_key),
-        crate::config::AuthScheme::XApiKey => {
-            req.header("x-api-key", &api_key).header("anthropic-version", "2023-06-01")
-        }
+        crate::config::AuthScheme::XApiKey => req
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", "2023-06-01"),
         crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
     };
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
     let body = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
-        return Err(format!("provider returned {status}: {}", &body[..body.len().min(200)]));
+        return Err(format!(
+            "provider returned {status}: {}",
+            &body[..body.len().min(200)]
+        ));
     }
     let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-    let mut models: Vec<String> = v
+    let mut names: Vec<String> = v
         .get("data")
         .and_then(|d| d.as_array())
         .map(|arr| {
@@ -374,17 +395,20 @@ pub async fn refresh_models(
                 .collect()
         })
         .unwrap_or_default();
-    models.sort();
+    names.sort();
+    let models: Vec<crate::config::ModelMapping> = names
+        .into_iter()
+        .map(|name| crate::config::ModelMapping {
+            local: name.clone(),
+            remote: name,
+        })
+        .collect();
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::update_provider_models(&conn, id, &models).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
-        *state
-            .inner()
-            .config
-            .write()
-            .map_err(|e| e.to_string())? = new_cfg;
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
     Ok(models)
 }
@@ -393,7 +417,7 @@ pub async fn refresh_models(
 
 #[tauri::command]
 pub fn list_projects(state: State<'_, Arc<AppState>>) -> Result<Vec<Project>, String> {
-    let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     db::list_projects(&conn).map_err(|e| e.to_string())
 }
 
@@ -406,12 +430,12 @@ pub fn add_project(
         return Err("name and label_key are required".into());
     }
     let id = {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::insert_project(&conn, &input.name, &input.label_key).map_err(|e| e.to_string())?
     };
     // reload config
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
@@ -426,11 +450,174 @@ pub fn add_project(
 #[tauri::command]
 pub fn delete_project(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
     {
-        let conn = state.inner().db.lock().map_err(|e| e.to_string())?;
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::delete_project(&conn, id).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
     Ok(())
+}
+
+// ---- limits ----
+
+#[tauri::command]
+pub fn list_limits(state: State<'_, Arc<AppState>>) -> Result<Vec<Limit>, String> {
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    Ok(cfg.limits.clone())
+}
+
+#[tauri::command]
+pub fn add_limit(state: State<'_, Arc<AppState>>, input: LimitInput) -> Result<Limit, String> {
+    let id = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::insert_limit(&conn, &input).map_err(|e| e.to_string())?
+    };
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    cfg.limits
+        .iter()
+        .find(|l| l.id == id)
+        .cloned()
+        .ok_or("limit not found after insert".into())
+}
+
+#[tauri::command]
+pub fn update_limit(
+    state: State<'_, Arc<AppState>>,
+    id: i64,
+    input: LimitInput,
+) -> Result<Limit, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::update_limit(&conn, id, &input).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    state.inner().refresh_tray();
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    cfg.limits
+        .iter()
+        .find(|l| l.id == id)
+        .cloned()
+        .ok_or("limit not found after update".into())
+}
+
+#[tauri::command]
+pub fn delete_limit(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::delete_limit(&conn, id).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    state.inner().refresh_tray();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_limit_status(state: State<'_, Arc<AppState>>) -> Result<Vec<LimitStatusDto>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for limit in &cfg.limits {
+        if !limit.enabled {
+            continue;
+        }
+        let used = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
+        let ratio = if limit.cap > 0.0 {
+            used / limit.cap
+        } else {
+            0.0
+        };
+        out.push(LimitStatusDto {
+            limit: limit.clone(),
+            used,
+            ratio,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn get_limit_presets() -> Vec<LimitPreset> {
+    vec![
+        LimitPreset {
+            name: "$50 / day".into(),
+            input: LimitInput {
+                name: "Daily money cap".into(),
+                metric: LimitMetric::Money,
+                period: LimitPeriod::Daily,
+                cap: 50.0,
+                warning_threshold: 0.8,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Warn,
+                enabled: true,
+            },
+        },
+        LimitPreset {
+            name: "1 M tokens / month".into(),
+            input: LimitInput {
+                name: "Monthly token cap".into(),
+                metric: LimitMetric::Tokens,
+                period: LimitPeriod::Monthly,
+                cap: 1_000_000.0,
+                warning_threshold: 0.8,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Warn,
+                enabled: true,
+            },
+        },
+        LimitPreset {
+            name: "1 000 requests / day".into(),
+            input: LimitInput {
+                name: "Daily request cap".into(),
+                metric: LimitMetric::Requests,
+                period: LimitPeriod::Daily,
+                cap: 1000.0,
+                warning_threshold: 0.9,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Block,
+                enabled: true,
+            },
+        },
+        LimitPreset {
+            name: "5 hours / day".into(),
+            input: LimitInput {
+                name: "Daily time cap".into(),
+                metric: LimitMetric::TimeSec,
+                period: LimitPeriod::Daily,
+                cap: 5.0 * 3600.0,
+                warning_threshold: 0.8,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Warn,
+                enabled: true,
+            },
+        },
+        LimitPreset {
+            name: "5 hours / week".into(),
+            input: LimitInput {
+                name: "Weekly time cap".into(),
+                metric: LimitMetric::TimeSec,
+                period: LimitPeriod::Weekly,
+                cap: 5.0 * 3600.0,
+                warning_threshold: 0.8,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Warn,
+                enabled: true,
+            },
+        },
+    ]
 }

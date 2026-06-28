@@ -96,3 +96,64 @@ pub fn extract_json(body: &[u8], _format: ProviderFormat) -> Usage {
     }
     u
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sse_openai_usage() {
+        let mut parser = SseUsageParser::new(ProviderFormat::OpenAI);
+        parser.feed(b"data: {\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n");
+        assert_eq!(parser.usage.prompt, 10);
+        assert_eq!(parser.usage.completion, 5);
+    }
+
+    #[test]
+    fn sse_anthropic_usage() {
+        let mut parser = SseUsageParser::new(ProviderFormat::Anthropic);
+        parser.feed(b"data: {\"usage\":{\"input_tokens\":20,\"output_tokens\":7}}\n\n");
+        assert_eq!(parser.usage.prompt, 20);
+        assert_eq!(parser.usage.completion, 7);
+    }
+
+    #[test]
+    fn sse_done_is_ignored() {
+        let mut parser = SseUsageParser::new(ProviderFormat::OpenAI);
+        parser.feed(b"data: [DONE]\n\n");
+        assert_eq!(parser.usage.prompt, 0);
+        assert_eq!(parser.usage.completion, 0);
+    }
+
+    #[test]
+    fn sse_chunks_may_span_lines() {
+        let mut parser = SseUsageParser::new(ProviderFormat::OpenAI);
+        parser.feed(b"data: {\"usage\":{\"prompt_tokens\":");
+        parser.feed(b"3,\"completion_tokens\":2}}\n");
+        assert_eq!(parser.usage.prompt, 3);
+        assert_eq!(parser.usage.completion, 2);
+    }
+
+    #[test]
+    fn extract_json_openai() {
+        let body = br#"{"usage":{"prompt_tokens":8,"completion_tokens":4}}"#;
+        let usage = extract_json(body, ProviderFormat::OpenAI);
+        assert_eq!(usage.prompt, 8);
+        assert_eq!(usage.completion, 4);
+    }
+
+    #[test]
+    fn extract_json_anthropic() {
+        let body = br#"{"usage":{"input_tokens":9,"output_tokens":3}}"#;
+        let usage = extract_json(body, ProviderFormat::Anthropic);
+        assert_eq!(usage.prompt, 9);
+        assert_eq!(usage.completion, 3);
+    }
+
+    #[test]
+    fn extract_json_malformed_returns_zero() {
+        let usage = extract_json(b"not json", ProviderFormat::OpenAI);
+        assert_eq!(usage.prompt, 0);
+        assert_eq!(usage.completion, 0);
+    }
+}

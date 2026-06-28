@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../i18n";
 
 type ProviderFormat = "openai" | "anthropic";
 type AuthScheme = "bearer" | "x_api_key" | "api_key";
+
+type ModelMapping = { local: string; remote: string };
 
 type Provider = {
   id: number;
@@ -11,7 +14,7 @@ type Provider = {
   base_url: string;
   format: ProviderFormat;
   auth: AuthScheme;
-  models: string[];
+  models: ModelMapping[];
   input_cost_per_1k: number | null;
   output_cost_per_1k: number | null;
   is_default: boolean;
@@ -24,7 +27,7 @@ type Input = {
   format: ProviderFormat;
   auth: AuthScheme;
   api_key: string;
-  models: string[];
+  models: ModelMapping[];
   input_cost_per_1k: number | null;
   output_cost_per_1k: number | null;
   is_default: boolean;
@@ -36,29 +39,37 @@ const PRESETS: {
   base_url: string;
   format: ProviderFormat;
   auth: AuthScheme;
-  models: string;
+  models: ModelMapping[];
 }[] = [
   {
     name: "OpenAI",
     base_url: "https://api.openai.com",
     format: "openai",
     auth: "bearer",
-    models: "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
+    models: [
+      { local: "gpt-4o", remote: "gpt-4o" },
+      { local: "gpt-4o-mini", remote: "gpt-4o-mini" },
+      { local: "gpt-4-turbo", remote: "gpt-4-turbo" },
+      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo" },
+    ],
   },
   {
     name: "Anthropic",
     base_url: "https://api.anthropic.com",
     format: "anthropic",
     auth: "x_api_key",
-    models:
-      "claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229",
+    models: [
+      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514" },
+      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022" },
+      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022" },
+    ],
   },
   {
     name: "OpenRouter",
     base_url: "https://openrouter.ai/api",
     format: "openai",
     auth: "bearer",
-    models: "",
+    models: [],
   },
 ];
 
@@ -93,6 +104,7 @@ function fromProvider(p: Provider): Input {
 }
 
 export default function Providers({ onChange }: { onChange: () => void }) {
+  const { t } = useI18n();
   const [providers, setProviders] = useState<ProviderDto[]>([]);
   const [form, setForm] = useState<Input>(blank());
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -136,7 +148,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
   };
 
   const remove = async (id: number, name: string) => {
-    if (!confirm(`Delete provider "${name}"? Its keychain entry will be removed.`))
+    if (!confirm(t("deleteProviderConfirm").replace("{name}", name)))
       return;
     if (editingId === id) cancelEdit();
     await invoke("delete_provider", { id });
@@ -151,7 +163,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
       refresh();
       onChange();
     } catch (err) {
-      alert("Model refresh failed: " + String(err));
+      alert(t("modelRefreshFailed") + String(err));
     } finally {
       setRefreshing(null);
     }
@@ -164,7 +176,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
       base_url: p.base_url,
       format: p.format,
       auth: p.auth,
-      models: p.models ? p.models.split(",") : [],
+      models: [...p.models],
     }));
   };
 
@@ -174,11 +186,11 @@ export default function Providers({ onChange }: { onChange: () => void }) {
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div>
         <h2 className="mb-3 text-sm font-semibold text-neutral-200">
-          Configured providers
+          {t("configuredProviders")}
         </h2>
         <div className="space-y-2">
           {providers.length === 0 && (
-            <p className="text-xs text-neutral-600">No providers yet. Add one →</p>
+            <p className="text-xs text-neutral-600">{t("noProvidersYet")}</p>
           )}
           {providers.map(({ provider: p, api_key_set, key_error }) => (
             <div
@@ -196,7 +208,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   </span>
                   {p.is_default && (
                     <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                      default
+                      {t("default")}
                     </span>
                   )}
                   {key_error ? (
@@ -204,15 +216,15 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                       title={key_error}
                       className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300"
                     >
-                      key error
+                      {t("keyError")}
                     </span>
                   ) : api_key_set ? (
                     <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
-                      key set
+                      {t("keySet")}
                     </span>
                   ) : (
                     <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
-                      no key
+                      {t("noKey")}
                     </span>
                   )}
                 </div>
@@ -221,7 +233,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                 </div>
                 {p.models.length > 0 && (
                   <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-600">
-                    {p.models.join(", ")}
+                    {p.models.map((m) => m.local).join(", ")}
                   </div>
                 )}
               </div>
@@ -259,7 +271,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
       >
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-neutral-200">
-            {editing ? "Edit provider" : "Add provider"}
+            {editing ? t("editProvider") : t("addProvider")}
           </h2>
           {editing && (
             <button
@@ -267,7 +279,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               onClick={cancelEdit}
               className="text-[11px] text-neutral-500 hover:text-neutral-300"
             >
-              cancel
+              {t("cancel")}
             </button>
           )}
         </div>
@@ -287,7 +299,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           </div>
         )}
 
-        <Field label="Name">
+        <Field label={t("name")}>
           <input
             required
             value={form.name}
@@ -295,7 +307,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
             className={inputCls}
           />
         </Field>
-        <Field label="Base URL">
+        <Field label={t("baseUrl")}>
           <input
             required
             value={form.base_url}
@@ -304,7 +316,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           />
         </Field>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Format">
+          <Field label={t("format")}>
             <select
               value={form.format}
               onChange={(e) => {
@@ -321,7 +333,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               <option value="anthropic">anthropic</option>
             </select>
           </Field>
-          <Field label="Auth header">
+          <Field label={t("authHeader")}>
             <select
               value={form.auth}
               onChange={(e) => setForm({ ...form, auth: e.target.value as AuthScheme })}
@@ -336,8 +348,8 @@ export default function Providers({ onChange }: { onChange: () => void }) {
         <Field
           label={
             editing
-              ? "API key (leave blank to keep current)"
-              : "API key (stored in OS keychain)"
+              ? t("apiKeyKeepCurrent")
+              : t("apiKeyStored")
           }
         >
           <input
@@ -356,27 +368,60 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               checked={form.clear_key}
               onChange={(e) => setForm({ ...form, clear_key: e.target.checked })}
             />
-            Clear stored key (deletes it from the keychain)
+            {t("clearStoredKey")}
           </label>
         )}
-        <Field label="Models (comma-separated, used for routing)">
-          <input
-            value={form.models.join(",")}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                models: e.target.value
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              })
-            }
-            className={inputCls}
-            placeholder="gpt-4o, gpt-4o-mini"
-          />
-        </Field>
+        <div>
+          <label className="mb-1 block text-[11px] text-neutral-500">{t("models")}</label>
+          <div className="space-y-2">
+            {form.models.map((m, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                <input
+                  value={m.local}
+                  onChange={(e) => {
+                    const next = [...form.models];
+                    next[i] = { ...next[i], local: e.target.value };
+                    setForm({ ...form, models: next });
+                  }}
+                  placeholder={t("localName")}
+                  className={inputCls}
+                />
+                <input
+                  value={m.remote}
+                  onChange={(e) => {
+                    const next = [...form.models];
+                    next[i] = { ...next[i], remote: e.target.value };
+                    setForm({ ...form, models: next });
+                  }}
+                  placeholder={t("providerName")}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = form.models.filter((_, idx) => idx !== i);
+                    setForm({ ...form, models: next });
+                  }}
+                  className="px-2 text-neutral-500 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, models: [...form.models, { local: "", remote: "" }] })}
+              className="w-full rounded-md border border-dashed border-neutral-400 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-600 hover:text-neutral-700 dark:border-neutral-600 dark:hover:border-neutral-400 dark:hover:text-neutral-300"
+            >
+              {t("addModel")}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-neutral-500">
+            {t("modelAliasHint")}
+          </p>
+        </div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Input $/1K (optional)">
+          <Field label={t("inputCost")}>
             <input
               type="number"
               step="0.0001"
@@ -390,7 +435,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               className={inputCls}
             />
           </Field>
-          <Field label="Output $/1K (optional)">
+          <Field label={t("outputCost")}>
             <input
               type="number"
               step="0.0001"
@@ -411,7 +456,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
             checked={form.is_default}
             onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
           />
-          Default for this format family (fallback when no model match)
+          {t("defaultForFormat")}
         </label>
 
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -419,7 +464,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           type="submit"
           className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
         >
-          {editing ? "Save changes" : "Add provider"}
+          {editing ? t("saveChanges") : t("addProvider")}
         </button>
       </form>
     </div>
@@ -427,7 +472,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
 }
 
 const inputCls =
-  "w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none";
+  "w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 focus:border-emerald-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

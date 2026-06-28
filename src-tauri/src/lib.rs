@@ -9,7 +9,20 @@ mod secrets;
 mod state;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{AppHandle, Manager, Wry};
+
+/// Close every webview window, wait briefly for WebView2 teardown, then exit.
+///
+/// Calling `app.exit(0)` immediately can leave WebView2 mid-shutdown and print
+/// `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` on Windows.
+/// Closing windows first and sleeping a little lets the renderer clean up.
+pub async fn graceful_exit(app: &AppHandle<Wry>) {
+    for (_label, window) in app.webview_windows() {
+        let _ = window.close();
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    app.exit(0);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +30,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::list_providers,
             commands::add_provider,
@@ -29,6 +43,7 @@ pub fn run() {
             commands::pause_resume,
             commands::get_today_spend,
             commands::get_logs,
+            commands::write_text_file,
             commands::get_models,
             commands::set_accurate_streaming,
             commands::export_logs,
@@ -37,6 +52,12 @@ pub fn run() {
             commands::add_project,
             commands::delete_project,
             commands::keyring_selftest,
+            commands::list_limits,
+            commands::add_limit,
+            commands::update_limit,
+            commands::delete_limit,
+            commands::get_limit_status,
+            commands::get_limit_presets,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -45,11 +66,14 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("tokenguard.db");
-            let conn = db::connect(db_path.to_str().ok_or("invalid db path")?)?;
+            let pool = db::build_pool(db_path.to_str().ok_or("invalid db path")?)?;
+            let conn = pool
+                .get()
+                .map_err(|e| format!("failed to get DB connection: {e}"))?;
             let config = db::load_config(&conn)?;
             let port = config.port;
 
-            let state = Arc::new(state::AppState::new(conn, config, handle)?);
+            let state = Arc::new(state::AppState::new(pool, config, handle)?);
 
             // Native tray (left-click toggles pause; menu items below).
             state::build_tray(app.handle())?;
@@ -67,19 +91,19 @@ pub fn run() {
             state.refresh_tray();
             tracing::info!("Token Guard started — proxy on http://127.0.0.1:{port}");
 
-            // Graceful Ctrl+C: let WebView2 tear down windows instead of being
-            // force-killed (avoids the "Failed to unregister class" noise).
+            // Graceful Ctrl+C: close windows first so WebView2 can tear down
+            // before the process exits (avoids the "Failed to unregister class" noise).
             let ah = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if tokio::signal::ctrl_c().await.is_ok() {
                     tracing::info!("Ctrl+C received, exiting gracefully");
-                    ah.exit(0);
+                    graceful_exit(&ah).await;
                 }
             });
 
             Ok(())
         })
-        .on_menu_event(|app, event| state::handle_menu_event(app, event))
+        .on_menu_event(state::handle_menu_event)
         .on_window_event(|window, event| {
             // Close → hide to tray (keeps the proxy running).
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

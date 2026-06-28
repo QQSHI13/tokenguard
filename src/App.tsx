@@ -4,6 +4,9 @@ import Providers from "./components/Providers";
 import Dashboard from "./components/Dashboard";
 import SettingsTab from "./components/Settings";
 import Projects from "./components/Projects";
+import Limits from "./components/Limits";
+import ThemeToggle, { initTheme } from "./components/ThemeToggle";
+import { useI18n } from "./i18n";
 
 type Settings = {
   port: number;
@@ -15,9 +18,10 @@ type Settings = {
 };
 type Spend = { today: number; budget: number };
 
-type Tab = "dashboard" | "providers" | "projects" | "settings";
+type Tab = "dashboard" | "limits" | "providers" | "projects" | "settings";
 
 export default function App() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [spend, setSpend] = useState<Spend>({ today: 0, budget: 0 });
@@ -34,72 +38,77 @@ export default function App() {
     return () => clearInterval(i);
   }, [refresh, tick]);
 
+  useEffect(() => {
+    return initTheme();
+  }, []);
+
   const togglePause = async () => {
     const paused = await invoke<boolean>("pause_resume");
     setSettings((s) => (s ? { ...s, paused } : s));
   };
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "providers", label: "Providers" },
-    { id: "projects", label: "Projects" },
-    { id: "settings", label: "Settings" },
+    { id: "dashboard", label: t("dashboard") },
+    { id: "limits", label: t("limits") },
+    { id: "providers", label: t("providers") },
+    { id: "projects", label: t("projects") },
+    { id: "settings", label: t("settings") },
   ];
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
+    <div className="flex h-full flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+      <header className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-neutral-800">
         <div className="flex items-center gap-3">
           <span className="text-lg">🛡️</span>
           <div>
-            <h1 className="text-sm font-semibold tracking-wide text-neutral-100">
-              Token Guard
+            <h1 className="text-sm font-semibold tracking-wide">
+              {t("appTitle")}
             </h1>
-            <p className="text-[11px] text-neutral-500">
-              The local LLM gateway — nothing leaves your machine.
-            </p>
+            <p className="text-[11px] text-neutral-500">{t("appSubtitle")}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="text-base font-semibold text-emerald-400">
+            <div className="text-base font-semibold text-emerald-600 dark:text-emerald-400">
               ${spend.today.toFixed(4)}
             </div>
             <div className="text-[11px] text-neutral-500">
-              today / ${spend.budget.toFixed(2)} budget
+              {t("today")} / ${spend.budget.toFixed(2)} {t("budget")}
             </div>
           </div>
+          <ThemeToggle />
           <button
             onClick={togglePause}
             className={`rounded-md px-3 py-1.5 text-xs font-medium ${
               settings?.paused
-                ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
-                : "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                ? "bg-amber-500/20 text-amber-700 hover:bg-amber-500/30 dark:text-amber-300"
+                : "bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300"
             }`}
           >
-            {settings?.paused ? "Paused" : "Active"}
+            {settings?.paused ? t("paused") : t("active")}
           </button>
         </div>
       </header>
 
-      <nav className="flex gap-1 border-b border-neutral-800 px-3">
-        {tabs.map((t) => (
+      <nav className="flex gap-1 border-b border-neutral-200 px-3 dark:border-neutral-800">
+        {tabs.map((tb) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tb.id}
+            onClick={() => setTab(tb.id)}
             className={`-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === t.id
-                ? "border-emerald-500 text-neutral-100"
-                : "border-transparent text-neutral-500 hover:text-neutral-300"
+              tab === tb.id
+                ? "border-emerald-500 text-neutral-900 dark:text-neutral-100"
+                : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
             }`}
           >
-            {t.label}
+            {tb.label}
           </button>
         ))}
       </nav>
 
       <main className="flex-1 overflow-auto p-4">
         {tab === "dashboard" && <Dashboard />}
+        {tab === "limits" && <Limits onChange={() => setTick((t) => t + 1)} />}
         {tab === "providers" && (
           <Providers onChange={() => setTick((t) => t + 1)} />
         )}

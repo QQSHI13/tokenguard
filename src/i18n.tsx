@@ -1,0 +1,370 @@
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+
+export type Language = "en" | "zh-CN";
+
+export const DEFAULT_LANGUAGE: Language = "en";
+
+const STORAGE_KEY = "tokenguard-language";
+
+export function getStoredLanguage(): Language {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw === "en" || raw === "zh-CN") return raw;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LANGUAGE;
+}
+
+export function storeLanguage(lang: Language) {
+  try {
+    localStorage.setItem(STORAGE_KEY, lang);
+  } catch {
+    // ignore
+  }
+}
+
+type I18nContextValue = {
+  lang: Language;
+  setLang: (lang: Language) => void;
+  t: (key: keyof typeof translations.en) => string;
+};
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+export const translations = {
+  en: {
+    appTitle: "Token Guard",
+    appSubtitle: "The local LLM gateway — nothing leaves your machine.",
+    today: "Today",
+    budget: "Budget",
+    budgetUsed: "Budget used",
+    active: "Active",
+    paused: "Paused",
+    dashboard: "Dashboard",
+    limits: "Limits",
+    providers: "Providers",
+    projects: "Projects",
+    settings: "Settings",
+    noDataToChart: "No data to chart",
+    activeLimits: "Active limits",
+    time: "Time",
+    exportCsv: "Export CSV",
+    exportJson: "Export JSON",
+    allTime: "All Time",
+    days: "Days",
+    requests: "Requests",
+    tokens: "Tokens",
+    cost: "Cost",
+    money: "Money",
+    provider: "Provider",
+    model: "Model",
+    prompt: "Prompt",
+    completion: "Completion",
+    project: "Project",
+    noRequestsInRange: "No requests in this range. Point your LLM client at",
+    andSendRequest: "and send a request.",
+    configuredProviders: "Configured providers",
+    noProvidersYet: "No providers yet. Add one →",
+    default: "default",
+    keyError: "key error",
+    keySet: "key set",
+    noKey: "no key",
+    editProvider: "Edit provider",
+    addProvider: "Add provider",
+    cancel: "cancel",
+    name: "Name",
+    baseUrl: "Base URL",
+    format: "Format",
+    authHeader: "Auth header",
+    apiKeyStored: "API key (stored in OS keychain)",
+    apiKeyKeepCurrent: "API key (leave blank to keep current)",
+    clearStoredKey: "Clear stored key (deletes it from the keychain)",
+    models: "Models",
+    localName: "local name",
+    providerName: "provider name",
+    addModel: "+ Add model",
+    modelAliasHint:
+      '"Local name" is what you send; "provider name" is what the API expects. Leave provider name blank to use the local name.',
+    inputCost: "Input $/1K (optional)",
+    outputCost: "Output $/1K (optional)",
+    defaultForFormat: "Default for this format family (fallback when no model match)",
+    saveChanges: "Save changes",
+    fetchModels: "Fetch /v1/models",
+    configuredLimits: "Configured limits",
+    noLimitsYet: "No limits yet. Add one →",
+    metric: "Metric",
+    cap: "Cap",
+    period: "Period",
+    warningAt: "Warning at (%)",
+    scope: "Scope",
+    global: "Global",
+    action: "Action",
+    warnOnly: "Warn only",
+    blockRequests: "Block requests",
+    pauseProxy: "Pause proxy",
+    enabled: "Enabled",
+    oneTime: "One-time",
+    once: "One-time",
+    hourly: "Hourly",
+    daily: "Daily",
+    weekly: "Weekly",
+    monthly: "Monthly",
+    customSeconds: "Custom (seconds)…",
+    presets: "Presets",
+    howLimitsWork: "How limits work",
+    limitsHelp1:
+      "Money, tokens, requests, and time caps are supported.",
+    limitsHelp2:
+      "Periods reset automatically: hourly, daily, weekly, monthly, or a custom number of seconds.",
+    limitsHelp3: "Scope a limit to a provider or project, or keep it global.",
+    limitsHelp4:
+      "Block returns 429, pause pauses the proxy, warn only logs and colors the tray icon.",
+    howProjectTaggingWorks: "How project tagging works",
+    projectTaggingHelp:
+      "Each project has a throwaway label key. Set it as OPENAI_API_KEY (or x-api-key for Anthropic clients) in your coding agent, plus OPENAI_BASE_URL=http://localhost:3742. Token Guard tags that agent's requests with the project name and forwards using your real key from the keychain. No custom headers, no real keys in your agent config.",
+    projectsList: "Projects",
+    noProjectsYet:
+      "No projects yet. Without one, requests are tagged with no project.",
+    addProject: "Add project",
+    projectName: "Project name",
+    labelKey: "Label key (set this in your agent)",
+    regenerate: "Regenerate",
+    copied: "copied",
+    copy: "copy",
+    proxyEndpoint: "Proxy endpoint",
+    proxyEndpointHelp:
+      "Point your LLM client's base URL here. Token Guard routes by the model field to the matching provider. Loopback-only — not reachable from the network.",
+    example: "Example",
+    limitsAndSubscriptions: "Limits & subscriptions",
+    limitsAndSubscriptionsHelp:
+      "Token, money, request, and time caps are configured on the Limits tab. You can scope them globally, per provider, or per project, and choose warn / block / pause actions.",
+    port: "Port",
+    portHelp: "Applied on next launch — the listener is bound at startup.",
+    streamingAccuracy: "Streaming accuracy",
+    streamingAccuracyHelp:
+      "Inject stream_options.include_usage into OpenAI streaming requests so token counts are exact. This is the one documented request-side exception to “read-only”. Turn off for strict read-only (OpenAI stream counts may be 0).",
+    accurateStreaming: "Accurate OpenAI streaming counts (recommended)",
+    keychain: "Keychain",
+    keychainHelp:
+      "Diagnose API-key storage. Runs a write→read→new-entry-read probe against the OS keychain and reports which step fails.",
+    testKeychain: "Test keychain",
+    privacySecurity: "Privacy & security",
+    privacy1: "No cloud, no account, no telemetry. Only your provider calls leave the machine.",
+    privacy2: "API keys live in the OS keychain — never on disk, never in your code.",
+    privacy3: "The proxy binds 127.0.0.1 only. Unreachable from the network.",
+    privacy4:
+      "Read-only: responses are never modified. OpenAI streaming requests get a documented stream_options.include_usage injection (opt-out coming) so token counts are accurate.",
+    language: "Language",
+    languageHelp: "Choose the interface language.",
+    theme: "Theme",
+    light: "Light",
+    dark: "Dark",
+    system: "System",
+    select: "Select…",
+    save: "Save",
+    hours: "hours",
+    seconds: "seconds",
+    minutes: "minutes",
+    secondsShort: "s",
+    minutesShort: "m",
+    hoursShort: "h",
+    daysShort: "d",
+    disabled: "disabled",
+    warn: "warn",
+    block: "block",
+    pause: "pause",
+    usageOverTime: "Usage over time",
+    editLimit: "Edit limit",
+    addLimit: "Add limit",
+    actionWhenExceeded: "Action when exceeded",
+    limitNamePlaceholder: "Daily token cap",
+    customPeriodPositive: "Custom period must be > 0 seconds",
+    deleteLimitConfirm: 'Delete limit "{name}"?',
+    deleteProviderConfirm: 'Delete provider "{name}"? Its keychain entry will be removed.',
+    modelRefreshFailed: "Model refresh failed: ",
+    deleteProjectConfirm: 'Delete project "{name}"?',
+  },
+  "zh-CN": {
+    appTitle: "Token Guard",
+    appSubtitle: "本地 LLM 网关 — 所有数据留在你的机器上。",
+    today: "今日",
+    budget: "预算",
+    budgetUsed: "已用预算",
+    active: "运行中",
+    paused: "已暂停",
+    dashboard: "仪表盘",
+    limits: "限额",
+    providers: "服务商",
+    projects: "项目",
+    settings: "设置",
+    noDataToChart: "没有可绘制的数据",
+    activeLimits: "生效限额",
+    time: "时间",
+    exportCsv: "导出 CSV",
+    exportJson: "导出 JSON",
+    allTime: "全部",
+    days: "天",
+    requests: "请求",
+    tokens: "词元",
+    cost: "费用",
+    money: "金额",
+    provider: "服务商",
+    model: "模型",
+    prompt: "提示",
+    completion: "补全",
+    project: "项目",
+    noRequestsInRange: "该范围内没有请求。将你的 LLM 客户端指向",
+    andSendRequest: "并发送请求。",
+    configuredProviders: "已配置服务商",
+    noProvidersYet: "暂无服务商。添加一个 →",
+    default: "默认",
+    keyError: "密钥错误",
+    keySet: "已设置密钥",
+    noKey: "无密钥",
+    editProvider: "编辑服务商",
+    addProvider: "添加服务商",
+    cancel: "取消",
+    name: "名称",
+    baseUrl: "基础 URL",
+    format: "格式",
+    authHeader: "认证头",
+    apiKeyStored: "API 密钥（存储在系统钥匙串）",
+    apiKeyKeepCurrent: "API 密钥（留空则保持不变）",
+    clearStoredKey: "清除已存密钥（从钥匙串删除）",
+    models: "模型",
+    localName: "本地名称",
+    providerName: "服务商名称",
+    addModel: "+ 添加模型",
+    modelAliasHint:
+      "“本地名称”是你发送的名称；“服务商名称”是上游 API 期望的名称。留空则使用本地名称。",
+    inputCost: "输入 $/1K（可选）",
+    outputCost: "输出 $/1K（可选）",
+    defaultForFormat: "作为该格式族的默认（无模型匹配时回退）",
+    saveChanges: "保存更改",
+    fetchModels: "获取 /v1/models",
+    configuredLimits: "已配置限额",
+    noLimitsYet: "暂无限额。添加一个 →",
+    metric: "指标",
+    cap: "上限",
+    period: "周期",
+    warningAt: "警告阈值 (%)",
+    scope: "范围",
+    global: "全局",
+    action: "动作",
+    warnOnly: "仅警告",
+    blockRequests: "阻止请求",
+    pauseProxy: "暂停代理",
+    enabled: "启用",
+    oneTime: "一次性",
+    once: "一次性",
+    hourly: "每小时",
+    daily: "每天",
+    weekly: "每周",
+    monthly: "每月",
+    customSeconds: "自定义（秒）…",
+    presets: "预设",
+    howLimitsWork: "限额如何工作",
+    limitsHelp1: "支持金额、令牌、请求和时间上限。",
+    limitsHelp2: "周期自动重置：每小时、每天、每周、每月或自定义秒数。",
+    limitsHelp3: "可将限额设为全局、某个服务商或某个项目。",
+    limitsHelp4:
+      "阻止会返回 429，暂停会暂停代理，仅警告会记录日志并改变托盘图标颜色。",
+    howProjectTaggingWorks: "项目标签如何工作",
+    projectTaggingHelp:
+      "每个项目有一个一次性标签密钥。在你的编码代理中将其设为 OPENAI_API_KEY（Anthropic 客户端设为 x-api-key），并设置 OPENAI_BASE_URL=http://localhost:3742。Token Guard 会用项目名称标记该代理的请求，并使用钥匙串中的真实密钥转发。无需自定义请求头，代理配置中也不需要真实密钥。",
+    projectsList: "项目",
+    noProjectsYet: "暂无项目。没有项目时，请求将不带项目标签。",
+    addProject: "添加项目",
+    projectName: "项目名称",
+    labelKey: "标签密钥（在代理中设置）",
+    regenerate: "重新生成",
+    copied: "已复制",
+    copy: "复制",
+    proxyEndpoint: "代理端点",
+    proxyEndpointHelp:
+      "将你的 LLM 客户端基础 URL 指向这里。Token Guard 根据 model 字段路由到匹配的服务商。仅监听回环地址，无法从网络访问。",
+    example: "示例",
+    limitsAndSubscriptions: "限额与订阅",
+    limitsAndSubscriptionsHelp:
+      "金额、令牌、请求和时间上限在“限额”标签中配置。可设为全局、某个服务商或某个项目，并选择警告 / 阻止 / 暂停动作。",
+    port: "端口",
+    portHelp: "下次启动时生效 — 监听器在启动时绑定。",
+    streamingAccuracy: "流式精确度",
+    streamingAccuracyHelp:
+      "向 OpenAI 流式请求注入 stream_options.include_usage 以精确统计令牌数。这是“只读”原则唯一有文档记录的请求侧例外。关闭后将严格只读（OpenAI 流式计数可能为 0）。",
+    accurateStreaming: "精确 OpenAI 流式计数（推荐）",
+    keychain: "钥匙串",
+    keychainHelp:
+      "诊断 API 密钥存储。对系统钥匙串执行写入→读取→新条目读取探测，并报告哪一步失败。",
+    testKeychain: "测试钥匙串",
+    privacySecurity: "隐私与安全",
+    privacy1: "无云端、无账号、无遥测。只有你的服务商调用会离开本机。",
+    privacy2: "API 密钥存储在系统钥匙串中 — 从不上盘，从不出现在你的代码里。",
+    privacy3: "代理仅绑定 127.0.0.1，无法从网络访问。",
+    privacy4:
+      "只读：响应不会被修改。OpenAI 流式请求会有文档记录的 stream_options.include_usage 注入（即将支持关闭），以精确统计令牌数。",
+    language: "语言",
+    languageHelp: "选择界面语言。",
+    theme: "主题",
+    light: "浅色",
+    dark: "深色",
+    system: "系统",
+    select: "选择…",
+    save: "保存",
+    hours: "小时",
+    seconds: "秒",
+    minutes: "分钟",
+    secondsShort: "秒",
+    minutesShort: "分",
+    hoursShort: "小时",
+    daysShort: "天",
+    disabled: "已禁用",
+    warn: "警告",
+    block: "阻止",
+    pause: "暂停",
+    usageOverTime: "使用趋势",
+    editLimit: "编辑限额",
+    addLimit: "添加限额",
+    actionWhenExceeded: "超限时动作",
+    limitNamePlaceholder: "每日令牌上限",
+    customPeriodPositive: "自定义周期必须大于 0 秒",
+    deleteLimitConfirm: '删除限额 "{name}"？',
+    deleteProviderConfirm: '删除服务商 "{name}"？其钥匙串条目也将被移除。',
+    modelRefreshFailed: "模型刷新失败：",
+    deleteProjectConfirm: '删除项目 "{name}"？',
+  },
+} as const;
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Language>(() => getStoredLanguage());
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  const setLang = (next: Language) => {
+    storeLanguage(next);
+    setLangState(next);
+  };
+
+  const t = (key: keyof typeof translations.en) => translations[lang][key];
+
+  return (
+    <I18nContext.Provider value={{ lang, setLang, t }}>
+      {children}
+    </I18nContext.Provider>
+  );
+}
+
+export function useI18n() {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
+  return ctx;
+}

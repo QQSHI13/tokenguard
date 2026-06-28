@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../i18n";
 
 type Project = { id: number; name: string; label_key: string };
 
@@ -11,6 +12,7 @@ function genKey(): string {
 }
 
 export default function Projects({ onChange }: { onChange: () => void }) {
+  const { t } = useI18n();
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState("");
   const [labelKey, setLabelKey] = useState(genKey());
@@ -40,7 +42,7 @@ export default function Projects({ onChange }: { onChange: () => void }) {
   };
 
   const remove = async (id: number, name: string) => {
-    if (!confirm(`Delete project "${name}"?`)) return;
+    if (!confirm(t("deleteProjectConfirm").replace("{name}", name))) return;
     await invoke("delete_project", { id });
     refresh();
     onChange();
@@ -53,43 +55,38 @@ export default function Projects({ onChange }: { onChange: () => void }) {
   };
 
   return (
-    <div className="max-w-2xl space-y-5">
-      <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
-        <h2 className="text-sm font-semibold text-neutral-200">How project tagging works</h2>
+    <div className="max-w-2xl space-y-5 text-neutral-900 dark:text-neutral-100">
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("howProjectTaggingWorks")}</h2>
         <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-          Each project has a throwaway <em>label key</em>. Set it as{" "}
-          <code className="text-neutral-400">OPENAI_API_KEY</code> (or{" "}
-          <code className="text-neutral-400">x-api-key</code> for Anthropic clients) in your
-          coding agent, plus <code className="text-neutral-400">OPENAI_BASE_URL=http://localhost:3742</code>.
-          Token Guard tags that agent's requests with the project name and forwards using your
-          real key from the keychain. No custom headers, no real keys in your agent config.
+          {t("projectTaggingHelp")}
         </p>
       </section>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-200">Projects</h2>
+        <h2 className="mb-2 text-sm font-semibold">{t("projectsList")}</h2>
         <div className="space-y-2">
           {projects.length === 0 && (
             <p className="text-xs text-neutral-600">
-              No projects yet. Without one, requests are tagged with no project.
+              {t("noProjectsYet")}
             </p>
           )}
           {projects.map((p) => (
             <div
               key={p.id}
-              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2"
+              className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/40"
             >
               <div className="min-w-0">
-                <div className="text-sm font-medium text-neutral-200">{p.name}</div>
+                <div className="text-sm font-medium">{p.name}</div>
                 <div className="mt-0.5 flex items-center gap-2">
-                  <code className="truncate font-mono text-[11px] text-sky-300">
+                  <code className="truncate font-mono text-[11px] text-sky-700 dark:text-sky-300">
                     {p.label_key}
                   </code>
                   <button
                     onClick={() => copy(p)}
-                    className="text-[10px] text-neutral-500 hover:text-neutral-300"
+                    className="text-[10px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
                   >
-                    {copied === p.id ? "copied" : "copy"}
+                    {copied === p.id ? t("copied") : t("copy")}
                   </button>
                 </div>
               </div>
@@ -106,45 +103,48 @@ export default function Projects({ onChange }: { onChange: () => void }) {
 
       <form
         onSubmit={submit}
-        className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
+        className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40"
       >
-        <h2 className="text-sm font-semibold text-neutral-200">Add project</h2>
+        <h2 className="text-sm font-semibold">{t("addProject")}</h2>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-neutral-500">Project name</span>
+          <span className="mb-1 block text-[11px] text-neutral-500">{t("projectName")}</span>
           <input
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="cursor-app"
-            className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+            className={inputCls}
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-neutral-500">Label key (set this in your agent)</span>
+          <span className="mb-1 block text-[11px] text-neutral-500">{t("labelKey")}</span>
           <div className="flex gap-2">
             <input
               required
               value={labelKey}
               onChange={(e) => setLabelKey(e.target.value)}
-              className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 font-mono text-xs text-sky-300 focus:border-emerald-500 focus:outline-none"
+              className={`${inputCls} flex-1 font-mono text-sky-700 dark:text-sky-300`}
             />
             <button
               type="button"
               onClick={() => setLabelKey(genKey())}
-              className="rounded-md bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700"
+              className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
             >
-              Regenerate
+              {t("regenerate")}
             </button>
           </div>
         </label>
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
-          className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
+          className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300"
         >
-          Add project
+          {t("addProject")}
         </button>
       </form>
     </div>
   );
 }
+
+const inputCls =
+  "w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 focus:border-emerald-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200";

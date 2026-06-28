@@ -9,7 +9,7 @@ pub fn error_resp(code: axum::http::StatusCode, msg: &str) -> Response {
         .status(code)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .body(axum::body::Body::from(body.to_string()))
-        .unwrap()
+        .expect("static JSON body always builds")
 }
 
 use axum::response::Response;

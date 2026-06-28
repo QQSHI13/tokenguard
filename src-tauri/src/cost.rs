@@ -2,8 +2,14 @@
 
 /// Returns `(input_per_1k, output_per_1k)` in USD for known models.
 ///
-/// NOTE: LLM pricing changes frequently. These rates are best-effort snapshots
-/// for cost *estimation* only. Users can override per-provider in settings.
+/// # Pricing freshness
+///
+/// LLM providers change pricing often and without warning. The table below is a
+/// best-effort snapshot used for *estimation only*. If no override is set and
+/// the model is unknown, cost is reported as $0.00.
+///
+/// For accurate spend tracking, set per-provider input/output prices in
+/// Settings. Token Guard never phones home to fetch pricing.
 fn lookup(model: &str) -> Option<(f64, f64)> {
     let m = model.to_lowercase();
     if m.starts_with("gpt-4o-mini") {
@@ -51,4 +57,35 @@ pub fn estimate(
         _ => lookup(model).unwrap_or((0.0, 0.0)),
     };
     (prompt_tokens as f64 * i + completion_tokens as f64 * o) / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn estimate_known_model() {
+        // gpt-4o: $2.50 / 1K input, $10.00 / 1K output
+        let cost = estimate("gpt-4o", 1000, 500, None, None);
+        assert!((cost - 7.5).abs() < 0.001, "expected ~7.5, got {cost}");
+    }
+
+    #[test]
+    fn estimate_unknown_model_falls_back_to_zero() {
+        let cost = estimate("some-local-model", 1000, 500, None, None);
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn estimate_override_wins() {
+        let cost = estimate("gpt-4o", 1000, 500, Some(1.0), Some(2.0));
+        assert!((cost - 2.0).abs() < 0.001, "expected ~2.0, got {cost}");
+    }
+
+    #[test]
+    fn estimate_partial_override_uses_table() {
+        // Only one override supplied -> fall back to lookup table.
+        let cost = estimate("gpt-4o-mini", 1000, 500, Some(1.0), None);
+        assert!((cost - 0.45).abs() < 0.001, "expected ~0.45, got {cost}");
+    }
 }

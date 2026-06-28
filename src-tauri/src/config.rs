@@ -50,6 +50,15 @@ impl AuthScheme {
     }
 }
 
+/// Mapping between the model name the user sees/sends locally and the model
+/// name the remote provider expects. Both default to the same value when not
+/// explicitly configured.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelMapping {
+    pub local: String,
+    pub remote: String,
+}
+
 /// A configured LLM provider. The API key is *never* stored in this struct or
 /// the database — it lives only in the OS keychain, keyed by `name`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,7 +68,7 @@ pub struct Provider {
     pub base_url: String,
     pub format: ProviderFormat,
     pub auth: AuthScheme,
-    pub models: Vec<String>,
+    pub models: Vec<ModelMapping>,
     pub input_cost_per_1k: Option<f64>,
     pub output_cost_per_1k: Option<f64>,
     pub is_default: bool,
@@ -81,7 +90,7 @@ pub struct ProviderInput {
     pub format: ProviderFormat,
     pub auth: AuthScheme,
     pub api_key: String,
-    pub models: Vec<String>,
+    pub models: Vec<ModelMapping>,
     pub input_cost_per_1k: Option<f64>,
     pub output_cost_per_1k: Option<f64>,
     pub is_default: bool,
@@ -106,10 +115,162 @@ pub struct ProjectInput {
     pub label_key: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitMetric {
+    Money,
+    Tokens,
+    Requests,
+    TimeSec,
+}
+
+impl LimitMetric {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Money => "money",
+            Self::Tokens => "tokens",
+            Self::Requests => "requests",
+            Self::TimeSec => "time_sec",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "tokens" => Self::Tokens,
+            "requests" => Self::Requests,
+            "time_sec" => Self::TimeSec,
+            _ => Self::Money,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitPeriod {
+    Once,
+    Hourly,
+    Daily,
+    Weekly,
+    Monthly,
+    CustomSec(u64),
+}
+
+impl LimitPeriod {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Once => "once",
+            Self::Hourly => "hourly",
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+            Self::CustomSec(_) => "custom_sec",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "once" => Self::Once,
+            "hourly" => Self::Hourly,
+            "weekly" => Self::Weekly,
+            "monthly" => Self::Monthly,
+            "custom_sec" => Self::CustomSec(0),
+            _ => Self::Daily,
+        }
+    }
+    pub fn seconds(self) -> Option<u64> {
+        match self {
+            Self::Once => None,
+            Self::Hourly => Some(3600),
+            Self::Daily => Some(86_400),
+            Self::Weekly => Some(604_800),
+            // Approximate month as 30 days. Calendar-month boundaries would require
+            // a more complex cutoff query.
+            Self::Monthly => Some(2_592_000),
+            Self::CustomSec(s) => Some(s),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitScope {
+    Global,
+    Provider,
+    Project,
+}
+
+impl LimitScope {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Provider => "provider",
+            Self::Project => "project",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "provider" => Self::Provider,
+            "project" => Self::Project,
+            _ => Self::Global,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitAction {
+    Warn,
+    Block,
+    Pause,
+}
+
+impl LimitAction {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Warn => "warn",
+            Self::Block => "block",
+            Self::Pause => "pause",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "block" => Self::Block,
+            "pause" => Self::Pause,
+            _ => Self::Warn,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Limit {
+    pub id: i64,
+    pub name: String,
+    pub metric: LimitMetric,
+    pub period: LimitPeriod,
+    pub cap: f64,
+    pub warning_threshold: f64,
+    pub scope: LimitScope,
+    pub scope_id: Option<i64>,
+    pub action: LimitAction,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitInput {
+    pub name: String,
+    pub metric: LimitMetric,
+    pub period: LimitPeriod,
+    pub cap: f64,
+    pub warning_threshold: f64,
+    pub scope: LimitScope,
+    pub scope_id: Option<i64>,
+    pub action: LimitAction,
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub providers: Vec<Provider>,
     pub projects: Vec<Project>,
+    pub limits: Vec<Limit>,
     pub port: u16,
     pub budget: f64,
     pub accurate_streaming: bool,
@@ -120,6 +281,7 @@ impl Default for Config {
         Self {
             providers: Vec::new(),
             projects: Vec::new(),
+            limits: Vec::new(),
             port: 3742,
             budget: 0.0,
             accurate_streaming: true,

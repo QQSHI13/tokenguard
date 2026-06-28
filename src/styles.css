@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 html,
 body,
 #root {
@@ -8,4 +10,114 @@ body,
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Hide scrollbars globally while keeping scroll functionality. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent bounce/overscroll effects. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+#root {
+  overscroll-behavior: none;
+}
+
+/* Default light theme variables. */
+:root {
+  --bg-body: #ffffff;
+  --text-body: #171717;
+}
+
+.dark {
+  --bg-body: #0a0a0a;
+  --text-body: #e5e5e5;
+}
+
+body {
+  background-color: var(--bg-body);
+  color: var(--text-body);
+}
+
+/* Light-mode overrides for components that use the dark-tailwind palette. */
+:root:not(.dark) .bg-neutral-900\/40 {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+:root:not(.dark) .bg-neutral-900\/60 {
+  background-color: rgb(243, 244, 246);
+}
+:root:not(.dark) .bg-neutral-800 {
+  background-color: rgb(229, 231, 235);
+}
+:root:not(.dark) .bg-neutral-950 {
+  background-color: #ffffff;
+}
+:root:not(.dark) .border-neutral-800,
+:root:not(.dark) .border-neutral-700 {
+  border-color: rgb(229, 231, 235);
+}
+:root:not(.dark) .divide-neutral-800 > * + * {
+  border-color: rgb(229, 231, 235);
+}
+:root:not(.dark) .text-neutral-100,
+:root:not(.dark) .text-neutral-200 {
+  color: rgb(23, 23, 23);
+}
+:root:not(.dark) .text-neutral-300 {
+  color: rgb(55, 65, 81);
+}
+:root:not(.dark) .text-neutral-400 {
+  color: rgb(75, 85, 99);
+}
+:root:not(.dark) .text-neutral-500 {
+  color: rgb(107, 114, 128);
+}
+:root:not(.dark) .text-neutral-600 {
+  color: rgb(75, 85, 99);
+}
+:root:not(.dark) .text-emerald-300,
+:root:not(.dark) .text-emerald-400 {
+  color: rgb(4, 120, 87);
+}
+:root:not(.dark) .text-amber-300,
+:root:not(.dark) .text-amber-400 {
+  color: rgb(180, 83, 9);
+}
+:root:not(.dark) .text-red-300,
+:root:not(.dark) .text-red-400 {
+  color: rgb(185, 28, 28);
+}
+:root:not(.dark) .text-sky-300,
+:root:not(.dark) .text-sky-400 {
+  color: rgb(3, 105, 161);
+}
+:root:not(.dark) .text-violet-300,
+:root:not(.dark) .text-violet-400 {
+  color: rgb(109, 40, 217);
+}
+:root:not(.dark) .hover\:bg-neutral-700:hover,
+:root:not(.dark) .hover\:bg-neutral-800:hover {
+  background-color: rgb(209, 213, 219);
+}
+:root:not(.dark) .hover\:text-neutral-200:hover,
+:root:not(.dark) .hover\:text-neutral-300:hover {
+  color: rgb(31, 41, 55);
+}
+:root:not(.dark) .hover\:text-emerald-400:hover {
+  color: rgb(5, 150, 105);
+}
+:root:not(.dark) .hover\:text-sky-400:hover {
+  color: rgb(7, 145, 190);
+}
+:root:not(.dark) .hover\:text-red-400:hover {
+  color: rgb(220, 38, 38);
 }

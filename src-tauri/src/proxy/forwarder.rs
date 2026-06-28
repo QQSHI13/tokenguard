@@ -13,8 +13,10 @@ use crate::cost;
 use crate::proxy::sse;
 use crate::state::AppState;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn forward(
     state: Arc<AppState>,
+    start: std::time::Instant,
     path: String,
     body: Bytes,
     req_headers: HeaderMap,
@@ -25,7 +27,16 @@ pub async fn forward(
     let base = provider.base_url.trim_end_matches('/');
     let url = format!("{base}{path}");
     let client = state.client.clone();
-    let accurate = state.config.read().unwrap().accurate_streaming;
+    let st = state.clone();
+    let accurate = {
+        let Ok(cfg) = state.config.read() else {
+            return super::error_resp(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "configuration lock poisoned",
+            );
+        };
+        cfg.accurate_streaming
+    };
 
     let (final_body, model, _is_stream) = prepare_body(&body, provider.format, accurate);
 
@@ -58,7 +69,6 @@ pub async fn forward(
         // Stream bytes to the client unchanged; parse usage as they pass.
         let prov = provider.clone();
         let model_owned = model.clone();
-        let st = state.clone();
         let stream = async_stream::stream! {
             let mut s = resp.bytes_stream();
             let mut parser = sse::SseUsageParser::new(prov.format);
@@ -82,19 +92,22 @@ pub async fn forward(
                 prov.input_cost_per_1k,
                 prov.output_cost_per_1k,
             );
-            st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c, project_tag.clone())
+            let duration_ms = start.elapsed().as_millis() as u64;
+            st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c, duration_ms, project_tag.clone())
                 .await;
         };
 
-        let mut builder = Response::builder().status(status);
-        for (k, v) in headers.iter() {
-            if is_passthrough_header(k) {
-                builder = builder.header(k, v.clone());
-            }
-        }
-        builder.body(Body::from_stream(stream)).unwrap()
+        build_response(status, headers, Body::from_stream(stream))
     } else {
-        let bytes = resp.bytes().await.unwrap_or_default();
+        let bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                return super::error_resp(
+                    StatusCode::BAD_GATEWAY,
+                    &format!("upstream response body failed: {e}"),
+                )
+            }
+        };
         let usage = sse::extract_json(&bytes, provider.format);
         let c = cost::estimate(
             &model,
@@ -103,16 +116,35 @@ pub async fn forward(
             provider.input_cost_per_1k,
             provider.output_cost_per_1k,
         );
+        let duration_ms = start.elapsed().as_millis() as u64;
         state
-            .log_request(provider.clone(), model.clone(), usage.prompt, usage.completion, c, project_tag.clone())
+            .log_request(
+                provider.clone(),
+                model.clone(),
+                usage.prompt,
+                usage.completion,
+                c,
+                duration_ms,
+                project_tag.clone(),
+            )
             .await;
-        let mut builder = Response::builder().status(status);
-        for (k, v) in headers.iter() {
-            if is_passthrough_header(k) {
-                builder = builder.header(k, v.clone());
-            }
+        build_response(status, headers, Body::from(bytes))
+    }
+}
+
+fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -> Response {
+    let mut builder = Response::builder().status(status);
+    for (k, v) in headers.iter() {
+        if is_passthrough_header(k) {
+            builder = builder.header(k, v.clone());
         }
-        builder.body(Body::from(bytes)).unwrap()
+    }
+    match builder.body(body) {
+        Ok(r) => r,
+        Err(e) => super::error_resp(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("failed to build response: {e}"),
+        ),
     }
 }
 
@@ -131,7 +163,11 @@ fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes,
         .to_string();
     let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
 
-    if accurate && format == ProviderFormat::OpenAI && is_stream && v.get("stream_options").is_none() {
+    if accurate
+        && format == ProviderFormat::OpenAI
+        && is_stream
+        && v.get("stream_options").is_none()
+    {
         let mut v = v;
         v["stream_options"] = serde_json::json!({"include_usage": true});
         if let Ok(new_body) = serde_json::to_vec(&v) {
@@ -141,7 +177,11 @@ fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes,
     (body.clone(), model, is_stream)
 }
 
-fn apply_auth(req: reqwest::RequestBuilder, auth: AuthScheme, key: &str) -> reqwest::RequestBuilder {
+fn apply_auth(
+    req: reqwest::RequestBuilder,
+    auth: AuthScheme,
+    key: &str,
+) -> reqwest::RequestBuilder {
     match auth {
         AuthScheme::Bearer => req.bearer_auth(key),
         AuthScheme::XApiKey => req
