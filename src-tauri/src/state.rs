@@ -36,8 +36,10 @@ pub fn remote_model_name(provider: &Provider, local_name: &str) -> String {
         .map(|m| m.remote.clone())
         .unwrap_or_else(|| local_name.to_string())
 }
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 /// Pure scope-matching logic, extracted for unit testing.
 pub fn limit_scope_matches(
@@ -77,12 +79,16 @@ pub struct LimitViolation {
     pub used: f64,
 }
 
+const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
+
 pub struct AppState {
     pub db: DbPool,
     pub config: RwLock<Config>,
     pub paused: AtomicBool,
     pub client: reqwest::Client,
     pub app: AppHandle<Wry>,
+    /// Per-limit cooldown so warning notifications don't spam every request.
+    last_warning: Mutex<HashMap<i64, Instant>>,
 }
 
 impl AppState {
@@ -100,6 +106,7 @@ impl AppState {
             paused: AtomicBool::new(false),
             client,
             app,
+            last_warning: Mutex::new(HashMap::new()),
         })
     }
 
@@ -133,6 +140,8 @@ impl AppState {
     }
 
     /// Check enabled limits and return those currently exceeded.
+    /// Also emits a desktop warning notification when a limit crosses its
+    /// warning threshold (but hasn't hit the cap yet), throttled per limit.
     pub fn check_limits(
         &self,
         provider_id: i64,
@@ -150,6 +159,7 @@ impl AppState {
         };
 
         let mut violations = Vec::new();
+        let now = Instant::now();
         for limit in &cfg.limits {
             if !limit.enabled {
                 continue;
@@ -172,6 +182,29 @@ impl AppState {
                     limit: limit.clone(),
                     used,
                 });
+                continue;
+            }
+
+            // Warning threshold notification (throttled).
+            if limit.cap > 0.0
+                && limit.warning_threshold > 0.0
+                && used >= limit.warning_threshold * limit.cap
+            {
+                let should_notify = self
+                    .last_warning
+                    .lock()
+                    .map(|map| {
+                        map.get(&limit.id)
+                            .map(|last| now.duration_since(*last) >= WARNING_COOLDOWN)
+                            .unwrap_or(true)
+                    })
+                    .unwrap_or(true);
+                if should_notify {
+                    notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
+                    if let Ok(mut map) = self.last_warning.lock() {
+                        map.insert(limit.id, now);
+                    }
+                }
             }
         }
         violations

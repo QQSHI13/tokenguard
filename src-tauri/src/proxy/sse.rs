@@ -55,22 +55,32 @@ impl SseUsageParser {
     }
 
     fn extract(&mut self, v: &Value) {
-        let Some(u) = v.get("usage") else {
-            return;
-        };
-        if let Some(p) = u.get("prompt_tokens").and_then(|x| x.as_u64()) {
-            self.usage.prompt = p;
+        // Usage can live at the top level (OpenAI chat/Anthropic), nested under
+        // `response` (OpenAI Responses API streaming final event), or nested
+        // under `message` (Anthropic `message_start` event).
+        let usage = v
+            .get("usage")
+            .or_else(|| v.get("response").and_then(|r| r.get("usage")))
+            .or_else(|| v.get("message").and_then(|m| m.get("usage")));
+        if let Some(u) = usage {
+            extract_from_usage_object(u, &mut self.usage);
         }
-        if let Some(c) = u.get("completion_tokens").and_then(|x| x.as_u64()) {
-            self.usage.completion = c;
-        }
-        // Anthropic
-        if let Some(p) = u.get("input_tokens").and_then(|x| x.as_u64()) {
-            self.usage.prompt = p;
-        }
-        if let Some(c) = u.get("output_tokens").and_then(|x| x.as_u64()) {
-            self.usage.completion = c;
-        }
+    }
+}
+
+fn extract_from_usage_object(u: &Value, into: &mut Usage) {
+    if let Some(p) = u.get("prompt_tokens").and_then(|x| x.as_u64()) {
+        into.prompt = p;
+    }
+    if let Some(c) = u.get("completion_tokens").and_then(|x| x.as_u64()) {
+        into.completion = c;
+    }
+    // Anthropic / OpenAI Responses also use input/output naming.
+    if let Some(p) = u.get("input_tokens").and_then(|x| x.as_u64()) {
+        into.prompt = p;
+    }
+    if let Some(c) = u.get("output_tokens").and_then(|x| x.as_u64()) {
+        into.completion = c;
     }
 }
 
@@ -80,19 +90,11 @@ pub fn extract_json(body: &[u8], _format: ProviderFormat) -> Usage {
         return Usage::default();
     };
     let mut u = Usage::default();
-    if let Some(usage) = v.get("usage") {
-        if let Some(p) = usage.get("prompt_tokens").and_then(|x| x.as_u64()) {
-            u.prompt = p;
-        }
-        if let Some(c) = usage.get("completion_tokens").and_then(|x| x.as_u64()) {
-            u.completion = c;
-        }
-        if let Some(p) = usage.get("input_tokens").and_then(|x| x.as_u64()) {
-            u.prompt = p;
-        }
-        if let Some(c) = usage.get("output_tokens").and_then(|x| x.as_u64()) {
-            u.completion = c;
-        }
+    let usage = v
+        .get("usage")
+        .or_else(|| v.get("response").and_then(|r| r.get("usage")));
+    if let Some(usage) = usage {
+        extract_from_usage_object(usage, &mut u);
     }
     u
 }
@@ -155,5 +157,31 @@ mod tests {
         let usage = extract_json(b"not json", ProviderFormat::OpenAI);
         assert_eq!(usage.prompt, 0);
         assert_eq!(usage.completion, 0);
+    }
+
+    #[test]
+    fn sse_openai_responses_streaming_usage() {
+        let mut parser = SseUsageParser::new(ProviderFormat::OpenAI);
+        parser.feed(b"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":9}}}\n\n");
+        assert_eq!(parser.usage.prompt, 12);
+        assert_eq!(parser.usage.completion, 9);
+    }
+
+    #[test]
+    fn sse_anthropic_message_start_input_tokens() {
+        let mut parser = SseUsageParser::new(ProviderFormat::Anthropic);
+        parser.feed(
+            b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":17}}}\n\n",
+        );
+        assert_eq!(parser.usage.prompt, 17);
+    }
+
+    #[test]
+    fn sse_anthropic_message_delta_output_tokens() {
+        let mut parser = SseUsageParser::new(ProviderFormat::Anthropic);
+        parser.feed(
+            b"data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"output_tokens\":21}}\n\n",
+        );
+        assert_eq!(parser.usage.completion, 21);
     }
 }
