@@ -66,7 +66,7 @@ pub fn limit_scope_matches(
 }
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
 const ICON_GREEN: &[u8] = include_bytes!("../icons/icon_green.png");
 const ICON_YELLOW: &[u8] = include_bytes!("../icons/icon_yellow.png");
@@ -373,30 +373,42 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                if let Some(state) = tray.app_handle().try_state::<Arc<AppState>>() {
-                    state.inner().toggle_pause();
+            let app = tray.app_handle();
+            match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => {
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        state.inner().toggle_pause();
+                    }
                 }
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => show_tab(app, "dashboard"),
+                _ => {}
             }
         })
         .build(app)?;
     Ok(())
 }
 
+/// Show the main window and tell the UI which tab to activate.
+fn show_tab(app: &AppHandle<Wry>, tab: &str) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    let _ = app.emit("set_tab", tab);
+}
+
 /// Menu item click handler (registered in lib.rs).
 pub fn handle_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
-        "open" | "settings" => {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-        }
+        "open" => show_tab(app, "dashboard"),
+        "settings" => show_tab(app, "settings"),
         "pause" => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
                 state.inner().toggle_pause();

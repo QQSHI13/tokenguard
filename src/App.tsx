@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Providers from "./components/Providers";
 import Dashboard from "./components/Dashboard";
 import SettingsTab from "./components/Settings";
@@ -40,6 +41,23 @@ export default function App() {
 
   useEffect(() => {
     return initTheme();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<string>("set_tab", (event) => {
+      const t = event.payload as Tab;
+      if (
+        ["dashboard", "limits", "providers", "projects", "settings"].includes(t)
+      ) {
+        setTab(t);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, []);
 
   const togglePause = async () => {
