@@ -172,7 +172,11 @@ fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes,
         .to_string();
     let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
 
-    if accurate && format == ProviderFormat::OpenAI && is_stream {
+    // Only inject stream_options for chat/completions; the Responses API does
+    // not accept this option and reports usage in its own event shape.
+    let is_chat_or_completions =
+        v.get("messages").is_some() || v.get("prompt").is_some();
+    if accurate && format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
         let mut v = v;
         let mut opts = v
             .get("stream_options")

@@ -68,6 +68,7 @@ use tauri::{AppHandle, Manager, Wry};
 
 const ICON_GREEN: &[u8] = include_bytes!("../icons/icon_green.png");
 const ICON_YELLOW: &[u8] = include_bytes!("../icons/icon_yellow.png");
+const ICON_ORANGE: &[u8] = include_bytes!("../icons/icon_orange.png");
 const ICON_RED: &[u8] = include_bytes!("../icons/icon_red.png");
 
 #[derive(Debug, Clone)]
@@ -245,7 +246,9 @@ impl AppState {
         let (ratio, critical) = self.limit_status();
         let paused = self.paused.load(Ordering::Relaxed);
 
-        let icon_bytes = if ratio >= 1.0 {
+        let icon_bytes = if paused {
+            ICON_ORANGE
+        } else if ratio >= 1.0 {
             ICON_RED
         } else if ratio >= 0.8 {
             ICON_YELLOW
@@ -335,6 +338,7 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
         .icon(icon)
         .tooltip("Token Guard")
         .menu(&menu)
+        .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
