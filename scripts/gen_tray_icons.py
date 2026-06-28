@@ -56,7 +56,7 @@ def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
     make_icon((34, 153, 84, 255), ROOT / "icon_green.png")     # emerald-600
     make_icon((234, 179, 8, 255), ROOT / "icon_yellow.png")    # amber-500
-    make_icon((249, 115, 22, 255), ROOT / "icon_orange.png")   # orange-500
+    make_icon((255, 140, 0, 255), ROOT / "icon_orange.png")    # classic orange
     make_icon((239, 68, 68, 255), ROOT / "icon_red.png")       # red-500
 
 

@@ -147,12 +147,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     for v in &violations {
         match v.limit.action {
             LimitAction::Block => {
-                notifications::limit_blocked(
-                    &state.app,
-                    &v.limit.name,
-                    v.used,
-                    v.limit.cap,
-                );
+                notifications::limit_blocked(&state.app, &v.limit.name, v.used, v.limit.cap);
                 return super::error_resp(
                     StatusCode::TOO_MANY_REQUESTS,
                     &format!(
@@ -162,12 +157,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 );
             }
             LimitAction::Pause => {
-                notifications::limit_paused(
-                    &state.app,
-                    &v.limit.name,
-                    v.used,
-                    v.limit.cap,
-                );
+                notifications::limit_paused(&state.app, &v.limit.name, v.used, v.limit.cap);
                 state.toggle_pause();
                 return super::error_resp(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -175,12 +165,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 );
             }
             LimitAction::Warn => {
-                notifications::limit_warning(
-                    &state.app,
-                    &v.limit.name,
-                    v.used,
-                    v.limit.cap,
-                );
+                notifications::limit_warning(&state.app, &v.limit.name, v.used, v.limit.cap);
                 tracing::warn!(
                     "limit warning: {} ({:.0}/{:.0})",
                     v.limit.name,

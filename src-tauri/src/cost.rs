@@ -74,7 +74,14 @@ mod tests {
 
     #[test]
     fn estimate_unknown_model_falls_back_to_zero() {
-        let cost = estimate("some-local-model", "some-local-model", 1000, 500, None, None);
+        let cost = estimate(
+            "some-local-model",
+            "some-local-model",
+            1000,
+            500,
+            None,
+            None,
+        );
         assert_eq!(cost, 0.0);
     }
 

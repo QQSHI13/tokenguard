@@ -72,7 +72,9 @@ pub async fn forward(
         let prov = provider.clone();
         let model_owned = model.clone();
         let remote_model_owned = remote_model_name(&prov, &model_owned);
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>(32);
+        let (tx, rx) = tokio::sync::mpsc::channel::<
+            Result<Bytes, Box<dyn std::error::Error + Send + Sync>>,
+        >(32);
         tauri::async_runtime::spawn(async move {
             let mut s = resp.bytes_stream();
             let mut parser = sse::SseUsageParser::new(prov.format);
@@ -85,7 +87,9 @@ pub async fn forward(
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)).await;
+                        let _ = tx
+                            .send(Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>))
+                            .await;
                         break;
                     }
                 }
@@ -100,8 +104,16 @@ pub async fn forward(
                 prov.output_cost_per_1k,
             );
             let duration_ms = start.elapsed().as_millis() as u64;
-            st.log_request(prov.clone(), model_owned, usage.prompt, usage.completion, c, duration_ms, project_tag.clone())
-                .await;
+            st.log_request(
+                prov.clone(),
+                model_owned,
+                usage.prompt,
+                usage.completion,
+                c,
+                duration_ms,
+                project_tag.clone(),
+            )
+            .await;
         });
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
@@ -174,8 +186,7 @@ fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes,
 
     // Only inject stream_options for chat/completions; the Responses API does
     // not accept this option and reports usage in its own event shape.
-    let is_chat_or_completions =
-        v.get("messages").is_some() || v.get("prompt").is_some();
+    let is_chat_or_completions = v.get("messages").is_some() || v.get("prompt").is_some();
     if accurate && format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
         let mut v = v;
         let mut opts = v
