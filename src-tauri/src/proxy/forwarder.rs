@@ -28,17 +28,8 @@ pub async fn forward(
     let url = format!("{base}{path}");
     let client = state.client.clone();
     let st = state.clone();
-    let accurate = {
-        let Ok(cfg) = state.config.read() else {
-            return super::error_resp(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "configuration lock poisoned",
-            );
-        };
-        cfg.accurate_streaming
-    };
 
-    let (final_body, model, _is_stream) = prepare_body(&body, provider.format, accurate);
+    let (final_body, model, _is_stream) = prepare_body(&body, provider.format);
     let remote_model = remote_model_name(&provider, &model);
 
     let mut req = client.post(&url);
@@ -169,11 +160,11 @@ fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -
     }
 }
 
-/// Parse the request body to read `model` and, for OpenAI streaming requests,
-/// inject `stream_options: {"include_usage": true}` (the one documented,
-/// opt-out exception to "no request modification"). Bytes are otherwise
-/// forwarded unchanged.
-fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes, String, bool) {
+/// Parse the request body to read `model` and, for OpenAI streaming chat or
+/// completions requests, inject `stream_options: {"include_usage": true}`.
+/// Anthropic streaming already includes usage in its SSE events, so no extra
+/// option is injected there. Bytes are otherwise forwarded unchanged.
+fn prepare_body(body: &Bytes, format: ProviderFormat) -> (Bytes, String, bool) {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
         return (body.clone(), String::new(), false);
     };
@@ -184,10 +175,10 @@ fn prepare_body(body: &Bytes, format: ProviderFormat, accurate: bool) -> (Bytes,
         .to_string();
     let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
 
-    // Only inject stream_options for chat/completions; the Responses API does
-    // not accept this option and reports usage in its own event shape.
+    // Only inject stream_options for OpenAI chat/completions; the Responses API
+    // does not accept this option and reports usage in its own event shape.
     let is_chat_or_completions = v.get("messages").is_some() || v.get("prompt").is_some();
-    if accurate && format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
+    if format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
         let mut v = v;
         let mut opts = v
             .get("stream_options")

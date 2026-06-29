@@ -15,7 +15,6 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
-  accurate_streaming: boolean;
 };
 type Spend = { today: number; budget: number };
 

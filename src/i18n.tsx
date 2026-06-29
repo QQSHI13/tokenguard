@@ -147,10 +147,6 @@ export const translations = {
       "Token, money, request, and time caps are configured on the Limits tab. You can scope them globally, per provider, or per project, and choose warn / block / pause actions.",
     port: "Port",
     portHelp: "Applied on next launch — the listener is bound at startup.",
-    streamingAccuracy: "Streaming accuracy",
-    streamingAccuracyHelp:
-      "Inject stream_options.include_usage into OpenAI streaming requests so token counts are exact. This is the one documented request-side exception to “read-only”. Turn off for strict read-only (OpenAI stream counts may be 0).",
-    accurateStreaming: "Accurate OpenAI streaming counts (recommended)",
     keychain: "Keychain",
     keychainHelp:
       "Diagnose API-key storage. Runs a write→read→new-entry-read probe against the OS keychain and reports which step fails.",
@@ -296,10 +292,6 @@ export const translations = {
       "金额、令牌、请求和时间上限在“限额”标签中配置。可设为全局、某个服务商或某个项目，并选择警告 / 阻止 / 暂停动作。",
     port: "端口",
     portHelp: "下次启动时生效 — 监听器在启动时绑定。",
-    streamingAccuracy: "流式精确度",
-    streamingAccuracyHelp:
-      "向 OpenAI 流式请求注入 stream_options.include_usage 以精确统计令牌数。这是“只读”原则唯一有文档记录的请求侧例外。关闭后将严格只读（OpenAI 流式计数可能为 0）。",
-    accurateStreaming: "精确 OpenAI 流式计数（推荐）",
     keychain: "钥匙串",
     keychainHelp:
       "诊断 API 密钥存储。对系统钥匙串执行写入→读取→新条目读取探测，并报告哪一步失败。",

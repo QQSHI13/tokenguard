@@ -273,7 +273,6 @@ pub struct Config {
     pub limits: Vec<Limit>,
     pub port: u16,
     pub budget: f64,
-    pub accurate_streaming: bool,
 }
 
 impl Default for Config {
@@ -284,7 +283,6 @@ impl Default for Config {
             limits: Vec::new(),
             port: 3742,
             budget: 0.0,
-            accurate_streaming: true,
         }
     }
 }

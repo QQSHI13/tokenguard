@@ -8,7 +8,6 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
-  accurate_streaming: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -20,20 +19,10 @@ export default function SettingsTab({
 }) {
   const { t, lang, setLang } = useI18n();
   const [port, setPort] = useState(String(settings?.port ?? 3742));
-  const [accurate, setAccurate] = useState(settings?.accurate_streaming ?? true);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (settings) setAccurate(settings.accurate_streaming);
-  }, [settings]);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
-    onChanged();
-  };
-  const toggleAccurate = async (v: boolean) => {
-    setAccurate(v);
-    await invoke("set_accurate_streaming", { enabled: v });
     onChanged();
   };
   const runSelftest = async () => {
@@ -114,21 +103,6 @@ export default function SettingsTab({
             {t("save")}
           </button>
         </div>
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("streamingAccuracy")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("streamingAccuracyHelp")}
-        </p>
-        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300">
-          <input
-            type="checkbox"
-            checked={accurate}
-            onChange={(e) => toggleAccurate(e.target.checked)}
-          />
-          {t("accurateStreaming")}
-        </label>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

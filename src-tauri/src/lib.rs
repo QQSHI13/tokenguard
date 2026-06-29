@@ -47,7 +47,6 @@ pub fn run() {
             commands::get_logs,
             commands::write_text_file,
             commands::get_models,
-            commands::set_accurate_streaming,
             commands::export_logs,
             commands::refresh_models,
             commands::list_projects,

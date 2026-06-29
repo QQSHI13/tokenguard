@@ -536,16 +536,12 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let budget = get_setting(conn, "budget")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
-    let accurate_streaming = get_setting(conn, "accurate_streaming")
-        .map(|v| v == "true" || v.is_empty())
-        .unwrap_or(true);
     Ok(Config {
         providers,
         projects,
         limits,
         port,
         budget,
-        accurate_streaming,
     })
 }
 
@@ -678,7 +674,6 @@ mod tests {
         let cfg = load_config(&conn).unwrap();
         assert_eq!(cfg.port, 3742);
         assert_eq!(cfg.budget, 0.0);
-        assert!(cfg.accurate_streaming);
     }
 
     #[test]

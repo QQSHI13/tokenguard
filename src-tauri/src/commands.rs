@@ -17,7 +17,6 @@ pub struct SettingsDto {
     pub paused: bool,
     pub proxy_url: String,
     pub provider_count: usize,
-    pub accurate_streaming: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -200,7 +199,6 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: format!("http://localhost:{}", cfg.port),
         provider_count: cfg.providers.len(),
-        accurate_streaming: cfg.accurate_streaming,
     })
 }
 
@@ -281,30 +279,6 @@ pub fn get_models(state: State<'_, Arc<AppState>>) -> Result<Vec<ModelInfo>, Str
         }
     }
     Ok(out)
-}
-
-#[tauri::command]
-pub fn set_accurate_streaming(
-    state: State<'_, Arc<AppState>>,
-    enabled: bool,
-) -> Result<(), String> {
-    {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(
-            &conn,
-            "accurate_streaming",
-            if enabled { "true" } else { "false" },
-        )
-        .map_err(|e| e.to_string())?;
-        drop(conn);
-    }
-    state
-        .inner()
-        .config
-        .write()
-        .map_err(|e| e.to_string())?
-        .accurate_streaming = enabled;
-    Ok(())
 }
 
 /// Export logs as CSV or JSON text (frontend triggers a Blob download).
