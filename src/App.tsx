@@ -140,7 +140,7 @@ export default function App() {
             onChanged={() => setTick((t) => t + 1)}
           />
         )}
-        {tab === "docs" && <Docs />}
+        {tab === "docs" && <Docs onClose={() => setTab("dashboard")} />}
       </main>
     </div>
   );
