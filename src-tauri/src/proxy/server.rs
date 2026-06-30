@@ -94,6 +94,21 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             });
         let project_tag = client_key.as_ref().and_then(|k| state.project_for_key(k));
 
+        // If projects are configured, the client must use a known label key.
+        // This prevents accidental use of a real provider key as the client key
+        // and ensures every request is tagged for monitoring.
+        let has_projects = state
+            .config
+            .read()
+            .map(|cfg| !cfg.projects.is_empty())
+            .unwrap_or(false);
+        if has_projects && project_tag.is_none() {
+            return super::error_resp(
+                StatusCode::UNAUTHORIZED,
+                "invalid project key — use a label key configured in Token Guard",
+            );
+        }
+
         // 32 MiB ceiling — large prompts happen.
         let body_bytes = match axum::body::to_bytes(req.into_body(), 32 * 1024 * 1024).await {
             Ok(b) => b,
