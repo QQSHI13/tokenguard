@@ -109,12 +109,12 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="flex gap-1 border-b border-neutral-200 px-3 dark:border-neutral-800">
+      <nav className="flex gap-1 overflow-x-auto border-b border-neutral-200 px-3 dark:border-neutral-800">
         {tabs.map((tb) => (
           <button
             key={tb.id}
             onClick={() => setTab(tb.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
               tab === tb.id
                 ? "border-emerald-500 text-neutral-900 dark:text-neutral-100"
                 : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
