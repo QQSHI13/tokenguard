@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import UsageChart from "./UsageChart";
+import Onboarding from "./Onboarding";
 import { useI18n } from "../i18n";
 
 type Log = {
@@ -44,6 +45,8 @@ export default function Dashboard() {
   const [range, setRange] = useState<Range>("today");
   const [chartMetric, setChartMetric] = useState<"cost" | "tokens" | "requests">("cost");
   const [limitStatus, setLimitStatus] = useState<LimitStatus[]>([]);
+  const [providerCount, setProviderCount] = useState(-1);
+  const [projectCount, setProjectCount] = useState(-1);
 
   const refresh = useCallback(() => {
     invoke<Log[]>("get_logs", { limit: 5000 }).then(setLogs).catch(console.error);
@@ -52,6 +55,12 @@ export default function Dashboard() {
       .catch(console.error);
     invoke<LimitStatus[]>("get_limit_status")
       .then(setLimitStatus)
+      .catch(console.error);
+    invoke<{ provider: { id: number } }[]>("list_providers")
+      .then((list) => setProviderCount(list.length))
+      .catch(console.error);
+    invoke<{ id: number }[]>("list_projects")
+      .then((list) => setProjectCount(list.length))
       .catch(console.error);
   }, []);
 
@@ -119,6 +128,10 @@ export default function Dashboard() {
       JSON.stringify(shown, null, 2),
       "json"
     );
+
+  if (providerCount === 0 && projectCount === 0) {
+    return <Onboarding onComplete={refresh} />;
+  }
 
   return (
     <div className="space-y-4 text-neutral-900 dark:text-neutral-100">

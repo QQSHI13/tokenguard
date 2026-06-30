@@ -347,6 +347,7 @@ fn parse_models(s: &str) -> Vec<ModelMapping> {
             .map(|name| ModelMapping {
                 local: name.clone(),
                 remote: name,
+                cached_input_cost_per_1k: None,
             })
             .collect();
     }
@@ -627,6 +628,7 @@ mod tests {
             models: vec![ModelMapping {
                 local: "gpt-4o".to_string(),
                 remote: "gpt-4o".to_string(),
+                cached_input_cost_per_1k: None,
             }],
             input_cost_per_1k: Some(1.0),
             output_cost_per_1k: Some(2.0),

@@ -14,6 +14,7 @@ use serde_json::Value;
 pub struct Usage {
     pub prompt: u64,
     pub completion: u64,
+    pub cached: u64,
 }
 
 pub struct SseUsageParser {
@@ -82,6 +83,23 @@ fn extract_from_usage_object(u: &Value, into: &mut Usage) {
     if let Some(c) = u.get("output_tokens").and_then(|x| x.as_u64()) {
         into.completion = c;
     }
+
+    // Cached input tokens.
+    // OpenAI: usage.prompt_tokens_details.cached_tokens
+    // Anthropic: usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+    let mut cached = 0u64;
+    if let Some(details) = u.get("prompt_tokens_details") {
+        if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
+            cached += c;
+        }
+    }
+    if let Some(c) = u.get("cache_read_input_tokens").and_then(|x| x.as_u64()) {
+        cached += c;
+    }
+    if let Some(c) = u.get("cache_creation_input_tokens").and_then(|x| x.as_u64()) {
+        cached += c;
+    }
+    into.cached = cached;
 }
 
 /// Extract usage from a complete (non-streaming) JSON response body.
@@ -183,5 +201,26 @@ mod tests {
             b"data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"output_tokens\":21}}\n\n",
         );
         assert_eq!(parser.usage.completion, 21);
+    }
+
+    #[test]
+    fn sse_openai_cached_tokens() {
+        let mut parser = SseUsageParser::new(ProviderFormat::OpenAI);
+        parser.feed(
+            b"data: {\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":40}}}\n\n",
+        );
+        assert_eq!(parser.usage.prompt, 100);
+        assert_eq!(parser.usage.completion, 5);
+        assert_eq!(parser.usage.cached, 40);
+    }
+
+    #[test]
+    fn sse_anthropic_cached_tokens() {
+        let mut parser = SseUsageParser::new(ProviderFormat::Anthropic);
+        parser.feed(
+            b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":200,\"cache_read_input_tokens\":150,\"cache_creation_input_tokens\":25}}}\n\n",
+        );
+        assert_eq!(parser.usage.prompt, 200);
+        assert_eq!(parser.usage.cached, 175);
     }
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
 use crate::proxy::sse;
-use crate::state::{remote_model_name, AppState};
+use crate::state::{cached_input_cost_per_1k, remote_model_name, AppState};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn forward(
@@ -86,13 +86,16 @@ pub async fn forward(
                 }
             }
             let usage = parser.usage.clone();
+            let cached_cost = cached_input_cost_per_1k(&prov, &model_owned);
             let c = cost::estimate(
                 &model_owned,
                 &remote_model_owned,
                 usage.prompt,
                 usage.completion,
+                usage.cached,
                 prov.input_cost_per_1k,
                 prov.output_cost_per_1k,
+                cached_cost,
             );
             let duration_ms = start.elapsed().as_millis() as u64;
             st.log_request(
@@ -120,13 +123,16 @@ pub async fn forward(
             }
         };
         let usage = sse::extract_json(&bytes, provider.format);
+        let cached_cost = cached_input_cost_per_1k(&provider, &model);
         let c = cost::estimate(
             &model,
             &remote_model,
             usage.prompt,
             usage.completion,
+            usage.cached,
             provider.input_cost_per_1k,
             provider.output_cost_per_1k,
+            cached_cost,
         );
         let duration_ms = start.elapsed().as_millis() as u64;
         state

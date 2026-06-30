@@ -57,6 +57,8 @@ impl AuthScheme {
 pub struct ModelMapping {
     pub local: String,
     pub remote: String,
+    #[serde(default)]
+    pub cached_input_cost_per_1k: Option<f64>,
 }
 
 /// A configured LLM provider. The API key is *never* stored in this struct or

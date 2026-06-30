@@ -392,6 +392,7 @@ pub async fn refresh_models(
         .map(|name| crate::config::ModelMapping {
             local: name.clone(),
             remote: name,
+            cached_input_cost_per_1k: None,
         })
         .collect();
     {

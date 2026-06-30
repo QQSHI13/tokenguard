@@ -6,7 +6,11 @@ import { useI18n } from "../i18n";
 type ProviderFormat = "openai" | "anthropic";
 type AuthScheme = "bearer" | "x_api_key" | "api_key";
 
-type ModelMapping = { local: string; remote: string };
+type ModelMapping = {
+  local: string;
+  remote: string;
+  cached_input_cost_per_1k: number | null;
+};
 
 type Provider = {
   id: number;
@@ -47,10 +51,10 @@ const PRESETS: {
     format: "openai",
     auth: "bearer",
     models: [
-      { local: "gpt-4o", remote: "gpt-4o" },
-      { local: "gpt-4o-mini", remote: "gpt-4o-mini" },
-      { local: "gpt-4-turbo", remote: "gpt-4-turbo" },
-      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo" },
+      { local: "gpt-4o", remote: "gpt-4o", cached_input_cost_per_1k: null },
+      { local: "gpt-4o-mini", remote: "gpt-4o-mini", cached_input_cost_per_1k: null },
+      { local: "gpt-4-turbo", remote: "gpt-4-turbo", cached_input_cost_per_1k: null },
+      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo", cached_input_cost_per_1k: null },
     ],
   },
   {
@@ -59,9 +63,9 @@ const PRESETS: {
     format: "anthropic",
     auth: "x_api_key",
     models: [
-      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514" },
-      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022" },
-      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022" },
+      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514", cached_input_cost_per_1k: null },
+      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022", cached_input_cost_per_1k: null },
+      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022", cached_input_cost_per_1k: null },
     ],
   },
   {
@@ -375,7 +379,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <label className="mb-1 block text-[11px] text-neutral-500">{t("models")}</label>
           <div className="space-y-2">
             {form.models.map((m, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
                 <input
                   value={m.local}
                   onChange={(e) => {
@@ -396,6 +400,23 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   placeholder={t("providerName")}
                   className={inputCls}
                 />
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={m.cached_input_cost_per_1k ?? ""}
+                  onChange={(e) => {
+                    const next = [...form.models];
+                    next[i] = {
+                      ...next[i],
+                      cached_input_cost_per_1k: e.target.value
+                        ? Number(e.target.value)
+                        : null,
+                    };
+                    setForm({ ...form, models: next });
+                  }}
+                  placeholder={t("cachedInputCost")}
+                  className={inputCls}
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -410,7 +431,15 @@ export default function Providers({ onChange }: { onChange: () => void }) {
             ))}
             <button
               type="button"
-              onClick={() => setForm({ ...form, models: [...form.models, { local: "", remote: "" }] })}
+              onClick={() =>
+                setForm({
+                  ...form,
+                  models: [
+                    ...form.models,
+                    { local: "", remote: "", cached_input_cost_per_1k: null },
+                  ],
+                })
+              }
               className="w-full rounded-md border border-dashed border-neutral-400 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-600 hover:text-neutral-700 dark:border-neutral-600 dark:hover:border-neutral-400 dark:hover:text-neutral-300"
             >
               {t("addModel")}

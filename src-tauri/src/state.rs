@@ -39,6 +39,15 @@ pub fn remote_model_name(provider: &Provider, local_name: &str) -> String {
         .map(|m| m.remote.clone())
         .unwrap_or_else(|| local_name.to_string())
 }
+
+/// Find the cached-input cost for a given local model name on a provider.
+pub fn cached_input_cost_per_1k(provider: &Provider, local_name: &str) -> Option<f64> {
+    provider
+        .models
+        .iter()
+        .find(|m| m.local == local_name)
+        .and_then(|m| m.cached_input_cost_per_1k)
+}
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -524,6 +533,7 @@ mod tests {
                 .map(|s| crate::config::ModelMapping {
                     local: s.to_string(),
                     remote: s.to_string(),
+                    cached_input_cost_per_1k: None,
                 })
                 .collect(),
             input_cost_per_1k: None,
