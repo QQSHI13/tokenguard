@@ -24,3 +24,7 @@ Thumbs.db
 
 # typescript build info
 *.tsbuildinfo
+
+# private distribution docs
+docs/ARCHITECTURE.md
+docs/POSITIONING.md
