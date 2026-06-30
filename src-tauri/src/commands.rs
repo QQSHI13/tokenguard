@@ -470,6 +470,7 @@ pub fn add_limit(state: State<'_, Arc<AppState>>, input: LimitInput) -> Result<L
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
+    state.inner().refresh_tray();
     let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
     cfg.limits
         .iter()
