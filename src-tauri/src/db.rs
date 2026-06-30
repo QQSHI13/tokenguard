@@ -27,6 +27,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "logs_duration_ms",
         apply: migration_002_logs_duration_ms,
     },
+    Migration {
+        id: 3,
+        name: "provider_costs_into_models",
+        apply: migration_003_provider_costs_into_models,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -86,6 +91,48 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
         [],
     );
+    Ok(())
+}
+
+fn migration_003_provider_costs_into_models(conn: &Connection) -> rusqlite::Result<()> {
+    // Move per-provider input/output costs into each model mapping, then drop
+    // the provider-level columns.
+    let mut stmt = conn.prepare(
+        "SELECT id, input_cost, output_cost, models FROM providers",
+    )?;
+    let rows: Vec<(i64, Option<f64>, Option<f64>, String)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<f64>>(1)?,
+                row.get::<_, Option<f64>>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for (id, input_cost, output_cost, models_json) in rows {
+        let mut models: Vec<crate::config::ModelMapping> =
+            serde_json::from_str(&models_json).unwrap_or_default();
+        for m in &mut models {
+            if m.input_cost_per_1k.is_none() {
+                m.input_cost_per_1k = input_cost;
+            }
+            if m.output_cost_per_1k.is_none() {
+                m.output_cost_per_1k = output_cost;
+            }
+        }
+        let new_json = serde_json::to_string(&models).unwrap_or_default();
+        conn.execute(
+            "UPDATE providers SET models = ?1 WHERE id = ?2",
+            params![new_json, id],
+        )?;
+    }
+
+    // SQLite supports dropping columns only in newer versions; ignore failures.
+    let _ = conn.execute("ALTER TABLE providers DROP COLUMN input_cost", []);
+    let _ = conn.execute("ALTER TABLE providers DROP COLUMN output_cost", []);
     Ok(())
 }
 
@@ -273,15 +320,13 @@ pub fn update_provider(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE providers SET name = ?1, base_url = ?2, format = ?3, auth = ?4, \
-         models = ?5, input_cost = ?6, output_cost = ?7, is_default = ?8 WHERE id = ?9",
+         models = ?5, is_default = ?6 WHERE id = ?7",
         params![
             p.name,
             p.base_url,
             p.format.as_db_str(),
             p.auth.as_db_str(),
             serde_json::to_string(&p.models).unwrap_or_default(),
-            p.input_cost_per_1k,
-            p.output_cost_per_1k,
             p.is_default as i64,
             id,
         ],
@@ -307,13 +352,13 @@ pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
 
 pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, base_url, format, auth, models, input_cost, output_cost, is_default FROM providers ORDER BY id",
+        "SELECT id, name, base_url, format, auth, models, is_default FROM providers ORDER BY id",
     )?;
     let rows = stmt.query_map([], |row| {
         let format_str: String = row.get(3)?;
         let auth_str: String = row.get(4)?;
         let models_str: String = row.get(5)?;
-        let is_default: i64 = row.get(8)?;
+        let is_default: i64 = row.get(6)?;
         let models = parse_models(&models_str);
         Ok(Provider {
             id: row.get(0)?,
@@ -322,8 +367,6 @@ pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
             format: ProviderFormat::from_db_str(&format_str),
             auth: AuthScheme::from_db_str(&auth_str),
             models,
-            input_cost_per_1k: row.get(6)?,
-            output_cost_per_1k: row.get(7)?,
             is_default: is_default != 0,
         })
     })?;
@@ -347,6 +390,8 @@ fn parse_models(s: &str) -> Vec<ModelMapping> {
             .map(|name| ModelMapping {
                 local: name.clone(),
                 remote: name,
+                input_cost_per_1k: None,
+                output_cost_per_1k: None,
                 cached_input_cost_per_1k: None,
             })
             .collect();
@@ -359,16 +404,14 @@ pub fn insert_provider(
     p: &crate::config::ProviderInput,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO providers (name, base_url, format, auth, models, input_cost, output_cost, is_default) \
-         VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO providers (name, base_url, format, auth, models, is_default) \
+         VALUES (?,?,?,?,?,?)",
         params![
             p.name,
             p.base_url,
             p.format.as_db_str(),
             p.auth.as_db_str(),
             serde_json::to_string(&p.models).unwrap_or_default(),
-            p.input_cost_per_1k,
-            p.output_cost_per_1k,
             p.is_default as i64,
         ],
     )?;
@@ -628,10 +671,10 @@ mod tests {
             models: vec![ModelMapping {
                 local: "gpt-4o".to_string(),
                 remote: "gpt-4o".to_string(),
+                input_cost_per_1k: Some(1.0),
+                output_cost_per_1k: Some(2.0),
                 cached_input_cost_per_1k: None,
             }],
-            input_cost_per_1k: Some(1.0),
-            output_cost_per_1k: Some(2.0),
             is_default: true,
             clear_key: false,
         }

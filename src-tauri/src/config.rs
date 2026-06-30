@@ -58,6 +58,10 @@ pub struct ModelMapping {
     pub local: String,
     pub remote: String,
     #[serde(default)]
+    pub input_cost_per_1k: Option<f64>,
+    #[serde(default)]
+    pub output_cost_per_1k: Option<f64>,
+    #[serde(default)]
     pub cached_input_cost_per_1k: Option<f64>,
 }
 
@@ -71,8 +75,6 @@ pub struct Provider {
     pub format: ProviderFormat,
     pub auth: AuthScheme,
     pub models: Vec<ModelMapping>,
-    pub input_cost_per_1k: Option<f64>,
-    pub output_cost_per_1k: Option<f64>,
     pub is_default: bool,
 }
 
@@ -93,8 +95,6 @@ pub struct ProviderInput {
     pub auth: AuthScheme,
     pub api_key: String,
     pub models: Vec<ModelMapping>,
-    pub input_cost_per_1k: Option<f64>,
-    pub output_cost_per_1k: Option<f64>,
     pub is_default: bool,
     /// On update: delete the stored key (api_key is ignored then).
     #[serde(default)]

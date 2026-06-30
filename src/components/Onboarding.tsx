@@ -14,10 +14,10 @@ type ProviderInput = {
   models: {
     local: string;
     remote: string;
+    input_cost_per_1k: number | null;
+    output_cost_per_1k: number | null;
     cached_input_cost_per_1k: number | null;
   }[];
-  input_cost_per_1k: number | null;
-  output_cost_per_1k: number | null;
   is_default: boolean;
 };
 
@@ -48,9 +48,15 @@ export default function Onboarding({
     format: "openai",
     auth: "bearer",
     api_key: "",
-    models: [{ local: "gpt-4o-mini", remote: "gpt-4o-mini", cached_input_cost_per_1k: null }],
-    input_cost_per_1k: null,
-    output_cost_per_1k: null,
+    models: [
+      {
+        local: "gpt-4o-mini",
+        remote: "gpt-4o-mini",
+        input_cost_per_1k: null,
+        output_cost_per_1k: null,
+        cached_input_cost_per_1k: null,
+      },
+    ],
     is_default: true,
   });
 
@@ -226,13 +232,15 @@ export default function Onboarding({
                 <input
                   type="number"
                   step="0.0001"
-                  value={provider.input_cost_per_1k ?? ""}
-                  onChange={(e) =>
-                    setProvider({
-                      ...provider,
+                  value={provider.models[0].input_cost_per_1k ?? ""}
+                  onChange={(e) => {
+                    const next = [...provider.models];
+                    next[0] = {
+                      ...next[0],
                       input_cost_per_1k: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
+                    };
+                    setProvider({ ...provider, models: next });
+                  }}
                   className={inputCls}
                 />
               </div>
@@ -241,13 +249,15 @@ export default function Onboarding({
                 <input
                   type="number"
                   step="0.0001"
-                  value={provider.output_cost_per_1k ?? ""}
-                  onChange={(e) =>
-                    setProvider({
-                      ...provider,
+                  value={provider.models[0].output_cost_per_1k ?? ""}
+                  onChange={(e) => {
+                    const next = [...provider.models];
+                    next[0] = {
+                      ...next[0],
                       output_cost_per_1k: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
+                    };
+                    setProvider({ ...provider, models: next });
+                  }}
                   className={inputCls}
                 />
               </div>

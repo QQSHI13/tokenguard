@@ -13,7 +13,7 @@ use tracing::Instrument;
 use crate::config::{LimitAction, ProviderFormat};
 use crate::notifications;
 use crate::proxy::forwarder;
-use crate::state::{remote_model_name, AppState};
+use crate::state::{input_output_cost_per_1k, remote_model_name, AppState};
 
 /// Bind the loopback proxy and serve until the app exits.
 pub async fn serve(
@@ -174,12 +174,13 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
         // Money/token limits are enforced reactively for the current request because
         // we only know the true cost after the response. Request limits are enforced
         // atomically via in-memory counters.
+        let (input_cost, output_cost) = input_output_cost_per_1k(&provider, &model);
         let (estimated_cost, estimated_tokens) = crate::cost::estimate_request(
             &body_json,
             &model,
             &remote_model,
-            provider.input_cost_per_1k,
-            provider.output_cost_per_1k,
+            input_cost,
+            output_cost,
         );
         let duration_ms = start.elapsed().as_millis() as u64;
         let violations = state.check_limits(

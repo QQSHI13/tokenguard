@@ -9,6 +9,8 @@ type AuthScheme = "bearer" | "x_api_key" | "api_key";
 type ModelMapping = {
   local: string;
   remote: string;
+  input_cost_per_1k: number | null;
+  output_cost_per_1k: number | null;
   cached_input_cost_per_1k: number | null;
 };
 
@@ -19,8 +21,6 @@ type Provider = {
   format: ProviderFormat;
   auth: AuthScheme;
   models: ModelMapping[];
-  input_cost_per_1k: number | null;
-  output_cost_per_1k: number | null;
   is_default: boolean;
 };
 type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
@@ -32,8 +32,6 @@ type Input = {
   auth: AuthScheme;
   api_key: string;
   models: ModelMapping[];
-  input_cost_per_1k: number | null;
-  output_cost_per_1k: number | null;
   is_default: boolean;
   clear_key: boolean;
 };
@@ -51,10 +49,10 @@ const PRESETS: {
     format: "openai",
     auth: "bearer",
     models: [
-      { local: "gpt-4o", remote: "gpt-4o", cached_input_cost_per_1k: null },
-      { local: "gpt-4o-mini", remote: "gpt-4o-mini", cached_input_cost_per_1k: null },
-      { local: "gpt-4-turbo", remote: "gpt-4-turbo", cached_input_cost_per_1k: null },
-      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo", cached_input_cost_per_1k: null },
+      { local: "gpt-4o", remote: "gpt-4o", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "gpt-4o-mini", remote: "gpt-4o-mini", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "gpt-4-turbo", remote: "gpt-4-turbo", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
     ],
   },
   {
@@ -63,9 +61,9 @@ const PRESETS: {
     format: "anthropic",
     auth: "x_api_key",
     models: [
-      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514", cached_input_cost_per_1k: null },
-      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022", cached_input_cost_per_1k: null },
-      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022", cached_input_cost_per_1k: null },
+      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
     ],
   },
   {
@@ -85,8 +83,6 @@ function blank(): Input {
     auth: "bearer",
     api_key: "",
     models: [],
-    input_cost_per_1k: null,
-    output_cost_per_1k: null,
     is_default: true,
     clear_key: false,
   };
@@ -100,8 +96,6 @@ function fromProvider(p: Provider): Input {
     auth: p.auth,
     api_key: "", // never have the key client-side; blank = keep current
     models: [...p.models],
-    input_cost_per_1k: p.input_cost_per_1k,
-    output_cost_per_1k: p.output_cost_per_1k,
     is_default: p.is_default,
     clear_key: false,
   };
@@ -379,7 +373,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <label className="mb-1 block text-[11px] text-neutral-500">{t("models")}</label>
           <div className="space-y-2">
             {form.models.map((m, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2">
                 <input
                   value={m.local}
                   onChange={(e) => {
@@ -398,6 +392,36 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                     setForm({ ...form, models: next });
                   }}
                   placeholder={t("providerName")}
+                  className={inputCls}
+                />
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={m.input_cost_per_1k ?? ""}
+                  onChange={(e) => {
+                    const next = [...form.models];
+                    next[i] = {
+                      ...next[i],
+                      input_cost_per_1k: e.target.value ? Number(e.target.value) : null,
+                    };
+                    setForm({ ...form, models: next });
+                  }}
+                  placeholder={t("inputCost")}
+                  className={inputCls}
+                />
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={m.output_cost_per_1k ?? ""}
+                  onChange={(e) => {
+                    const next = [...form.models];
+                    next[i] = {
+                      ...next[i],
+                      output_cost_per_1k: e.target.value ? Number(e.target.value) : null,
+                    };
+                    setForm({ ...form, models: next });
+                  }}
+                  placeholder={t("outputCost")}
                   className={inputCls}
                 />
                 <input
@@ -436,7 +460,13 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   ...form,
                   models: [
                     ...form.models,
-                    { local: "", remote: "", cached_input_cost_per_1k: null },
+                    {
+                      local: "",
+                      remote: "",
+                      input_cost_per_1k: null,
+                      output_cost_per_1k: null,
+                      cached_input_cost_per_1k: null,
+                    },
                   ],
                 })
               }
@@ -448,36 +478,6 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <p className="mt-1 text-[10px] text-neutral-500">
             {t("modelAliasHint")}
           </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={t("inputCost")}>
-            <input
-              type="number"
-              step="0.0001"
-              value={form.input_cost_per_1k ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  input_cost_per_1k: e.target.value ? Number(e.target.value) : null,
-                })
-              }
-              className={inputCls}
-            />
-          </Field>
-          <Field label={t("outputCost")}>
-            <input
-              type="number"
-              step="0.0001"
-              value={form.output_cost_per_1k ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  output_cost_per_1k: e.target.value ? Number(e.target.value) : null,
-                })
-              }
-              className={inputCls}
-            />
-          </Field>
         </div>
         <label className="flex items-center gap-2 text-xs text-neutral-400">
           <input

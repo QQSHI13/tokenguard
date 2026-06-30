@@ -48,6 +48,17 @@ pub fn cached_input_cost_per_1k(provider: &Provider, local_name: &str) -> Option
         .find(|m| m.local == local_name)
         .and_then(|m| m.cached_input_cost_per_1k)
 }
+
+/// Find the input/output costs for a given local model name on a provider.
+pub fn input_output_cost_per_1k(provider: &Provider, local_name: &str) -> (Option<f64>, Option<f64>) {
+    provider
+        .models
+        .iter()
+        .find(|m| m.local == local_name)
+        .map(|m| (m.input_cost_per_1k, m.output_cost_per_1k))
+        .unwrap_or((None, None))
+}
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -533,11 +544,11 @@ mod tests {
                 .map(|s| crate::config::ModelMapping {
                     local: s.to_string(),
                     remote: s.to_string(),
+                    input_cost_per_1k: None,
+                    output_cost_per_1k: None,
                     cached_input_cost_per_1k: None,
                 })
                 .collect(),
-            input_cost_per_1k: None,
-            output_cost_per_1k: None,
             is_default,
         }
     }
