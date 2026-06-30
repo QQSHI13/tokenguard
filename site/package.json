@@ -1,0 +1,9 @@
+{
+  "name": "tokenguard-site",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "rm -rf dist && mkdir -p dist && cp *.html dist/",
+    "dev": "npx serve ."
+  }
+}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Token Guard</title>
+  <meta name="description" content="Token Guard privacy policy: no cloud, no account, no telemetry.">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white text-slate-900">
+  <header class="border-b border-slate-100">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <a href="/" class="flex items-center gap-2 text-lg font-bold">
+        <span>🛡️</span>
+        <span>Token Guard</span>
+      </a>
+      <a href="/" class="text-sm font-medium text-slate-600 hover:text-slate-900">← Back</a>
+    </div>
+  </header>
+
+  <main class="px-6 py-16">
+    <article class="prose prose-slate mx-auto max-w-3xl">
+      <h1 class="text-3xl font-bold">Privacy Policy</h1>
+      <p class="text-sm text-slate-500">Effective date: 2026-06-30</p>
+
+      <p class="mt-6">
+        <strong>Token Guard</strong> is a local desktop application. This policy explains what data we do and do not handle.
+      </p>
+
+      <h2 class="mt-8 text-xl font-bold">What Token Guard does</h2>
+      <p>
+        Token Guard runs a small HTTP proxy on your own computer (<code>127.0.0.1</code>) and logs metadata about the LLM API calls you make — such as the provider name, model name, token counts, estimated cost, and timestamp — to a local SQLite database on your device.
+      </p>
+
+      <h2 class="mt-8 text-xl font-bold">What we do not collect</h2>
+      <ul class="list-disc pl-5">
+        <li><strong>No account.</strong> You do not create a Token Guard account.</li>
+        <li><strong>No cloud service.</strong> There is no Token Guard server that receives your data.</li>
+        <li><strong>No telemetry or analytics.</strong> We do not track usage, crashes, or performance.</li>
+        <li><strong>No prompts or completions.</strong> The content of your requests and responses is streamed through the proxy and is never written to disk or transmitted to us.</li>
+        <li><strong>No API keys in the app.</strong> Your provider API keys are stored in the OS-native secret store, not in Token Guard files or our code.</li>
+      </ul>
+
+      <h2 class="mt-8 text-xl font-bold">Data that stays on your device</h2>
+      <p>
+        All information Token Guard records is stored locally in your user profile: the app data directory (SQLite database and settings) and the OS keychain (provider API keys). You can delete this data at any time by using the in-app delete option or by removing the app data directory.
+      </p>
+
+      <h2 class="mt-8 text-xl font-bold">Network connections</h2>
+      <p>Token Guard makes only the network connections you explicitly configure:</p>
+      <ol class="list-decimal pl-5">
+        <li><strong>Your chosen LLM provider</strong> — the proxy forwards your requests to the provider endpoints you add.</li>
+        <li><strong>Paid edition updater</strong> — if you use a paid direct-download build, the app may check the update endpoint listed in your private runtime config. No personal data is sent.</li>
+        <li><strong>Microsoft Store license check</strong> — Store-installed builds may contact Microsoft’s licensing service as part of normal Store operation.</li>
+      </ol>
+
+      <h2 class="mt-8 text-xl font-bold">Contact</h2>
+      <p>
+        If you have questions about this policy, open an issue in the GitHub repository or contact the maintainer listed in the repository profile.
+      </p>
+    </article>
+  </main>
+
+  <footer class="border-t border-slate-100 px-6 py-10">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 md:flex-row">
+      <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
+      <a href="/" class="hover:text-slate-900">Home</a>
+    </div>
+  </footer>
+</body>
+</html>

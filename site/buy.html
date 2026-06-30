@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buy Token Guard — Paid Edition</title>
+  <meta name="description" content="Pay what you want for the paid edition of Token Guard: direct downloads, automatic updates, and no banners.">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white text-slate-900">
+  <header class="border-b border-slate-100">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <a href="/" class="flex items-center gap-2 text-lg font-bold">
+        <span>🛡️</span>
+        <span>Token Guard</span>
+      </a>
+      <a href="/" class="text-sm font-medium text-slate-600 hover:text-slate-900">← Back</a>
+    </div>
+  </header>
+
+  <main class="px-6 py-20">
+    <div class="mx-auto max-w-3xl text-center">
+      <h1 class="text-4xl font-extrabold tracking-tight sm:text-5xl">
+        Get the paid edition
+      </h1>
+      <p class="mt-6 text-lg text-slate-600">
+        Pay what you want. The paid edition removes banners, gives you direct downloads,
+        and enables automatic updates.
+      </p>
+
+      <div class="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-left">
+        <h2 class="text-xl font-bold">What you get</h2>
+        <ul class="mt-4 space-y-3 text-slate-700">
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Banner-free experience</li>
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Direct downloads from Cloudflare R2</li>
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Automatic in-app updates</li>
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Same privacy guarantees as the free edition</li>
+        </ul>
+
+        <div class="mt-8">
+          <a id="checkout" href="#" class="block w-full rounded-lg bg-emerald-600 px-6 py-3 text-center text-lg font-semibold text-white hover:bg-emerald-700">
+            Buy now
+          </a>
+          <p class="mt-3 text-center text-sm text-slate-500">
+            Checkout is handled by our payment provider. You will receive a download link after purchase.
+          </p>
+        </div>
+      </div>
+
+      <p class="mt-10 text-sm text-slate-500">
+        Want to try first? <a href="https://github.com/QQSHI13/tokenguard/releases" class="text-emerald-600 hover:underline">Download the free edition</a>.
+      </p>
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-100 px-6 py-10">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 md:flex-row">
+      <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
+      <a href="/privacy.html" class="hover:text-slate-900">Privacy</a>
+    </div>
+  </footer>
+
+  <script>
+    // Replace the href below with your Stripe / Lemon Squeezy checkout URL.
+    document.getElementById('checkout').href = 'https://tokenguard.pages.dev/checkout';
+  </script>
+</body>
+</html>
