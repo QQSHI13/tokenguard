@@ -1,7 +1,10 @@
 //! Global application state shared between the Tauri shell and the proxy.
 
-use crate::config::{Config, Limit, LimitMetric, LimitScope, Project, Provider, ProviderFormat};
+use crate::config::{
+    Config, Limit, LimitAction, LimitMetric, LimitScope, Project, Provider, ProviderFormat,
+};
 use crate::db::{self, DbPool};
+use crate::limits::LimitCounters;
 use crate::notifications;
 
 /// Pure routing logic, extracted for unit testing.
@@ -37,9 +40,10 @@ pub fn remote_model_name(provider: &Provider, local_name: &str) -> String {
         .unwrap_or_else(|| local_name.to_string())
 }
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
 /// Pure scope-matching logic, extracted for unit testing.
 pub fn limit_scope_matches(
@@ -89,6 +93,14 @@ pub struct AppState {
     pub app: AppHandle<Wry>,
     /// Per-limit cooldown so warning notifications don't spam every request.
     last_warning: Mutex<HashMap<i64, Instant>>,
+    /// Per-limit cooldown so block/pause notifications don't spam.
+    last_block_notify: Mutex<HashMap<i64, Instant>>,
+    /// Signal the proxy server to stop accepting new connections on shutdown.
+    shutdown_tx: watch::Sender<()>,
+    /// In-flight request counters for atomic request-limit enforcement.
+    limit_counters: LimitCounters,
+    /// Monotonic request IDs for tracing.
+    next_request_id: AtomicU64,
 }
 
 impl AppState {
@@ -98,8 +110,13 @@ impl AppState {
         app: AppHandle<Wry>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(600))
+            .pool_max_idle_per_host(8)
+            .user_agent("TokenGuard/0.1.0")
             .build()
             .map_err(|e| format!("reqwest client build failed: {e}"))?;
+        let (shutdown_tx, _shutdown_rx) = watch::channel(());
         Ok(Self {
             db: pool,
             config: RwLock::new(config),
@@ -107,7 +124,45 @@ impl AppState {
             client,
             app,
             last_warning: Mutex::new(HashMap::new()),
+            last_block_notify: Mutex::new(HashMap::new()),
+            shutdown_tx,
+            limit_counters: LimitCounters::new(),
+            next_request_id: AtomicU64::new(1),
         })
+    }
+
+    /// Signal the proxy server to shut down gracefully.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(());
+    }
+
+    /// Subscribe to the shutdown signal for the proxy server.
+    pub fn shutdown_rx(&self) -> watch::Receiver<()> {
+        self.shutdown_tx.subscribe()
+    }
+
+    /// Allocate the next request ID for tracing.
+    pub fn next_request_id(&self) -> u64 {
+        self.next_request_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Check whether a block/pause notification for this limit is still in the
+    /// cooldown window. If not, record the current time and return true.
+    pub fn should_notify_block(&self, limit_id: i64) -> bool {
+        let now = Instant::now();
+        self.last_block_notify
+            .lock()
+            .map(|mut map| {
+                let notify = map
+                    .get(&limit_id)
+                    .map(|last| now.duration_since(*last) >= WARNING_COOLDOWN)
+                    .unwrap_or(true);
+                if notify {
+                    map.insert(limit_id, now);
+                }
+                notify
+            })
+            .unwrap_or(true)
     }
 
     /// Route a request to a provider by (format family, model name).
@@ -142,6 +197,10 @@ impl AppState {
     /// Check enabled limits and return those currently exceeded.
     /// Also emits a desktop warning notification when a limit crosses its
     /// warning threshold (but hasn't hit the cap yet), throttled per limit.
+    ///
+    /// Request limits are enforced atomically via in-memory counters so a burst
+    /// of concurrent requests cannot overshoot the cap between the check and
+    /// the log insert.
     pub fn check_limits(
         &self,
         provider_id: i64,
@@ -168,16 +227,32 @@ impl AppState {
                 continue;
             }
 
-            let used = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
-            // Add the current in-flight request's contribution.
-            let current = match limit.metric {
-                LimitMetric::Money => cost,
-                LimitMetric::Tokens => tokens as f64,
-                LimitMetric::Requests => 1.0,
-                LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
+            let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
+
+            // For request limits, reserve one in the atomic counter first so
+            // concurrent requests see each other. If the request is going to be
+            // blocked/paused, the caller must call release_request_limit() later.
+            let (current, used) = if limit.metric == LimitMetric::Requests {
+                let reserved = self.limit_counters.increment(limit, 1.0);
+                (1.0, persisted + reserved - 1.0)
+            } else {
+                let current = match limit.metric {
+                    LimitMetric::Money => cost,
+                    LimitMetric::Tokens => tokens as f64,
+                    LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
+                    LimitMetric::Requests => unreachable!(),
+                };
+                (current, persisted)
             };
+
             let total = used + current;
             if limit.cap > 0.0 && total >= limit.cap {
+                // Blocked/paused requests don't count; the caller will release.
+                if limit.metric == LimitMetric::Requests
+                    && (limit.action == LimitAction::Block || limit.action == LimitAction::Pause)
+                {
+                    self.limit_counters.increment(limit, -1.0);
+                }
                 violations.push(LimitViolation {
                     limit: limit.clone(),
                     used,
@@ -208,6 +283,14 @@ impl AppState {
             }
         }
         violations
+    }
+
+    /// Release a reserved request-limit unit when a request is blocked/paused
+    /// before it reaches the upstream provider.
+    pub fn release_request_limit(&self, limit: &Limit) {
+        if limit.metric == LimitMetric::Requests {
+            self.limit_counters.increment(limit, -1.0);
+        }
     }
 
     /// Compute the most critical active limit status for the tray.

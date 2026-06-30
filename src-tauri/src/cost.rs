@@ -61,6 +61,38 @@ pub fn estimate(
     (prompt_tokens as f64 * i + completion_tokens as f64 * o) / 1000.0
 }
 
+/// Pre-flight cost/token estimate from the request body.
+///
+/// We can't tokenize the prompt locally, so we only use the declared maximum
+/// output tokens (`max_tokens`, `max_completion_tokens`, `max_output_tokens`)
+/// multiplied by the provider's output price. This gives a safe upper bound for
+/// money/token limit checks. Returns `(estimated_cost, estimated_tokens)`.
+pub fn estimate_request(
+    body: &serde_json::Value,
+    model_local: &str,
+    model_remote: &str,
+    input_per_1k: Option<f64>,
+    output_per_1k: Option<f64>,
+) -> (f64, u64) {
+    let max_completion = body
+        .get("max_tokens")
+        .or_else(|| body.get("max_completion_tokens"))
+        .or_else(|| body.get("max_output_tokens"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let n = body.get("n").and_then(|v| v.as_u64()).unwrap_or(1).max(1);
+    let total_completion = max_completion * n;
+    let cost = estimate(
+        model_local,
+        model_remote,
+        0,
+        total_completion,
+        input_per_1k,
+        output_per_1k,
+    );
+    (cost, total_completion)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

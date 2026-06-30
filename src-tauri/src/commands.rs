@@ -62,11 +62,27 @@ pub fn list_providers(state: State<'_, Arc<AppState>>) -> Result<Vec<ProviderDto
         .collect())
 }
 
+fn validate_provider_input(input: &ProviderInput) -> Result<(), String> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err("provider name is required".into());
+    }
+    let base = input.base_url.trim();
+    if base.is_empty() {
+        return Err("provider base URL is required".into());
+    }
+    if reqwest::Url::parse(base).is_err() {
+        return Err("provider base URL is not valid".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn add_provider(
     state: State<'_, Arc<AppState>>,
     input: ProviderInput,
 ) -> Result<ProviderDto, String> {
+    validate_provider_input(&input)?;
     if !input.api_key.is_empty() {
         secrets::set(&input.name, &input.api_key)?;
     }
@@ -136,6 +152,7 @@ pub fn update_provider(
     id: i64,
     input: ProviderInput,
 ) -> Result<ProviderDto, String> {
+    validate_provider_input(&input)?;
     // current name, to handle rename + key move
     let old_name = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;

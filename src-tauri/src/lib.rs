@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod cost;
 mod db;
+mod limits;
 mod notifications;
 mod proxy;
 mod secrets;
@@ -18,6 +19,9 @@ use tauri::{AppHandle, Manager, Wry};
 /// `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` on Windows.
 /// Closing windows first and sleeping a little lets the renderer clean up.
 pub async fn graceful_exit(app: &AppHandle<Wry>) {
+    if let Some(state) = app.try_state::<Arc<crate::state::AppState>>() {
+        state.shutdown();
+    }
     for (_label, window) in app.webview_windows() {
         let _ = window.close();
     }
@@ -83,8 +87,9 @@ pub fn run() {
 
             // Spawn the loopback proxy in the Tauri tokio runtime.
             let s = state.clone();
+            let shutdown_rx = state.shutdown_rx();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = proxy::server::serve(s, port).await {
+                if let Err(e) = proxy::server::serve(s, port, shutdown_rx).await {
                     tracing::error!("proxy server error: {e}");
                 }
             });

@@ -10,57 +10,78 @@ use rusqlite::{params, Connection};
 
 pub type DbPool = Pool<SqliteConnectionManager>;
 
-const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  model TEXT NOT NULL,
-  prompt_tokens INTEGER NOT NULL,
-  completion_tokens INTEGER NOT NULL,
-  cost REAL NOT NULL,
-  duration_ms INTEGER NOT NULL DEFAULT 0,
-  project_tag TEXT
-);
-CREATE TABLE IF NOT EXISTS providers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  base_url TEXT NOT NULL,
-  format TEXT NOT NULL,
-  auth TEXT NOT NULL,
-  models TEXT NOT NULL DEFAULT '[]',
-  input_cost REAL,
-  output_cost REAL,
-  is_default INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  label_key TEXT NOT NULL UNIQUE
-);
-CREATE TABLE IF NOT EXISTS limits (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  metric TEXT NOT NULL,
-  period TEXT NOT NULL,
-  period_value INTEGER NOT NULL DEFAULT 0,
-  cap REAL NOT NULL,
-  warning_threshold REAL NOT NULL DEFAULT 0.8,
-  scope TEXT NOT NULL DEFAULT 'global',
-  scope_id INTEGER,
-  action TEXT NOT NULL DEFAULT 'warn',
-  enabled INTEGER NOT NULL DEFAULT 1
-);
-CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
-CREATE INDEX IF NOT EXISTS idx_logs_provider ON logs(provider);
-CREATE INDEX IF NOT EXISTS idx_logs_project ON logs(project_tag);
-";
+struct Migration {
+    id: i64,
+    name: &'static str,
+    apply: fn(&Connection) -> rusqlite::Result<()>,
+}
 
-fn setup_connection(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-    conn.execute_batch(SCHEMA)?;
-    // Migration: older DBs created before duration_ms existed.
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        id: 1,
+        name: "initial_schema",
+        apply: migration_001_initial_schema,
+    },
+    Migration {
+        id: 2,
+        name: "logs_duration_ms",
+        apply: migration_002_logs_duration_ms,
+    },
+];
+
+fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          prompt_tokens INTEGER NOT NULL,
+          completion_tokens INTEGER NOT NULL,
+          cost REAL NOT NULL,
+          duration_ms INTEGER NOT NULL DEFAULT 0,
+          project_tag TEXT
+        );
+        CREATE TABLE IF NOT EXISTS providers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          base_url TEXT NOT NULL,
+          format TEXT NOT NULL,
+          auth TEXT NOT NULL,
+          models TEXT NOT NULL DEFAULT '[]',
+          input_cost REAL,
+          output_cost REAL,
+          is_default INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS projects (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          label_key TEXT NOT NULL UNIQUE
+        );
+        CREATE TABLE IF NOT EXISTS limits (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          metric TEXT NOT NULL,
+          period TEXT NOT NULL,
+          period_value INTEGER NOT NULL DEFAULT 0,
+          cap REAL NOT NULL,
+          warning_threshold REAL NOT NULL DEFAULT 0.8,
+          scope TEXT NOT NULL DEFAULT 'global',
+          scope_id INTEGER,
+          action TEXT NOT NULL DEFAULT 'warn',
+          enabled INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
+        CREATE INDEX IF NOT EXISTS idx_logs_provider ON logs(provider);
+        CREATE INDEX IF NOT EXISTS idx_logs_project ON logs(project_tag);
+        ",
+    )
+}
+
+fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
+    // Older DBs created before duration_ms existed. Ignore "duplicate column" errors.
     let _ = conn.execute(
         "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
         [],
@@ -68,10 +89,45 @@ fn setup_connection(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Apply pending migrations in order, tracked by the `migrations` table.
+pub fn run_migrations(conn: &mut Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS migrations (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+    let max_applied: i64 = conn
+        .query_row("SELECT COALESCE(MAX(id), 0) FROM migrations", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or(0);
+    for mig in MIGRATIONS {
+        if mig.id > max_applied {
+            let tx = conn.transaction()?;
+            (mig.apply)(&tx)?;
+            tx.execute(
+                "INSERT INTO migrations (id, name) VALUES (?1, ?2)",
+                params![mig.id, mig.name],
+            )?;
+            tx.commit()?;
+        }
+    }
+    Ok(())
+}
+
+fn setup_connection(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    Ok(())
+}
+
 #[cfg(test)]
 pub fn connect(path: &str) -> rusqlite::Result<Connection> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     setup_connection(&conn)?;
+    run_migrations(&mut conn)?;
     Ok(conn)
 }
 
@@ -79,14 +135,18 @@ pub fn connect(path: &str) -> rusqlite::Result<Connection> {
 ///
 /// The manager opens a new connection per pool request; `WAL` mode plus
 /// `PRAGMA foreign_keys` are applied via the connection customizer.
+/// Migrations run once on the first connection before the pool is returned.
 pub fn build_pool(path: &str) -> Result<DbPool, Box<dyn std::error::Error>> {
     let manager = SqliteConnectionManager::file(path);
     let pool = Pool::builder()
         .max_size(8)
         .connection_customizer(Box::new(SqliteCustomizer))
         .build(manager)?;
-    // Eagerly verify schema on one connection.
-    let _ = pool.get()?;
+    // Eagerly verify schema and run pending migrations on one connection.
+    {
+        let mut conn = pool.get()?;
+        run_migrations(&mut conn)?;
+    }
     Ok(pool)
 }
 
