@@ -121,6 +121,8 @@ pub struct AppState {
     limit_counters: LimitCounters,
     /// Monotonic request IDs for tracing.
     next_request_id: AtomicU64,
+    /// Used to distinguish a single left-click from the first click of a double-click.
+    tray_click_pending: AtomicBool,
 }
 
 impl AppState {
@@ -148,6 +150,7 @@ impl AppState {
             shutdown_tx,
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
+            tray_click_pending: AtomicBool::new(false),
         })
     }
 
@@ -484,13 +487,28 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
                     ..
                 } => {
                     if let Some(state) = app.try_state::<Arc<AppState>>() {
-                        state.inner().toggle_pause();
+                        // Debounce: wait briefly to see if this click is part of a double-click.
+                        state.tray_click_pending.store(true, Ordering::SeqCst);
+                        let app2 = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(Duration::from_millis(250)).await;
+                            if let Some(state) = app2.try_state::<Arc<AppState>>() {
+                                if state.tray_click_pending.swap(false, Ordering::SeqCst) {
+                                    state.toggle_pause();
+                                }
+                            }
+                        });
                     }
                 }
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
                     ..
-                } => show_tab(app, "dashboard"),
+                } => {
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        state.tray_click_pending.store(false, Ordering::SeqCst);
+                    }
+                    show_tab(app, "dashboard");
+                }
                 _ => {}
             }
         })
