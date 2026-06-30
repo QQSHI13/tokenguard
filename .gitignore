@@ -28,6 +28,7 @@ Thumbs.db
 # site build artifacts
 site/node_modules/
 site/dist/
+site/styles.css
 
 # private distribution docs
 docs/ARCHITECTURE.md
