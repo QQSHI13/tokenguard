@@ -1,27 +1,41 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — Token Guard</title>
   <meta name="description" content="Token Guard privacy policy: no cloud, no account, no telemetry.">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    tailwind.config = { darkMode: 'class' };
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-white text-slate-900">
-  <header class="border-b border-slate-100">
+<body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+  <header class="border-b border-slate-100 dark:border-slate-800">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
       <a href="/" class="flex items-center gap-2 text-lg font-bold">
         <span>🛡️</span>
         <span>Token Guard</span>
       </a>
-      <a href="/" class="text-sm font-medium text-slate-600 hover:text-slate-900">← Back</a>
+      <div class="flex items-center gap-3">
+        <button id="theme-toggle" aria-label="Toggle dark mode" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+          🌙
+        </button>
+        <a href="/" class="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">← Back</a>
+      </div>
     </div>
   </header>
 
   <main class="px-6 py-16">
-    <article class="prose prose-slate mx-auto max-w-3xl">
+    <article class="prose prose-slate mx-auto max-w-3xl dark:prose-invert">
       <h1 class="text-3xl font-bold">Privacy Policy</h1>
-      <p class="text-sm text-slate-500">Effective date: 2026-06-30</p>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Effective date: 2026-06-30</p>
 
       <p class="mt-6">
         <strong>Token Guard</strong> is a local desktop application. This policy explains what data we do and do not handle.
@@ -61,11 +75,30 @@
     </article>
   </main>
 
-  <footer class="border-t border-slate-100 px-6 py-10">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 md:flex-row">
+  <footer class="border-t border-slate-100 px-6 py-10 dark:border-slate-800">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400 md:flex-row">
       <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
-      <a href="/" class="hover:text-slate-900">Home</a>
+      <a href="/" class="hover:text-slate-900 dark:hover:text-slate-100">Home</a>
     </div>
   </footer>
+
+  <script>
+    const btn = document.getElementById('theme-toggle');
+    function updateIcon() {
+      btn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+    }
+    btn.addEventListener('click', () => {
+      const html = document.documentElement;
+      if (html.classList.contains('dark')) {
+        html.classList.remove('dark');
+        localStorage.theme = 'light';
+      } else {
+        html.classList.add('dark');
+        localStorage.theme = 'dark';
+      }
+      updateIcon();
+    });
+    updateIcon();
+  </script>
 </body>
 </html>

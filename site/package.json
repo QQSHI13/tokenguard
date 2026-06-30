@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "rm -rf dist && mkdir -p dist && cp *.html dist/",
+    "build": "rm -rf dist && mkdir -p dist && cp *.html *.png dist/",
     "dev": "npx serve ."
   }
 }
