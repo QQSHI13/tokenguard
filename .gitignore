@@ -21,3 +21,6 @@ Thumbs.db
 # editor
 .vscode/
 .idea/
+
+# typescript build info
+*.tsbuildinfo

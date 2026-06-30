@@ -5,6 +5,7 @@ use crate::config::{
     ProviderDto, ProviderInput,
 };
 use crate::db::{self, LogRow};
+use crate::runtime_config::RuntimeConfig;
 use crate::secrets;
 use crate::state::AppState;
 use std::sync::Arc;
@@ -331,6 +332,16 @@ pub fn export_logs(
             Ok(w)
         }
     }
+}
+
+#[tauri::command]
+pub fn get_runtime_config(state: State<'_, Arc<AppState>>) -> Result<RuntimeConfig, String> {
+    state
+        .inner()
+        .runtime_config
+        .read()
+        .map(|cfg| cfg.clone())
+        .map_err(|e| e.to_string())
 }
 
 fn csv_escape(s: &str) -> String {

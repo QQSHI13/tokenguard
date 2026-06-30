@@ -8,6 +8,7 @@ import Projects from "./components/Projects";
 import Limits from "./components/Limits";
 import Docs from "./components/Docs";
 import ThemeToggle, { initTheme } from "./components/ThemeToggle";
+import Banner from "./components/Banner";
 import { useI18n } from "./i18n";
 
 type Settings = {
@@ -142,6 +143,7 @@ export default function App() {
         )}
         {tab === "docs" && <Docs onClose={() => setTab("dashboard")} />}
       </main>
+      <Banner />
     </div>
   );
 }

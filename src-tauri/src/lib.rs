@@ -7,6 +7,7 @@ mod db;
 mod limits;
 mod notifications;
 mod proxy;
+mod runtime_config;
 mod secrets;
 mod state;
 
@@ -63,6 +64,7 @@ pub fn run() {
             commands::delete_limit,
             commands::get_limit_status,
             commands::get_limit_presets,
+            commands::get_runtime_config,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -79,6 +81,14 @@ pub fn run() {
             let port = config.port;
 
             let state = Arc::new(state::AppState::new(pool, config, handle)?);
+
+            // Load runtime config (banners, updater, edition) from the private gist.
+            {
+                let cfg = tauri::async_runtime::block_on(async {
+                    runtime_config::fetch_or_default(&state.client, runtime_config::gist_url()).await
+                });
+                *state.runtime_config.write().map_err(|e| e.to_string())? = cfg;
+            }
 
             // Native tray (left-click toggles pause; menu items below).
             state::build_tray(app.handle())?;
