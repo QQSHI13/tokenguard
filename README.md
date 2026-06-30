@@ -114,9 +114,8 @@ migrated to a global daily money limit.
 ## Status
 
 v0.1.0 — prototype. Core proxy + model routing + SSE passthrough + logging +
-tray. See `docs/POSITIONING.md` for the privacy/security/speed positioning and
-the product brief for the roadmap.
+tray. See `PRIVACY.md` for how user data is handled.
 
 ## License
 
-Proprietary. All rights reserved. See `LICENSE`.
+Apache-2.0. See `LICENSE`.
