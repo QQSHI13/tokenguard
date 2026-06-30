@@ -4,11 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "preinstall": "node scripts/install-mdbook.cjs",
-    "predocs:build": "node scripts/install-mdbook.cjs",
-    "docs:build": "mdbook build docs/book-en -d public/docs/en && mdbook build docs/book-zh -d public/docs/zh",
-    "dev": "npm run docs:build && vite",
-    "build": "tsc -b && npm run docs:build && vite build",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
