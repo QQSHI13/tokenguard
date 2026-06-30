@@ -53,7 +53,7 @@ appear. Add a provider in the **Providers** tab, then point any OpenAI-compatibl
 client at `http://localhost:3742`:
 
 ```bash
-OPENAI_BASE_URL=http://localhost:3742
+OPENAI_BASE_URL=http://localhost:3742/v1
 OPENAI_API_KEY=dummy   # ignored; the proxy injects your stored key
 ```
 

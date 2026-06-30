@@ -1,0 +1,14 @@
+[book]
+title = "Token Guard 文档"
+authors = ["QQSHI13"]
+description = "Token Guard 的用户文档，本地 LLM 网关。"
+language = "zh"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/QQSHI13/tokenguard"

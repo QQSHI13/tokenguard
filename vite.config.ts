@@ -8,6 +8,7 @@ const port = Number(process.env.TAURI_DEV_PORT ?? 1420);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  publicDir: "public",
   clearScreen: false,
   server: {
     port,

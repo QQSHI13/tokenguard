@@ -52,6 +52,7 @@ export const translations = {
     providers: "Providers",
     projects: "Projects",
     settings: "Settings",
+    docs: "Docs",
     noDataToChart: "No data to chart",
     activeLimits: "Active limits",
     time: "Time",
@@ -128,7 +129,7 @@ export const translations = {
       "Block returns 429, pause pauses the proxy, warn only logs and colors the tray icon.",
     howProjectTaggingWorks: "How project tagging works",
     projectTaggingHelp:
-      "Each project has a throwaway label key. Set it as OPENAI_API_KEY (or x-api-key for Anthropic clients) in your coding agent, plus OPENAI_BASE_URL=http://localhost:3742. Token Guard tags that agent's requests with the project name and forwards using your real key from the keychain. No custom headers, no real keys in your agent config.",
+      "Each project has a throwaway label key. Set it as OPENAI_API_KEY (or x-api-key for Anthropic clients) in your coding agent, plus OPENAI_BASE_URL=http://localhost:3742/v1 (Anthropic: http://localhost:3742). Token Guard tags that agent's requests with the project name and forwards using your real key from the keychain. No custom headers, no real keys in your agent config.",
     projectsList: "Projects",
     noProjectsYet:
       "No projects yet. Without one, requests are tagged with no project.",
@@ -200,6 +201,7 @@ export const translations = {
     providers: "服务商",
     projects: "项目",
     settings: "设置",
+    docs: "文档",
     noDataToChart: "没有可绘制的数据",
     activeLimits: "生效限额",
     time: "时间",
@@ -274,7 +276,7 @@ export const translations = {
       "阻止会返回 429，暂停会暂停代理，仅警告会记录日志并改变托盘图标颜色。",
     howProjectTaggingWorks: "项目标签如何工作",
     projectTaggingHelp:
-      "每个项目有一个一次性标签密钥。在你的编码代理中将其设为 OPENAI_API_KEY（Anthropic 客户端设为 x-api-key），并设置 OPENAI_BASE_URL=http://localhost:3742。Token Guard 会用项目名称标记该代理的请求，并使用钥匙串中的真实密钥转发。无需自定义请求头，代理配置中也不需要真实密钥。",
+      "每个项目有一个一次性标签密钥。在你的编码代理中将其设为 OPENAI_API_KEY（Anthropic 客户端设为 x-api-key），并设置 OPENAI_BASE_URL=http://localhost:3742/v1（Anthropic：http://localhost:3742）。Token Guard 会用项目名称标记该代理的请求，并使用钥匙串中的真实密钥转发。无需自定义请求头，代理配置中也不需要真实密钥。",
     projectsList: "项目",
     noProjectsYet: "暂无项目。没有项目时，请求将不带项目标签。",
     addProject: "添加项目",

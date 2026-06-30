@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "docs:build": "mdbook build docs/book-en -d public/docs/en && mdbook build docs/book-zh -d public/docs/zh",
+    "dev": "npm run docs:build && vite",
+    "build": "tsc -b && npm run docs:build && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

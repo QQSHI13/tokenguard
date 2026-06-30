@@ -11,6 +11,9 @@ src-tauri/gen/
 *.db-shm
 *.db-wal
 
+# generated docs
+public/docs/
+
 # os
 .DS_Store
 Thumbs.db

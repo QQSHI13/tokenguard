@@ -1,0 +1,14 @@
+[book]
+title = "Token Guard Docs"
+authors = ["QQSHI13"]
+description = "User-facing documentation for Token Guard, the local LLM gateway."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/QQSHI13/tokenguard"
