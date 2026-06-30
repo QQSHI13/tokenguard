@@ -121,8 +121,15 @@ pub struct AppState {
     limit_counters: LimitCounters,
     /// Monotonic request IDs for tracing.
     next_request_id: AtomicU64,
-    /// Used to distinguish a single left-click from the first click of a double-click.
-    tray_click_pending: AtomicBool,
+    /// Tracks left-clicks on the tray icon to distinguish single vs double clicks.
+    tray_click: Mutex<TrayClickState>,
+}
+
+#[derive(Default)]
+struct TrayClickState {
+    count: u32,
+    last_ms: u64,
+    timer_running: bool,
 }
 
 impl AppState {
@@ -150,7 +157,7 @@ impl AppState {
             shutdown_tx,
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
-            tray_click_pending: AtomicBool::new(false),
+            tray_click: Mutex::new(TrayClickState::default()),
         })
     }
 
@@ -480,36 +487,13 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             let app = tray.app_handle();
-            match event {
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } => {
-                    if let Some(state) = app.try_state::<Arc<AppState>>() {
-                        // Debounce: wait briefly to see if this click is part of a double-click.
-                        state.tray_click_pending.store(true, Ordering::SeqCst);
-                        let app2 = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            if let Some(state) = app2.try_state::<Arc<AppState>>() {
-                                if state.tray_click_pending.swap(false, Ordering::SeqCst) {
-                                    state.toggle_pause();
-                                }
-                            }
-                        });
-                    }
-                }
-                TrayIconEvent::DoubleClick {
-                    button: MouseButton::Left,
-                    ..
-                } => {
-                    if let Some(state) = app.try_state::<Arc<AppState>>() {
-                        state.tray_click_pending.store(false, Ordering::SeqCst);
-                    }
-                    show_tab(app, "dashboard");
-                }
-                _ => {}
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                handle_tray_left_click(app);
             }
         })
         .build(app)?;
@@ -523,6 +507,59 @@ fn show_tab(app: &AppHandle<Wry>, tab: &str) {
         let _ = win.set_focus();
     }
     let _ = app.emit("set_tab", tab);
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Single left-click pauses/resumes; two quick left-clicks open the dashboard.
+fn handle_tray_left_click(app: &AppHandle<Wry>) {
+    let Some(state) = app.try_state::<Arc<AppState>>() else {
+        return;
+    };
+    let t = now_ms();
+    let needs_timer = {
+        let mut tray = state.tray_click.lock().unwrap();
+        tray.count += 1;
+        tray.last_ms = t;
+        let needs = !tray.timer_running;
+        tray.timer_running = needs;
+        needs
+    };
+
+    if !needs_timer {
+        return;
+    }
+
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let (stable, count) = {
+                let state = app2.state::<Arc<AppState>>();
+                let tray = state.tray_click.lock().unwrap();
+                let elapsed = now_ms().saturating_sub(tray.last_ms);
+                (elapsed > 250, tray.count)
+            };
+            if stable {
+                let state = app2.state::<Arc<AppState>>();
+                let mut tray = state.tray_click.lock().unwrap();
+                tray.timer_running = false;
+                tray.count = 0;
+                drop(tray);
+                if count == 1 {
+                    state.toggle_pause();
+                } else {
+                    show_tab(&app2, "dashboard");
+                }
+                break;
+            }
+        }
+    });
 }
 
 /// Menu item click handler (registered in lib.rs).
