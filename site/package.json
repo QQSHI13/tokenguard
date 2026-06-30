@@ -3,7 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "rm -rf dist && mkdir -p dist && cp *.html *.png dist/",
+    "build": "rm -rf dist && mkdir -p dist && npx @tailwindcss/cli -i ./styles.css -o ./dist/styles.css --minify && cp *.html *.png dist/",
     "dev": "npx serve ."
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.2",
+    "tailwindcss": "^4.3.2"
   }
 }
