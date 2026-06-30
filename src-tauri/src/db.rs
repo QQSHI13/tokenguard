@@ -97,9 +97,7 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
 fn migration_003_provider_costs_into_models(conn: &Connection) -> rusqlite::Result<()> {
     // Move per-provider input/output costs into each model mapping, then drop
     // the provider-level columns.
-    let mut stmt = conn.prepare(
-        "SELECT id, input_cost, output_cost, models FROM providers",
-    )?;
+    let mut stmt = conn.prepare("SELECT id, input_cost, output_cost, models FROM providers")?;
     let rows: Vec<(i64, Option<f64>, Option<f64>, String)> = stmt
         .query_map([], |row| {
             Ok((

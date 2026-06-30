@@ -96,7 +96,10 @@ fn extract_from_usage_object(u: &Value, into: &mut Usage) {
     if let Some(c) = u.get("cache_read_input_tokens").and_then(|x| x.as_u64()) {
         cached += c;
     }
-    if let Some(c) = u.get("cache_creation_input_tokens").and_then(|x| x.as_u64()) {
+    if let Some(c) = u
+        .get("cache_creation_input_tokens")
+        .and_then(|x| x.as_u64())
+    {
         cached += c;
     }
     into.cached = cached;

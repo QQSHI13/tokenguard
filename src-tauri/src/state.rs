@@ -3,10 +3,10 @@
 use crate::config::{
     Config, Limit, LimitAction, LimitMetric, LimitScope, Project, Provider, ProviderFormat,
 };
-use crate::runtime_config::RuntimeConfig;
 use crate::db::{self, DbPool};
 use crate::limits::LimitCounters;
 use crate::notifications;
+use crate::runtime_config::RuntimeConfig;
 
 /// Pure routing logic, extracted for unit testing.
 pub fn route_in_list(
@@ -51,7 +51,10 @@ pub fn cached_input_cost_per_1k(provider: &Provider, local_name: &str) -> Option
 }
 
 /// Find the input/output costs for a given local model name on a provider.
-pub fn input_output_cost_per_1k(provider: &Provider, local_name: &str) -> (Option<f64>, Option<f64>) {
+pub fn input_output_cost_per_1k(
+    provider: &Provider,
+    local_name: &str,
+) -> (Option<f64>, Option<f64>) {
     provider
         .models
         .iter()

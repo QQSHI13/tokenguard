@@ -135,7 +135,16 @@ mod tests {
 
     #[test]
     fn estimate_partial_override_uses_table_for_missing_side() {
-        let cost = estimate("gpt-4o-mini", "gpt-4o-mini", 1000, 500, 0, Some(1.0), None, None);
+        let cost = estimate(
+            "gpt-4o-mini",
+            "gpt-4o-mini",
+            1000,
+            500,
+            0,
+            Some(1.0),
+            None,
+            None,
+        );
         // input override 1.0, output falls back to table 0.60 -> 1.0 + 0.3 = 1.3
         assert!((cost - 1.3).abs() < 0.001, "expected ~1.3, got {cost}");
     }

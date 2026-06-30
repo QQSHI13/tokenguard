@@ -85,7 +85,8 @@ pub fn run() {
             // Load runtime config (banners, updater, edition) from the private gist.
             {
                 let cfg = tauri::async_runtime::block_on(async {
-                    runtime_config::fetch_or_default(&state.client, runtime_config::gist_url()).await
+                    runtime_config::fetch_or_default(&state.client, runtime_config::gist_url())
+                        .await
                 });
                 *state.runtime_config.write().map_err(|e| e.to_string())? = cfg;
             }
