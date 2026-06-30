@@ -43,7 +43,8 @@ function parseSummary(raw: string): SummaryItem[] {
   for (const line of raw.split("\n")) {
     const match = line.match(/^-\s*\[(.+?)\]\((.+?)\)/);
     if (match) {
-      items.push({ title: match[1], file: match[2] });
+      const file = match[2].replace(/^\.\//, "");
+      items.push({ title: match[1], file });
     }
   }
   return items;
