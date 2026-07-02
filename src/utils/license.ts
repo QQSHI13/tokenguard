@@ -1,7 +1,7 @@
 const LICENSE_KEY = "tokenguard-license";
 const DEVICE_ID_KEY = "tokenguard-device-id";
 
-export const WORKER_URL = "https://tokenguard-license.your-subdomain.workers.dev";
+export const WORKER_URL = "https://tokenguard-license.qingquanshi65.workers.dev";
 
 export function getLicenseKey(): string | null {
   try {
