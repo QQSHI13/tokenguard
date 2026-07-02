@@ -6,8 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Privacy Policy — Token Guard</title>
-  <meta name="description" content="Token Guard privacy policy: no cloud, no account, no telemetry.">
+  <title>Terms of Service — Token Guard</title>
+  <meta name="description" content="Token Guard terms of service.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css?v=2">
@@ -41,43 +41,36 @@
 
   <main class="px-6 py-16">
     <article class="prose prose-slate mx-auto max-w-3xl dark:prose-invert">
-      <h1 class="text-3xl font-bold">Privacy Policy</h1>
+      <h1 class="text-3xl font-bold">Terms of Service</h1>
       <p class="text-sm text-slate-500 dark:text-slate-400">Effective date: 2026-06-30</p>
 
       <p class="mt-6">
-        <strong>Token Guard</strong> is a local desktop application. This policy explains what data we do and do not handle.
+        These Terms of Service (“Terms”) govern your use of Token Guard (“the app”), an open-source desktop application published by the project maintainer.
       </p>
 
-      <h2 class="mt-8 text-xl font-bold">What Token Guard does</h2>
+      <h2 class="mt-8 text-xl font-bold">License</h2>
       <p>
-        Token Guard runs a small HTTP proxy on your own computer (<code>127.0.0.1</code>) and logs metadata about the LLM API calls you make — such as the provider name, model name, token counts, estimated cost, and timestamp — to a local SQLite database on your device.
+        Token Guard is licensed under the Apache-2.0 license. You may use, modify, and distribute the source code in accordance with that license. Binaries are provided “as is.”
       </p>
 
-      <h2 class="mt-8 text-xl font-bold">What we do not collect</h2>
-      <ul class="list-disc pl-5">
-        <li><strong>No account.</strong> You do not create a Token Guard account.</li>
-        <li><strong>No cloud service.</strong> There is no Token Guard server that receives your data.</li>
-        <li><strong>No telemetry or analytics.</strong> We do not track usage, crashes, or performance.</li>
-        <li><strong>No prompts or completions.</strong> The content of your requests and responses is streamed through the proxy and is never written to disk or transmitted to us.</li>
-        <li><strong>No API keys in the app.</strong> Your provider API keys are stored in the OS-native secret store, not in Token Guard files or our code.</li>
-      </ul>
-
-      <h2 class="mt-8 text-xl font-bold">Data that stays on your device</h2>
+      <h2 class="mt-8 text-xl font-bold">License keys</h2>
       <p>
-        All information Token Guard records is stored locally in your user profile: the app data directory (SQLite database and settings) and the OS keychain (provider API keys). You can delete this data at any time by using the in-app delete option or by removing the app data directory.
+        Purchasing a license key removes the in-app banner and enables automatic updates. A single key may be used on up to two devices. Sharing keys beyond this limit may result in revocation without refund.
       </p>
 
-      <h2 class="mt-8 text-xl font-bold">Network connections</h2>
-      <p>Token Guard makes only the network connections you explicitly configure:</p>
-      <ol class="list-decimal pl-5">
-        <li><strong>Your chosen LLM provider</strong> — the proxy forwards your requests to the provider endpoints you add.</li>
-        <li><strong>Paid edition updater</strong> — if you use a paid direct-download build, the app may check the update endpoint listed in your private runtime config. No personal data is sent.</li>
-        <li><strong>Microsoft Store license check</strong> — Store-installed builds may contact Microsoft’s licensing service as part of normal Store operation.</li>
-      </ol>
+      <h2 class="mt-8 text-xl font-bold">Disclaimer</h2>
+      <p>
+        The app is provided without warranty of any kind. The maintainer is not responsible for data loss, service interruptions, or incorrect cost estimates. You are responsible for securing your own API keys and provider accounts.
+      </p>
+
+      <h2 class="mt-8 text-xl font-bold">Changes</h2>
+      <p>
+        These terms may be updated from time to time. Continued use of the app after changes constitutes acceptance of the updated terms.
+      </p>
 
       <h2 class="mt-8 text-xl font-bold">Contact</h2>
       <p>
-        If you have questions about this policy, open an issue in the GitHub repository or contact the maintainer listed in the repository profile.
+        For questions about these terms, open an issue in the GitHub repository or contact the maintainer listed there.
       </p>
     </article>
   </main>
@@ -85,9 +78,11 @@
   <footer class="border-t border-slate-100 px-6 py-10 dark:border-slate-800">
     <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400 md:flex-row">
       <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
-      <a href="/" class="hover:text-slate-900 dark:hover:text-slate-100">Home</a>
+      <div class="flex gap-6">
+        <a href="/privacy.html" class="hover:text-slate-900 dark:hover:text-slate-100">Privacy</a>
         <a href="/terms.html" class="hover:text-slate-900 dark:hover:text-slate-100">Terms</a>
         <a href="/refund.html" class="hover:text-slate-900 dark:hover:text-slate-100">Refund</a>
+      </div>
     </div>
   </footer>
 
