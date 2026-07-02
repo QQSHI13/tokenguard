@@ -45,7 +45,7 @@ function hours(ms: number) {
   return ms / 1000 / 60 / 60;
 }
 
-export default function Banner() {
+export default function Banner({ licensed }: { licensed: boolean }) {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [visible, setVisible] = useState(false);
 
@@ -56,7 +56,7 @@ export default function Banner() {
   }, []);
 
   useEffect(() => {
-    if (!config) return;
+    if (!config || licensed) return;
 
     const { edition, banners } = config;
     if (edition !== "github-free" || !banners.enabled) return;
@@ -82,7 +82,7 @@ export default function Banner() {
         lastDismissedAt: state?.lastDismissedAt ?? 0,
       });
     }
-  }, [config]);
+  }, [config, licensed]);
 
   if (!visible || !config) return null;
 

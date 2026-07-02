@@ -10,6 +10,7 @@ import Docs from "./components/Docs";
 import ThemeToggle, { initTheme } from "./components/ThemeToggle";
 import Banner from "./components/Banner";
 import { useI18n } from "./i18n";
+import { isLicensed } from "./utils/license";
 
 type Settings = {
   port: number;
@@ -28,6 +29,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [spend, setSpend] = useState<Spend>({ today: 0, budget: 0 });
   const [tick, setTick] = useState(0);
+  const [licensed, setLicensed] = useState(isLicensed());
 
   const refresh = useCallback(() => {
     invoke<Settings>("get_settings").then(setSettings).catch(console.error);
@@ -138,12 +140,14 @@ export default function App() {
         {tab === "settings" && (
           <SettingsTab
             settings={settings}
+            licensed={licensed}
+            onLicenseChange={setLicensed}
             onChanged={() => setTick((t) => t + 1)}
           />
         )}
         {tab === "docs" && <Docs onClose={() => setTab("dashboard")} />}
       </main>
-      <Banner />
+      <Banner licensed={licensed} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
+import License from "./License";
 
 type Settings = {
   port: number;
@@ -12,9 +13,13 @@ type Settings = {
 
 export default function SettingsTab({
   settings,
+  licensed,
+  onLicenseChange,
   onChanged,
 }: {
   settings: Settings;
+  licensed: boolean;
+  onLicenseChange: (licensed: boolean) => void;
   onChanged: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
@@ -117,6 +122,8 @@ export default function SettingsTab({
           {t("testKeychain")}
         </button>
       </section>
+
+      <License licensed={licensed} onChange={onLicenseChange} />
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">

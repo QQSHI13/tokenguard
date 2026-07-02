@@ -6,8 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Buy Token Guard — Paid Edition</title>
-  <meta name="description" content="Pay what you want for the paid edition of Token Guard: direct downloads, automatic updates, and no banners.">
+  <title>Buy Token Guard — Remove the banner</title>
+  <meta name="description" content="Buy a license key to remove the banner and enable automatic updates in Token Guard.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css?v=2">
@@ -22,6 +22,8 @@
       document.documentElement.classList.add('dark');
     }
   </script>
+  <!-- Replace with your PayPal client ID (sandbox or live) -->
+  <script src="https://www.paypal.com/sdk/js?client-id=REPLACE_WITH_PAYPAL_CLIENT_ID&currency=USD" data-sdk-integration-source="button-factory"></script>
 </head>
 <body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
   <header class="border-b border-slate-100 dark:border-slate-800">
@@ -40,32 +42,38 @@
   </header>
 
   <main class="px-6 py-20">
-    <div class="mx-auto max-w-3xl text-center">
+    <div class="mx-auto max-w-2xl text-center">
       <h1 class="text-4xl font-extrabold tracking-tight sm:text-5xl">
-        Get the paid edition
+        Buy a license key
       </h1>
       <p class="mt-6 text-lg text-slate-600 dark:text-slate-400">
-        Pay what you want. The paid edition removes banners, gives you direct downloads,
-        and enables automatic updates.
+        Enter your key in the app to remove the banner and enable automatic updates.
       </p>
 
       <div class="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-8 text-left dark:border-slate-700 dark:bg-slate-900">
         <h2 class="text-xl font-bold">What you get</h2>
         <ul class="mt-4 space-y-3 text-slate-700 dark:text-slate-300">
-          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Banner-free experience</li>
-          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Direct downloads from Cloudflare R2</li>
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Banner-free app</li>
           <li class="flex gap-3"><span class="text-emerald-600">✓</span> Automatic in-app updates</li>
-          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Same privacy guarantees as the free edition</li>
+          <li class="flex gap-3"><span class="text-emerald-600">✓</span> Lifetime key for your devices</li>
         </ul>
 
-        <div class="mt-8">
-          <a id="checkout" href="#" class="block w-full rounded-lg bg-emerald-600 px-6 py-3 text-center text-lg font-semibold text-white hover:bg-emerald-700">
-            Buy now
-          </a>
-          <p class="mt-3 text-center text-sm text-slate-500 dark:text-slate-400">
-            Checkout is handled by our payment provider. You will receive a download link after purchase.
-          </p>
+        <div class="mt-8 rounded-xl bg-white p-6 text-center shadow-sm dark:bg-slate-800">
+          <p class="text-3xl font-bold">$9.99</p>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">One-time payment</p>
+          <div id="paypal-button-container" class="mt-6"></div>
         </div>
+
+        <div id="key-result" class="mt-6 hidden rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left dark:border-emerald-900 dark:bg-emerald-950/40">
+          <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-200">Your license key</p>
+          <div class="mt-2 flex gap-2">
+            <input id="license-key" type="text" readonly class="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100">
+            <button id="copy-key" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Copy</button>
+          </div>
+          <p class="mt-2 text-xs text-emerald-800 dark:text-emerald-300">Paste this key into Token Guard settings.</p>
+        </div>
+
+        <p id="error-msg" class="mt-4 hidden text-center text-sm text-red-600 dark:text-red-400"></p>
       </div>
 
       <p class="mt-10 text-sm text-slate-500 dark:text-slate-400">
@@ -82,7 +90,7 @@
   </footer>
 
   <script>
-    document.getElementById('checkout').href = 'https://tokenguard.pages.dev/checkout';
+    const WORKER_URL = 'https://tokenguard-license.your-subdomain.workers.dev';
 
     const btn = document.getElementById('theme-toggle');
     function updateIcon() {
@@ -100,6 +108,66 @@
       updateIcon();
     });
     updateIcon();
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    async function issueKey(orderId) {
+      const res = await fetch(`${WORKER_URL}/api/license`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to issue license');
+      return data.key;
+    }
+
+    function showKey(key) {
+      const input = document.getElementById('license-key');
+      input.value = key;
+      document.getElementById('key-result').classList.remove('hidden');
+      document.getElementById('paypal-button-container').classList.add('hidden');
+    }
+
+    document.getElementById('copy-key').addEventListener('click', () => {
+      const input = document.getElementById('license-key');
+      input.select();
+      navigator.clipboard.writeText(input.value);
+    });
+
+    if (typeof paypal !== 'undefined') {
+      paypal.Buttons({
+        style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'pay' },
+        createOrder: function (data, actions) {
+          return actions.order.create({
+            purchase_units: [{
+              amount: { value: '9.99', currency_code: 'USD' },
+              description: 'Token Guard license key',
+            }],
+          });
+        },
+        onApprove: async function (data, actions) {
+          try {
+            const details = await actions.order.capture();
+            const key = await issueKey(details.id);
+            showKey(key);
+          } catch (err) {
+            console.error(err);
+            showError(err.message || 'Payment succeeded but key issuance failed. Contact support.');
+          }
+        },
+        onError: function (err) {
+          console.error(err);
+          showError('PayPal checkout error. Please try again.');
+        },
+      }).render('#paypal-button-container');
+    } else {
+      showError('PayPal SDK failed to load. Check the client ID in the page source.');
+    }
   </script>
 </body>
 </html>

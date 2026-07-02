@@ -33,3 +33,4 @@ site/styles.css
 # private distribution docs
 docs/ARCHITECTURE.md
 docs/POSITIONING.md
+workers/
