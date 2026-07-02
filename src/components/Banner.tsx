@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { validateStoredKey } from "../utils/license";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { clearLicenseKey, validateStoredKey } from "../utils/license";
 
-type BannersConfig = {
+type BannerConfig = {
   enabled: boolean;
   interval_hours: number;
   title: string;
@@ -16,9 +17,8 @@ type BannerState = {
 };
 
 const STORAGE_KEY = "tokenguard-banner-state";
-const FIVE_MINUTES = 5 * 60 * 1000;
 
-const banners: BannersConfig = {
+const banners: BannerConfig = {
   enabled: true,
   interval_hours: 48,
   dismiss_duration_hours: 24,
@@ -27,6 +27,18 @@ const banners: BannersConfig = {
   cta_url: "https://tokenguard.pages.dev/buy.html",
 };
 
+function loadState(): BannerState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {
+    // ignore corrupt state
+  }
+  return {};
+}
+
 export default function Banner({
   licensed,
   onLicenseChange,
@@ -34,28 +46,8 @@ export default function Banner({
   licensed: boolean;
   onLicenseChange: (licensed: boolean) => void;
 }) {
-  const [state, setState] = useState<BannerState>({});
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        setState(JSON.parse(raw));
-      }
-    } catch {
-      // ignore corrupt state
-    }
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const valid = await validateStoredKey();
-      if (!valid && licensed) {
-        onLicenseChange(false);
-      }
-    }, FIVE_MINUTES);
-    return () => clearInterval(interval);
-  }, [licensed, onLicenseChange]);
+  const [visible, setVisible] = useState(false);
+  const [state, setState] = useState<BannerState>(loadState);
 
   const saveState = (next: BannerState) => {
     setState(next);
@@ -66,45 +58,72 @@ export default function Banner({
     }
   };
 
-  const shouldShow = (): boolean => {
-    if (!banners.enabled || licensed) return false;
-
-    const now = Date.now();
-    const { interval_hours, dismiss_duration_hours } = banners;
-
-    if (
-      state.lastDismissedAt &&
-      now - state.lastDismissedAt < dismiss_duration_hours * 60 * 60 * 1000
-    ) {
-      return false;
-    }
-
-    if (
-      state.lastShownAt &&
-      now - state.lastShownAt < interval_hours * 60 * 60 * 1000
-    ) {
-      return false;
-    }
-
-    return true;
-  };
-
-  const visible = shouldShow();
-
   useEffect(() => {
-    if (visible) {
-      saveState({ ...state, lastShownAt: Date.now() });
-    }
+    let cancelled = false;
+
+    const check = async () => {
+      if (!banners.enabled) {
+        if (!cancelled) setVisible(false);
+        return;
+      }
+
+      const now = Date.now();
+      const { interval_hours, dismiss_duration_hours } = banners;
+
+      if (
+        state.lastDismissedAt &&
+        now - state.lastDismissedAt < dismiss_duration_hours * 60 * 60 * 1000
+      ) {
+        if (!cancelled) setVisible(false);
+        return;
+      }
+
+      if (
+        state.lastShownAt &&
+        now - state.lastShownAt < interval_hours * 60 * 60 * 1000
+      ) {
+        if (!cancelled) setVisible(false);
+        return;
+      }
+
+      if (licensed) {
+        const valid = await validateStoredKey();
+        if (cancelled) return;
+
+        if (valid) {
+          setVisible(false);
+        } else {
+          await clearLicenseKey();
+          onLicenseChange(false);
+          const next = { ...state, lastShownAt: now };
+          saveState(next);
+          setVisible(true);
+        }
+      } else {
+        const next = { ...state, lastShownAt: now };
+        saveState(next);
+        setVisible(true);
+      }
+    };
+
+    check();
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally depend only on `licensed` so state updates inside this
+    // effect do not immediately re-trigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [licensed]);
 
   const handleDismiss = () => {
     saveState({ ...state, lastDismissedAt: Date.now() });
+    setVisible(false);
   };
 
   const handleCta = () => {
     if (banners.cta_url) {
-      window.open(banners.cta_url, "_blank");
+      openUrl(banners.cta_url).catch(console.error);
     }
   };
 

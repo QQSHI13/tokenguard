@@ -40,9 +40,10 @@ export async function isLicensed(): Promise<boolean> {
 export async function validateStoredKey(): Promise<boolean> {
   const key = await getLicenseKey();
   if (!key) return false;
+  const device = getDeviceId();
   try {
     const res = await fetch(
-      `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key)}`
+      `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key)}&device=${encodeURIComponent(device)}`
     );
     const data = await res.json();
     if (!data.valid) {
