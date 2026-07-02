@@ -6,7 +6,6 @@ use crate::config::{
 use crate::db::{self, DbPool};
 use crate::limits::LimitCounters;
 use crate::notifications;
-use crate::runtime_config::RuntimeConfig;
 
 /// Pure routing logic, extracted for unit testing.
 pub fn route_in_list(
@@ -127,8 +126,6 @@ pub struct AppState {
     next_request_id: AtomicU64,
     /// Tracks left-clicks on the tray icon to distinguish single vs double clicks.
     tray_click: Mutex<TrayClickState>,
-    /// Runtime config fetched from the private gist at startup.
-    pub runtime_config: RwLock<RuntimeConfig>,
 }
 
 #[derive(Default)]
@@ -164,7 +161,6 @@ impl AppState {
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
             tray_click: Mutex::new(TrayClickState::default()),
-            runtime_config: RwLock::new(RuntimeConfig::default()),
         })
     }
 

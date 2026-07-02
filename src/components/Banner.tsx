@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { validateStoredKey } from "../utils/license";
 
 type BannersConfig = {
@@ -11,10 +10,6 @@ type BannersConfig = {
   dismiss_duration_hours: number;
 };
 
-type RuntimeConfig = {
-  banners: BannersConfig;
-};
-
 type BannerState = {
   lastShownAt?: number;
   lastDismissedAt?: number;
@@ -23,6 +18,15 @@ type BannerState = {
 const STORAGE_KEY = "tokenguard-banner-state";
 const FIVE_MINUTES = 5 * 60 * 1000;
 
+const banners: BannersConfig = {
+  enabled: true,
+  interval_hours: 48,
+  dismiss_duration_hours: 24,
+  title: "Support Token Guard",
+  body: "Buy a license key to remove this banner.",
+  cta_url: "https://tokenguard.pages.dev/buy.html",
+};
+
 export default function Banner({
   licensed,
   onLicenseChange,
@@ -30,14 +34,7 @@ export default function Banner({
   licensed: boolean;
   onLicenseChange: (licensed: boolean) => void;
 }) {
-  const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [state, setState] = useState<BannerState>({});
-
-  useEffect(() => {
-    invoke<RuntimeConfig>("get_runtime_config")
-      .then(setConfig)
-      .catch(console.error);
-  }, []);
 
   useEffect(() => {
     try {
@@ -70,10 +67,10 @@ export default function Banner({
   };
 
   const shouldShow = (): boolean => {
-    if (!config?.banners.enabled || licensed) return false;
+    if (!banners.enabled || licensed) return false;
 
     const now = Date.now();
-    const { interval_hours, dismiss_duration_hours } = config.banners;
+    const { interval_hours, dismiss_duration_hours } = banners;
 
     if (
       state.lastDismissedAt &&
@@ -106,22 +103,22 @@ export default function Banner({
   };
 
   const handleCta = () => {
-    if (config?.banners.cta_url) {
-      window.open(config.banners.cta_url, "_blank");
+    if (banners.cta_url) {
+      window.open(banners.cta_url, "_blank");
     }
   };
 
-  if (!config || !visible) return null;
+  if (!visible) return null;
 
   return (
     <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/60">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            {config.banners.title}
+            {banners.title}
           </h3>
           <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-            {config.banners.body}
+            {banners.body}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
