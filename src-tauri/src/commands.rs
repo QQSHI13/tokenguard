@@ -8,8 +8,9 @@ use crate::db::{self, LogRow};
 use crate::runtime_config::RuntimeConfig;
 use crate::secrets;
 use crate::state::AppState;
+use futures::StreamExt;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, serde::Serialize)]
 pub struct SettingsDto {
@@ -626,4 +627,158 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
             },
         },
     ]
+}
+
+// ---- license key ----
+
+#[tauri::command]
+pub fn get_license_key() -> Result<Option<String>, String> {
+    match secrets::get("license") {
+        Ok(k) => Ok(Some(k)),
+        Err(e) => {
+            let lower = e.to_lowercase();
+            if lower.contains("noentry") || lower.contains("no entry") {
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub fn set_license_key(key: String) -> Result<(), String> {
+    secrets::set("license", &key)
+}
+
+#[tauri::command]
+pub fn delete_license_key() -> Result<(), String> {
+    secrets::delete("license")
+}
+
+// ---- update (GitHub Releases) ----
+
+#[derive(Debug, serde::Serialize)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub asset_url: String,
+    pub downloaded_path: Option<String>,
+}
+
+fn parse_version_triple(s: &str) -> Option<(u64, u64, u64)> {
+    let s = s.trim_start_matches('v');
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+#[tauri::command]
+pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://api.github.com/repos/QQSHI13/tokenguard/releases/latest")
+        .header("User-Agent", "tokenguard")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    let tag_name = json["tag_name"]
+        .as_str()
+        .ok_or("missing tag_name in release")?;
+    let latest_ver = parse_version_triple(tag_name)
+        .ok_or_else(|| format!("invalid release version: {tag_name}"))?;
+
+    let current = app.package_info().version.clone();
+    let current_ver = (current.major, current.minor, current.patch);
+    if latest_ver <= current_ver {
+        return Ok(None);
+    }
+
+    // License check: only proceed for valid license keys.
+    let key = match get_license_key() {
+        Ok(Some(k)) => k,
+        _ => return Ok(None),
+    };
+    let validate_url = format!(
+        "https://tokenguard-license.qingquanshi65.workers.dev/api/license/validate?key={key}"
+    );
+    let valid_resp = reqwest::get(&validate_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    let valid_json: serde_json::Value = valid_resp.json().await.map_err(|e| e.to_string())?;
+    if valid_json.get("valid").and_then(|v| v.as_bool()) != Some(true) {
+        return Ok(None);
+    }
+
+    let assets = json["assets"]
+        .as_array()
+        .ok_or("missing assets in release")?;
+    let os = std::env::consts::OS;
+    let asset_url = assets
+        .iter()
+        .find_map(|a| {
+            let name = a["name"].as_str()?;
+            let url = a["browser_download_url"].as_str()?;
+            match os {
+                "windows" if name.contains(".msi") || name.contains(".exe") => {
+                    Some(url.to_string())
+                }
+                "macos" if name.contains(".dmg") => Some(url.to_string()),
+                "linux" if name.contains(".AppImage") => Some(url.to_string()),
+                _ => None,
+            }
+        })
+        .ok_or("no suitable update asset found")?;
+
+    Ok(Some(UpdateInfo {
+        version: tag_name.to_string(),
+        asset_url,
+        downloaded_path: None,
+    }))
+}
+
+#[tauri::command]
+pub async fn download_update(app: AppHandle, asset_url: String) -> Result<String, String> {
+    let download_dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let filename = reqwest::Url::parse(&asset_url)
+        .ok()
+        .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(String::from)))
+        .unwrap_or_else(|| "tokenguard-update".to_string());
+    let path = download_dir.join(&filename);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&asset_url)
+        .header("User-Agent", "tokenguard")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("download failed with {}", resp.status()));
+    }
+
+    let mut file = tokio::fs::File::create(&path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let path_str = path.to_string_lossy().to_string();
+    crate::notifications::notify(
+        &app,
+        "Token Guard — Update ready",
+        &format!("Downloaded to {path_str}"),
+    );
+    Ok(path_str)
 }

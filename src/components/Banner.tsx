@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { validateStoredKey, clearLicenseKey } from "../utils/license";
 
 type Edition = "github-free" | "paid" | "microsoft-store";
 
@@ -22,6 +23,7 @@ type BannerState = {
 };
 
 const STORAGE_KEY = "tokenguard-banner-state";
+const VALIDATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function loadState(): BannerState | null {
   try {
@@ -45,7 +47,13 @@ function hours(ms: number) {
   return ms / 1000 / 60 / 60;
 }
 
-export default function Banner({ licensed }: { licensed: boolean }) {
+export default function Banner({
+  licensed,
+  onLicenseChange,
+}: {
+  licensed: boolean;
+  onLicenseChange: (licensed: boolean) => void;
+}) {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [visible, setVisible] = useState(false);
 
@@ -54,6 +62,21 @@ export default function Banner({ licensed }: { licensed: boolean }) {
       .then(setConfig)
       .catch(console.error);
   }, []);
+
+  // Periodically revalidate the license key while the app is running.
+  useEffect(() => {
+    if (!licensed) return;
+    const validate = async () => {
+      const valid = await validateStoredKey();
+      if (!valid) {
+        await clearLicenseKey();
+        onLicenseChange(false);
+      }
+    };
+    validate();
+    const i = setInterval(validate, VALIDATION_INTERVAL_MS);
+    return () => clearInterval(i);
+  }, [licensed, onLicenseChange]);
 
   useEffect(() => {
     if (!config || licensed) return;

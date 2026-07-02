@@ -164,7 +164,7 @@ impl AppState {
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
             tray_click: Mutex::new(TrayClickState::default()),
-            runtime_config: RwLock::new(RuntimeConfig::dev_default()),
+            runtime_config: RwLock::new(RuntimeConfig::default()),
         })
     }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   WORKER_URL,
   getLicenseKey,
@@ -14,12 +14,17 @@ export default function License({
   licensed: boolean;
   onChange: (licensed: boolean) => void;
 }) {
-  const [key, setKey] = useState(getLicenseKey() || "");
+  const [key, setKey] = useState("");
+  const [storedKey, setStoredKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const deviceId = getDeviceId();
+
+  useEffect(() => {
+    getLicenseKey().then(setStoredKey).catch(console.error);
+  }, [licensed]);
 
   const showError = (msg: string) => {
     setError(msg);
@@ -41,7 +46,7 @@ export default function License({
       );
       const data = await res.json();
       if (data.valid) {
-        showMessage(`Key is valid. Registered devices: ${data.devices ?? 0}/${data.maxDevices ?? 3}`);
+        showMessage(`Key is valid. Registered devices: ${data.devices ?? 0}/${data.maxDevices ?? 2}`);
       } else {
         showError("Key is invalid or revoked.");
       }
@@ -70,10 +75,11 @@ export default function License({
         showError(data.error || "Registration failed.");
         return;
       }
-      setLicenseKey(key.trim().toUpperCase());
+      await setLicenseKey(key.trim().toUpperCase());
+      setStoredKey(key.trim().toUpperCase());
       onChange(true);
       showMessage(
-        `Registered this device. Devices: ${data.devices ?? 1}/${data.maxDevices ?? 3}`
+        `Registered this device. Devices: ${data.devices ?? 1}/${data.maxDevices ?? 2}`
       );
     } catch (e) {
       showError("Could not reach license server.");
@@ -83,7 +89,7 @@ export default function License({
   };
 
   const unregister = async () => {
-    const current = getLicenseKey();
+    const current = storedKey;
     if (!current) return;
     setLoading(true);
     setError(null);
@@ -96,7 +102,8 @@ export default function License({
           deviceFingerprint: deviceId,
         }),
       });
-      clearLicenseKey();
+      await clearLicenseKey();
+      setStoredKey(null);
       setKey("");
       onChange(false);
       showMessage("This device has been unregistered.");
@@ -111,16 +118,14 @@ export default function License({
     <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
       <h2 className="text-sm font-semibold">License key</h2>
       <p className="mt-1 text-[11px] text-neutral-500">
-        Buy a key on the website to remove the banner and enable automatic updates.
+        Buy a key on the website to remove the banner.
       </p>
 
-      {licensed ? (
+      {licensed && storedKey ? (
         <div className="mt-4 space-y-3">
-          <p className="text-sm text-emerald-600">
-            ✓ Licensed on this device
-          </p>
+          <p className="text-sm text-emerald-600">✓ Licensed on this device</p>
           <code className="block truncate rounded-md border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
-            {getLicenseKey()}
+            {storedKey}
           </code>
           <button
             onClick={unregister}

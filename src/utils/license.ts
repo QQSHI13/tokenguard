@@ -1,30 +1,23 @@
-const LICENSE_KEY = "tokenguard-license";
+import { invoke } from "@tauri-apps/api/core";
+
 const DEVICE_ID_KEY = "tokenguard-device-id";
 
 export const WORKER_URL = "https://tokenguard-license.qingquanshi65.workers.dev";
 
-export function getLicenseKey(): string | null {
+export async function getLicenseKey(): Promise<string | null> {
   try {
-    return localStorage.getItem(LICENSE_KEY);
+    return await invoke<string | null>("get_license_key");
   } catch {
     return null;
   }
 }
 
-export function setLicenseKey(key: string) {
-  try {
-    localStorage.setItem(LICENSE_KEY, key);
-  } catch {
-    // ignore
-  }
+export async function setLicenseKey(key: string) {
+  await invoke("set_license_key", { key });
 }
 
-export function clearLicenseKey() {
-  try {
-    localStorage.removeItem(LICENSE_KEY);
-  } catch {
-    // ignore
-  }
+export async function clearLicenseKey() {
+  await invoke("delete_license_key");
 }
 
 export function getDeviceId(): string {
@@ -40,12 +33,12 @@ export function getDeviceId(): string {
   }
 }
 
-export function isLicensed(): boolean {
-  return !!getLicenseKey();
+export async function isLicensed(): Promise<boolean> {
+  return !!(await getLicenseKey());
 }
 
 export async function validateStoredKey(): Promise<boolean> {
-  const key = getLicenseKey();
+  const key = await getLicenseKey();
   if (!key) return false;
   try {
     const res = await fetch(
@@ -53,7 +46,7 @@ export async function validateStoredKey(): Promise<boolean> {
     );
     const data = await res.json();
     if (!data.valid) {
-      clearLicenseKey();
+      await clearLicenseKey();
       return false;
     }
     return true;

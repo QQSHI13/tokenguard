@@ -15,6 +15,7 @@ import {
   validateStoredKey,
   getLicenseKey,
 } from "./utils/license";
+import { checkForUpdate } from "./utils/updater";
 
 type Settings = {
   port: number;
@@ -33,11 +34,15 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [spend, setSpend] = useState<Spend>({ today: 0, budget: 0 });
   const [tick, setTick] = useState(0);
-  const [licensed, setLicensed] = useState(isLicensed());
+  const [licensed, setLicensed] = useState(false);
 
   const refresh = useCallback(() => {
     invoke<Settings>("get_settings").then(setSettings).catch(console.error);
     invoke<Spend>("get_today_spend").then(setSpend).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    isLicensed().then(setLicensed).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -51,10 +56,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!getLicenseKey()) return;
-    validateStoredKey().then((valid) => {
-      if (!valid) setLicensed(false);
+    getLicenseKey().then((key) => {
+      if (!key) return;
+      validateStoredKey().then((valid) => {
+        if (!valid) setLicensed(false);
+      });
     });
+  }, []);
+
+  useEffect(() => {
+    checkForUpdate();
+    const i = setInterval(checkForUpdate, 1000 * 60 * 60 * 4); // every 4 hours
+    return () => clearInterval(i);
   }, []);
 
   useEffect(() => {
@@ -158,7 +171,10 @@ export default function App() {
         )}
         {tab === "docs" && <Docs onClose={() => setTab("dashboard")} />}
       </main>
-      <Banner licensed={licensed} />
+      <Banner
+        licensed={licensed}
+        onLicenseChange={setLicensed}
+      />
     </div>
   );
 }

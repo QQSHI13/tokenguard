@@ -1,9 +1,9 @@
 //! Runtime configuration fetched from a private gist at build time.
 //!
-//! This separates edition-specific behavior (banners, updater endpoints) from
-//! the public source code. The gist URL is injected via the
-//! `TOKENGUARD_CONFIG_GIST_URL` env var during CI builds. Local dev builds use
-//! a default config with banners and updates disabled.
+//! This separates edition-specific behavior (banners) from the public source
+//! code. The gist URL is injected via the `TOKENGUARD_CONFIG_GIST_URL` env var
+//! during builds. The app refuses to start if the URL is missing or the config
+//! cannot be loaded.
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -35,55 +35,24 @@ pub struct BannersConfig {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct UpdaterConfig {
-    pub enabled: bool,
-    pub endpoint: String,
-    pub public_key: String,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(default)]
 pub struct RuntimeConfig {
     pub edition: Edition,
     pub banners: BannersConfig,
-    pub updater: UpdaterConfig,
 }
 
-impl RuntimeConfig {
-    /// Default config used for local development or when the gist is unreachable.
-    pub fn dev_default() -> Self {
-        Self {
-            edition: Edition::GithubFree,
-            banners: BannersConfig {
-                enabled: false,
-                interval_hours: 48,
-                title: String::new(),
-                body: String::new(),
-                cta_url: String::new(),
-                dismiss_duration_hours: 24,
-            },
-            updater: UpdaterConfig {
-                enabled: false,
-                endpoint: String::new(),
-                public_key: String::new(),
-            },
-        }
-    }
-}
-
-/// Fetch the runtime config from the configured gist, falling back to the dev
-/// default on any error or when no URL is set.
-pub async fn fetch_or_default(client: &Client, url: &str) -> RuntimeConfig {
+/// Fetch the runtime config from the configured gist.
+///
+/// Returns an error if no URL is set, the request fails, or the response is not
+/// valid JSON.
+pub async fn fetch_required(client: &Client, url: &str) -> Result<RuntimeConfig, String> {
     if url.trim().is_empty() || url == "unset" {
-        return RuntimeConfig::dev_default();
+        return Err(
+            "TOKENGUARD_CONFIG_GIST_URL is not set; a runtime config gist is required".into(),
+        );
     }
-    match fetch(client, url).await {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            tracing::warn!("failed to load runtime config from {url}: {e}");
-            RuntimeConfig::dev_default()
-        }
-    }
+    fetch(client, url)
+        .await
+        .map_err(|e| format!("failed to load runtime config from {url}: {e}"))
 }
 
 async fn fetch(client: &Client, url: &str) -> Result<RuntimeConfig, String> {
@@ -118,8 +87,7 @@ mod tests {
                 "body": "Support us",
                 "cta_url": "https://example.com",
                 "dismiss_duration_hours": 12
-            },
-            "updater": { "enabled": false }
+            }
         }"#;
         let cfg: RuntimeConfig = serde_json::from_str(json).unwrap();
         assert_eq!(cfg.edition, Edition::GithubFree);
@@ -129,16 +97,8 @@ mod tests {
 
     #[test]
     fn parse_paid_config() {
-        let json = r#"{
-            "edition": "paid",
-            "updater": {
-                "enabled": true,
-                "endpoint": "https://example.com/latest.json",
-                "public_key": "abc123"
-            }
-        }"#;
+        let json = r#"{ "edition": "paid" }"#;
         let cfg: RuntimeConfig = serde_json::from_str(json).unwrap();
         assert_eq!(cfg.edition, Edition::Paid);
-        assert!(cfg.updater.enabled);
     }
 }

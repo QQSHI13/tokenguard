@@ -65,6 +65,11 @@ pub fn run() {
             commands::get_limit_status,
             commands::get_limit_presets,
             commands::get_runtime_config,
+            commands::get_license_key,
+            commands::set_license_key,
+            commands::delete_license_key,
+            commands::check_for_update,
+            commands::download_update,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -82,12 +87,11 @@ pub fn run() {
 
             let state = Arc::new(state::AppState::new(pool, config, handle)?);
 
-            // Load runtime config (banners, updater, edition) from the private gist.
+            // Load runtime config (banners, edition) from the private gist.
             {
                 let cfg = tauri::async_runtime::block_on(async {
-                    runtime_config::fetch_or_default(&state.client, runtime_config::gist_url())
-                        .await
-                });
+                    runtime_config::fetch_required(&state.client, runtime_config::gist_url()).await
+                })?;
                 *state.runtime_config.write().map_err(|e| e.to_string())? = cfg;
             }
 
