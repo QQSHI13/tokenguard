@@ -1,9 +1,8 @@
 //! Runtime configuration fetched from a private gist at build time.
 //!
-//! This separates edition-specific behavior (banners) from the public source
-//! code. The gist URL is injected via the `TOKENGUARD_CONFIG_GIST_URL` env var
-//! during builds. The app refuses to start if the URL is missing or the config
-//! cannot be loaded.
+//! The gist URL is injected via the `TOKENGUARD_CONFIG_GIST_URL` env var during
+//! builds. The app refuses to start if the URL is missing or the config cannot
+//! be loaded.
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -12,15 +11,6 @@ const CONFIG_GIST_URL: &str = match option_env!("TOKENGUARD_CONFIG_GIST_URL") {
     Some(url) => url,
     None => "unset",
 };
-
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum Edition {
-    #[default]
-    GithubFree,
-    Paid,
-    MicrosoftStore,
-}
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
@@ -36,7 +26,6 @@ pub struct BannersConfig {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RuntimeConfig {
-    pub edition: Edition,
     pub banners: BannersConfig,
 }
 
@@ -77,9 +66,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_github_free_config() {
+    fn parse_banner_config() {
         let json = r#"{
-            "edition": "github-free",
             "banners": {
                 "enabled": true,
                 "interval_hours": 24,
@@ -90,15 +78,7 @@ mod tests {
             }
         }"#;
         let cfg: RuntimeConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(cfg.edition, Edition::GithubFree);
         assert!(cfg.banners.enabled);
         assert_eq!(cfg.banners.title, "Hi");
-    }
-
-    #[test]
-    fn parse_paid_config() {
-        let json = r#"{ "edition": "paid" }"#;
-        let cfg: RuntimeConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(cfg.edition, Edition::Paid);
     }
 }

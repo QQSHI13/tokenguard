@@ -87,7 +87,7 @@ pub fn run() {
 
             let state = Arc::new(state::AppState::new(pool, config, handle)?);
 
-            // Load runtime config (banners, edition) from the private gist.
+            // Load runtime config (banners) from the private gist.
             {
                 let cfg = tauri::async_runtime::block_on(async {
                     runtime_config::fetch_required(&state.client, runtime_config::gist_url()).await
