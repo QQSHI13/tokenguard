@@ -43,3 +43,22 @@ export function getDeviceId(): string {
 export function isLicensed(): boolean {
   return !!getLicenseKey();
 }
+
+export async function validateStoredKey(): Promise<boolean> {
+  const key = getLicenseKey();
+  if (!key) return false;
+  try {
+    const res = await fetch(
+      `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key)}`
+    );
+    const data = await res.json();
+    if (!data.valid) {
+      clearLicenseKey();
+      return false;
+    }
+    return true;
+  } catch {
+    // offline or worker unreachable: keep existing license state
+    return true;
+  }
+}

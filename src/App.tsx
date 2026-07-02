@@ -10,7 +10,11 @@ import Docs from "./components/Docs";
 import ThemeToggle, { initTheme } from "./components/ThemeToggle";
 import Banner from "./components/Banner";
 import { useI18n } from "./i18n";
-import { isLicensed } from "./utils/license";
+import {
+  isLicensed,
+  validateStoredKey,
+  getLicenseKey,
+} from "./utils/license";
 
 type Settings = {
   port: number;
@@ -44,6 +48,13 @@ export default function App() {
 
   useEffect(() => {
     return initTheme();
+  }, []);
+
+  useEffect(() => {
+    if (!getLicenseKey()) return;
+    validateStoredKey().then((valid) => {
+      if (!valid) setLicensed(false);
+    });
   }, []);
 
   useEffect(() => {
