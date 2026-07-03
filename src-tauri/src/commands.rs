@@ -737,7 +737,10 @@ pub async fn download_update(app: AppHandle, asset_url: String) -> Result<String
     let download_dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let filename = reqwest::Url::parse(&asset_url)
         .ok()
-        .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(String::from)))
+        .and_then(|u| {
+            u.path_segments()
+                .and_then(|mut s| s.next_back().map(String::from))
+        })
         .unwrap_or_else(|| "tokenguard-update".to_string());
     let path = download_dir.join(&filename);
 
