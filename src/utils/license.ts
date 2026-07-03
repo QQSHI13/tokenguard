@@ -20,17 +20,26 @@ export async function clearLicenseKey() {
   await invoke("delete_license_key");
 }
 
-export function getDeviceId(): string {
-  try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(DEVICE_ID_KEY, id);
+let deviceIdPromise: Promise<string> | null = null;
+
+export async function getDeviceId(): Promise<string> {
+  if (deviceIdPromise) return deviceIdPromise;
+
+  deviceIdPromise = (async () => {
+    try {
+      const rustId = await invoke<string>("get_device_fingerprint");
+      const cachedId = localStorage.getItem(DEVICE_ID_KEY);
+      if (cachedId !== rustId) {
+        localStorage.setItem(DEVICE_ID_KEY, rustId);
+      }
+      return rustId;
+    } catch {
+      const cachedId = localStorage.getItem(DEVICE_ID_KEY);
+      return cachedId ?? "unknown";
     }
-    return id;
-  } catch {
-    return "unknown";
-  }
+  })();
+
+  return deviceIdPromise;
 }
 
 export async function isLicensed(): Promise<boolean> {
@@ -40,7 +49,7 @@ export async function isLicensed(): Promise<boolean> {
 export async function validateStoredKey(): Promise<boolean> {
   const key = await getLicenseKey();
   if (!key) return false;
-  const device = getDeviceId();
+  const device = await getDeviceId();
   try {
     const res = await fetch(
       `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key)}&device=${encodeURIComponent(device)}`

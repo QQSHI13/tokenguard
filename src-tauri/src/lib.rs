@@ -68,6 +68,7 @@ pub fn run() {
             commands::delete_license_key,
             commands::check_for_update,
             commands::download_update,
+            commands::get_device_fingerprint,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

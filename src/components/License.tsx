@@ -20,8 +20,6 @@ export default function License({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const deviceId = getDeviceId();
-
   useEffect(() => {
     getLicenseKey().then(setStoredKey).catch(console.error);
   }, [licensed]);
@@ -41,8 +39,9 @@ export default function License({
     setLoading(true);
     setError(null);
     try {
+      const device = await getDeviceId();
       const res = await fetch(
-        `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key.trim().toUpperCase())}`
+        `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key.trim().toUpperCase())}&device=${encodeURIComponent(device)}`
       );
       const data = await res.json();
       if (data.valid) {
@@ -62,12 +61,13 @@ export default function License({
     setLoading(true);
     setError(null);
     try {
+      const device = await getDeviceId();
       const res = await fetch(`${WORKER_URL}/api/license/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: key.trim().toUpperCase(),
-          deviceFingerprint: deviceId,
+          deviceFingerprint: device,
         }),
       });
       const data = await res.json();
@@ -94,12 +94,13 @@ export default function License({
     setLoading(true);
     setError(null);
     try {
+      const device = await getDeviceId();
       await fetch(`${WORKER_URL}/api/license/unregister`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: current,
-          deviceFingerprint: deviceId,
+          deviceFingerprint: device,
         }),
       });
       await clearLicenseKey();

@@ -733,6 +733,22 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
 }
 
 #[tauri::command]
+pub fn get_device_fingerprint() -> Result<String, String> {
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())?;
+    let username = whoami::username();
+    let os = std::env::consts::OS;
+    let input = format!("{hostname}|{username}|{os}");
+
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    let digest = hasher.finalize();
+    Ok(hex::encode(digest))
+}
+
+#[tauri::command]
 pub async fn download_update(app: AppHandle, asset_url: String) -> Result<String, String> {
     let download_dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let filename = reqwest::Url::parse(&asset_url)
