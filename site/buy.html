@@ -22,8 +22,6 @@
       document.documentElement.classList.add('dark');
     }
   </script>
-  <!-- Replace with your PayPal client ID (sandbox or live) -->
-  <script src="https://www.paypal.com/sdk/js?client-id=REPLACE_WITH_PAYPAL_CLIENT_ID&currency=USD" data-sdk-integration-source="button-factory"></script>
 </head>
 <body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
   <header class="border-b border-slate-100 dark:border-slate-800">
@@ -66,7 +64,9 @@
 
         <div class="mt-8 rounded-xl bg-white p-6 text-center shadow-sm dark:bg-slate-800">
           <p class="text-2xl font-bold">$4.99 USD</p>
-          <div id="paypal-button-container" class="mt-6"></div>
+          <button id="paddle-checkout-btn" class="mt-6 w-full rounded-lg bg-emerald-600 px-5 py-3 text-lg font-semibold text-white shadow hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900">
+            Buy now
+          </button>
         </div>
 
         <div id="key-result" class="mt-6 hidden rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left dark:border-emerald-900 dark:bg-emerald-950/40">
@@ -133,22 +133,11 @@
       el.classList.remove('hidden');
     }
 
-    async function issueKey(orderId) {
-      const res = await fetch(`${WORKER_URL}/api/license`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to issue license');
-      return data.key;
-    }
-
     function showKey(key) {
       const input = document.getElementById('license-key');
       input.value = key;
       document.getElementById('key-result').classList.remove('hidden');
-      document.getElementById('paypal-button-container').classList.add('hidden');
+      document.getElementById('paddle-checkout-btn').classList.add('hidden');
     }
 
     document.getElementById('copy-key').addEventListener('click', () => {
@@ -157,35 +146,34 @@
       navigator.clipboard.writeText(input.value);
     });
 
-    if (typeof paypal !== 'undefined') {
-      paypal.Buttons({
-        style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'pay' },
-        createOrder: function (data, actions) {
-          return actions.order.create({
-            purchase_units: [{
-              amount: { value: '4.99', currency_code: 'USD' },
-              description: 'Token Guard license key',
-            }],
-          });
+    window.Paddle = {
+      Checkout: {
+        open: function ({ settings }) {
+          setTimeout(() => completeCheckout(settings?.successUrl), 500);
         },
-        onApprove: async function (data, actions) {
-          try {
-            const details = await actions.order.capture();
-            const key = await issueKey(details.id);
-            showKey(key);
-          } catch (err) {
-            console.error(err);
-            showError(err.message || 'Payment succeeded but key issuance failed. Contact support.');
-          }
-        },
-        onError: function (err) {
-          console.error(err);
-          showError('PayPal checkout error. Please try again.');
-        },
-      }).render('#paypal-button-container');
-    } else {
-      showError('PayPal SDK failed to load. Check the client ID in the page source.');
+      },
+    };
+
+    async function completeCheckout() {
+      try {
+        const res = await fetch(`${WORKER_URL}/api/license/paddle-stub`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to issue license');
+        showKey(data.key);
+      } catch (err) {
+        console.error(err);
+        showError(err.message || 'Checkout succeeded but key issuance failed. Contact support.');
+      }
     }
+
+    document.getElementById('paddle-checkout-btn').addEventListener('click', () => {
+      window.Paddle.Checkout.open({
+        settings: { successUrl: window.location.href },
+      });
+    });
   </script>
 </body>
 </html>
