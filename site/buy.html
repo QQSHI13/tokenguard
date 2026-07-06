@@ -76,21 +76,23 @@
       </div>
     </section>
 
-    <script src="https://cdn.paddle.com/paddle/paddle.js"></script>
+    <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
-      Paddle.Initialize({ 
-        token: 'live_c106d73f7e146918f4846c6023e'
-      });
+      document.addEventListener('DOMContentLoaded', function() {
+        Paddle.Initialize({
+          token: 'live_c106d73f7e146918f4846c6023e'
+        });
 
-      document.getElementById('buy-button').addEventListener('click', function() {
-        Paddle.Checkout.open({
-          items: [{ 
-            priceId: 'pri_01kwtjwk0jh05szy2e4n7f61j4', 
-            quantity: 1 
-          }],
-          settings: {
-            successUrl: 'https://tokenguard.pages.dev/thanks?checkout={checkout.id}'
-          }
+        document.getElementById('buy-button').addEventListener('click', function() {
+          Paddle.Checkout.open({
+            items: [{
+              priceId: 'pri_01kwtjwk0jh05szy2e4n7f61j4',
+              quantity: 1
+            }],
+            settings: {
+              successUrl: 'https://tokenguard.pages.dev/thanks?checkout={checkout.id}'
+            }
+          });
         });
       });
     </script>
