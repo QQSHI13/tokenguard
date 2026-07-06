@@ -51,7 +51,7 @@
           One-time payment to remove the banner and unlock automatic updates.
         </p>
         <p class="mt-6 text-5xl font-extrabold tracking-tight text-emerald-700 dark:text-emerald-400">
-          $9.99 USD
+          $4.99 USD
         </p>
       </div>
 
@@ -65,7 +65,7 @@
         </ul>
 
         <div class="mt-8 rounded-xl bg-white p-6 text-center shadow-sm dark:bg-slate-800">
-          <p class="text-2xl font-bold">$9.99 USD</p>
+          <p class="text-2xl font-bold">$4.99 USD</p>
           <div id="paypal-button-container" class="mt-6"></div>
         </div>
 
@@ -163,7 +163,7 @@
         createOrder: function (data, actions) {
           return actions.order.create({
             purchase_units: [{
-              amount: { value: '9.99', currency_code: 'USD' },
+              amount: { value: '4.99', currency_code: 'USD' },
               description: 'Token Guard license key',
             }],
           });
