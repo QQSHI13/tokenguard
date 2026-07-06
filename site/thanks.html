@@ -6,8 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Pricing — Token Guard</title>
-  <meta name="description" content="Token Guard license pricing. One-time payment to remove the banner.">
+  <title>Thanks — Token Guard</title>
+  <meta name="description" content="Thank you for purchasing Token Guard.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css?v=2">
@@ -40,60 +40,19 @@
   </header>
 
   <main class="px-6 py-20">
-    <section id="pricing">
-      <h2>Pricing</h2>
-      
-      <div class="pricing-card">
-        <h3>Token Guard</h3>
-        <p class="price">$4.99 <span>one-time purchase</span></p>
-        <p class="tax-note">Taxes may apply and will be calculated at checkout.</p>
-        
-        <ul>
-          <li>Real-time LLM API cost tracking</li>
-          <li>System tray counter</li>
-          <li>Budget alerts</li>
-          <li>Unlimited history</li>
-          <li>Auto-updates</li>
-          <li>2 devices per license</li>
-        </ul>
-        
-        <p class="note">One-time purchase. Lifetime license for v1.x updates.</p>
-        
-        <button id="buy-button" class="buy-button">Buy Now — $4.99</button>
-        <p id="buy-error" style="color: #ff4444; display: none;"></p>
+    <div class="mx-auto max-w-2xl text-center">
+      <h1 class="text-4xl font-extrabold tracking-tight sm:text-5xl">
+        Thanks for purchasing Token Guard.
+      </h1>
+      <p class="mx-auto mt-6 max-w-lg text-lg text-slate-600 dark:text-slate-400">
+        Your license key will be emailed to you.
+      </p>
+      <div class="mt-10">
+        <a href="/" class="rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">
+          Back to home
+        </a>
       </div>
-      
-      <div class="pricing-card free">
-        <h3>Free Edition</h3>
-        <p class="price">Free</p>
-        <ul>
-          <li>Same core features</li>
-          <li>7-day history</li>
-          <li>Manual updates</li>
-          <li>Support banner</li>
-        </ul>
-        <a href="https://github.com/QQSHI13/tokenguard/releases">Download from GitHub</a>
-      </div>
-    </section>
-
-    <script src="https://cdn.paddle.com/paddle/paddle.js"></script>
-    <script>
-      Paddle.Initialize({ 
-        token: 'live_c106d73f7e146918f4846c6023e'
-      });
-
-      document.getElementById('buy-button').addEventListener('click', function() {
-        Paddle.Checkout.open({
-          items: [{ 
-            priceId: 'pri_01kwtjwk0jh05szy2e4n7f61j4', 
-            quantity: 1 
-          }],
-          settings: {
-            successUrl: 'https://tokenguard.pages.dev/thanks?checkout={checkout.id}'
-          }
-        });
-      });
-    </script>
+    </div>
   </main>
 
   <footer class="border-t border-slate-100 px-6 py-10 dark:border-slate-800">
