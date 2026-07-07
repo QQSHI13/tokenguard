@@ -248,6 +248,10 @@ export const translations = {
     selectProvider: "Select provider",
     dailyUsage: "Daily usage",
     noUsageData: "No usage data for this selection.",
+    forecast: "Forecast",
+    forecastHitBudget: "At today's rate, you will hit your daily budget in {hours} hours.",
+    forecastNoSpend: "No spend yet today — forecast unavailable.",
+    forecastOverBudget: "You are already over your daily budget.",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -452,6 +456,10 @@ export const translations = {
     selectProvider: "选择服务商",
     dailyUsage: "每日使用",
     noUsageData: "该选择没有使用数据。",
+    forecast: "预测",
+    forecastHitBudget: "按当前速率，你将在 {hours} 小时后达到每日预算。",
+    forecastNoSpend: "今日暂无支出 — 无法预测。",
+    forecastOverBudget: "你已超出每日预算。",
   },
 } as const;
 

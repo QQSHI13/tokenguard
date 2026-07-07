@@ -237,6 +237,8 @@ export default function Dashboard() {
             />
           </div>
 
+          <Forecast spend={spend} t={t} />
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-1">
               {RANGES.map((r) => (
@@ -560,6 +562,41 @@ function formatLimitValue(metric: LimitStatus["limit"]["metric"], value: number)
     return `${Math.round(value)}s`;
   }
   return Math.round(value).toLocaleString();
+}
+
+function Forecast({
+  spend,
+  t,
+}: {
+  spend: { today: number; budget: number };
+  t: (
+    key: keyof typeof import("../i18n").translations.en,
+    vars?: Record<string, string | number>
+  ) => string;
+}) {
+  const text = useMemo(() => {
+    if (spend.budget <= 0) return null;
+    if (spend.today <= 0) return t("forecastNoSpend");
+    if (spend.today >= spend.budget) return t("forecastOverBudget");
+    const now = new Date();
+    const midnightUtc = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    );
+    const hoursElapsed = (Date.now() - midnightUtc) / 3600_000;
+    if (hoursElapsed <= 0) return t("forecastNoSpend");
+    const rate = spend.today / hoursElapsed;
+    const hoursToHit = (spend.budget - spend.today) / rate;
+    return t("forecastHitBudget", { hours: hoursToHit.toFixed(1) });
+  }, [spend, t]);
+
+  if (!text) return null;
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
+      <span className="font-semibold">{t("forecast")}:</span> {text}
+    </div>
+  );
 }
 
 function Stat({
