@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import License from "./License";
 import { checkForUpdate, downloadUpdate, type UpdateInfo } from "../utils/updater";
+import { save, open } from "@tauri-apps/plugin-dialog";
 
 type Settings = {
   port: number;
@@ -35,6 +36,7 @@ export default function SettingsTab({
   const [priceStatus, setPriceStatus] = useState<"idle" | "refreshing" | "done" | "error">("idle");
   const [priceError, setPriceError] = useState<string | null>(null);
   const [priceCount, setPriceCount] = useState<number | null>(null);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -97,6 +99,36 @@ export default function SettingsTab({
     } catch (e) {
       setPriceStatus("error");
       setPriceError(String(e));
+    }
+  };
+
+  const handleBackup = async () => {
+    setBackupStatus(null);
+    try {
+      const path = await save({
+        defaultPath: "tokenguard-backup.db",
+        filters: [{ name: "SQLite", extensions: ["db"] }],
+      });
+      if (!path) return;
+      await invoke("backup_database", { targetPath: path });
+      setBackupStatus(t("backupSaved", { path }));
+    } catch (e) {
+      setBackupStatus(String(e));
+    }
+  };
+
+  const handleRestore = async () => {
+    setBackupStatus(null);
+    try {
+      const path = await open({
+        filters: [{ name: "SQLite", extensions: ["db"] }],
+      });
+      if (!path) return;
+      if (!confirm(t("restoreDatabase") + "?")) return;
+      await invoke("restore_database", { sourcePath: path });
+      setBackupStatus(t("restoreRestarting"));
+    } catch (e) {
+      setBackupStatus(String(e));
     }
   };
 
@@ -281,6 +313,38 @@ export default function SettingsTab({
       </section>
 
       <License licensed={licensed} onChange={onLicenseChange} />
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("backupRestore")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          {t("backupRestoreHelp")}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={handleBackup}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("backupDatabase")}
+          </button>
+          <button
+            onClick={handleRestore}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("restoreDatabase")}
+          </button>
+        </div>
+        {backupStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              backupStatus.includes("saved") || backupStatus.includes("重启")
+                ? "text-emerald-600"
+                : "text-red-600"
+            }`}
+          >
+            {backupStatus}
+          </p>
+        )}
+      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">

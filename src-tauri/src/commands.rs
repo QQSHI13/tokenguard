@@ -225,6 +225,54 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
 }
 
 #[tauri::command]
+pub fn backup_database(
+    state: State<'_, Arc<AppState>>,
+    target_path: String,
+) -> Result<(), String> {
+    let target = std::path::PathBuf::from(target_path);
+    if target.exists() {
+        return Err("target file already exists".into());
+    }
+    std::fs::create_dir_all(target.parent().ok_or("invalid target path")?)
+        .map_err(|e| e.to_string())?;
+
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let mut dst = rusqlite::Connection::open(&target).map_err(|e| e.to_string())?;
+    let backup = rusqlite::backup::Backup::new(&conn, &mut dst).map_err(|e| e.to_string())?;
+    backup
+        .run_to_completion(5, std::time::Duration::from_millis(100), None)
+        .map_err(|e| format!("backup failed: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_database(
+    state: State<'_, Arc<AppState>>,
+    source_path: String,
+) -> Result<(), String> {
+    let source = std::path::PathBuf::from(source_path);
+    if !source.exists() {
+        return Err("source file does not exist".into());
+    }
+    // Validate that the source is a SQLite database.
+    {
+        let test = rusqlite::Connection::open(&source).map_err(|e| e.to_string())?;
+        let ok: bool = test
+            .query_row("PRAGMA schema_version", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        if !ok {
+            return Err("source is not a valid SQLite database".into());
+        }
+    }
+
+    let target = state.inner().db_path.clone();
+    // Copy over the current database. The app will restart so the pool re-opens
+    // the restored file.
+    std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
+    state.inner().app.restart();
+}
+
+#[tauri::command]
 pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;

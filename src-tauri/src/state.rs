@@ -110,6 +110,7 @@ const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
 
 pub struct AppState {
     pub db: DbPool,
+    pub db_path: std::path::PathBuf,
     pub config: RwLock<Config>,
     pub paused: AtomicBool,
     pub client: reqwest::Client,
@@ -138,6 +139,7 @@ struct TrayClickState {
 impl AppState {
     pub fn new(
         pool: DbPool,
+        db_path: std::path::PathBuf,
         config: Config,
         app: AppHandle<Wry>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -151,6 +153,7 @@ impl AppState {
         let (shutdown_tx, _shutdown_rx) = watch::channel(());
         Ok(Self {
             db: pool,
+            db_path,
             config: RwLock::new(config),
             paused: AtomicBool::new(false),
             client,

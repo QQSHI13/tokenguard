@@ -77,6 +77,8 @@ pub fn run() {
             commands::get_provider_usage,
             commands::get_project_usage,
             commands::get_logs_filtered,
+            commands::backup_database,
+            commands::restore_database,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -92,7 +94,7 @@ pub fn run() {
             let config = db::load_config(&conn)?;
             let port = config.port;
 
-            let state = Arc::new(state::AppState::new(pool, config, handle)?);
+            let state = Arc::new(state::AppState::new(pool, db_path, config, handle)?);
 
             // Native tray (left-click toggles pause; menu items below).
             state::build_tray(app.handle())?;

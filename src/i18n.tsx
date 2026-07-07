@@ -276,6 +276,13 @@ export const translations = {
     responseBody: "Response body",
     noBodyLogged: "No body logged for this request.",
     close: "Close",
+    data: "Data",
+    backupRestore: "Backup & restore",
+    backupRestoreHelp: "Make a safe copy of the local SQLite database, or restore from a previous backup. Restoring restarts the app.",
+    backupDatabase: "Backup database",
+    restoreDatabase: "Restore database",
+    backupSaved: "Backup saved to {path}",
+    restoreRestarting: "Restore complete — restarting app…",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -509,6 +516,13 @@ export const translations = {
     responseBody: "响应体",
     noBodyLogged: "该请求没有记录请求/响应体。",
     close: "关闭",
+    data: "数据",
+    backupRestore: "备份与恢复",
+    backupRestoreHelp: "为本地 SQLite 数据库创建安全副本，或从之前的备份恢复。恢复后将重启应用。",
+    backupDatabase: "备份数据库",
+    restoreDatabase: "恢复数据库",
+    backupSaved: "备份已保存到 {path}",
+    restoreRestarting: "恢复完成 — 正在重启应用…",
   },
 } as const;
 
