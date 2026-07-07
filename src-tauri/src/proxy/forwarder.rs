@@ -16,8 +16,9 @@ use crate::state::{
     cached_input_cost_per_1k, input_output_cost_per_1k, remote_model_name, AppState,
 };
 
-/// Forward a request to the chosen provider, optionally falling back to another
-/// configured provider on transient upstream failures.
+/// Forward a request to the chosen provider, retrying transient failures with
+/// exponential backoff, then optionally falling back to another configured
+/// provider.
 #[allow(clippy::too_many_arguments)]
 pub async fn forward(
     state: Arc<AppState>,
@@ -31,18 +32,35 @@ pub async fn forward(
 ) -> Response {
     let model = extract_model(&body, provider.format);
 
-    // First attempt.
-    let (mut used_provider, mut used_key, mut primary_resp) =
+    // Retry the primary provider up to 2 extra times with exponential backoff.
+    const BACKOFFS: [u64; 3] = [0, 200, 500];
+    let mut used_provider = provider.clone();
+    let mut used_key = api_key.clone();
+    let mut final_resp: Option<reqwest::Response> = None;
+
+    for delay_ms in BACKOFFS {
+        if delay_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
         match attempt_forward(&state, &path, &body, &req_headers, &provider, &api_key, &model).await
         {
-            Ok(resp) => (provider.clone(), api_key.clone(), Some(resp)),
-            Err(_) => (provider.clone(), api_key.clone(), None),
-        };
+            Ok(resp) => {
+                let retryable = is_retryable_status(resp.status());
+                final_resp = Some(resp);
+                if !retryable {
+                    break;
+                }
+            }
+            Err(_) => {
+                // network failure: continue to next retry
+            }
+        }
+    }
 
-    // Decide whether to fall back.
-    let should_fallback = match &primary_resp {
+    // If the last primary attempt was still retryable, try the fallback once.
+    let should_fallback = match &final_resp {
         Some(resp) => is_retryable_status(resp.status()),
-        None => true, // network failure
+        None => true,
     };
 
     if should_fallback {
@@ -61,14 +79,14 @@ pub async fn forward(
                 {
                     used_provider = fallback;
                     used_key = key;
-                    primary_resp = Some(resp);
+                    final_resp = Some(resp);
                 }
             }
         }
     }
 
     // Finalize the response (stream + log) for whichever provider we ended up using.
-    match primary_resp {
+    match final_resp {
         Some(resp) => {
             finalize_forward(state, start, resp, used_provider, used_key, &model, project_tag).await
         }
