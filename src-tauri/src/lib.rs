@@ -75,6 +75,7 @@ pub fn run() {
             commands::fill_provider_prices_from_database,
             commands::get_provider_usage,
             commands::get_project_usage,
+            commands::get_logs_filtered,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

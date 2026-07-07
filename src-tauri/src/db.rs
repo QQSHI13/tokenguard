@@ -37,6 +37,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "provider_fallback",
         apply: migration_004_provider_fallback,
     },
+    Migration {
+        id: 5,
+        name: "logs_status",
+        apply: migration_005_logs_status,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -94,6 +99,14 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
     // Older DBs created before duration_ms existed. Ignore "duplicate column" errors.
     let _ = conn.execute(
         "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    Ok(())
+}
+
+fn migration_005_logs_status(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute(
+        "ALTER TABLE logs ADD COLUMN status INTEGER",
         [],
     );
     Ok(())
@@ -227,11 +240,12 @@ pub fn insert_log(
     cost: f64,
     duration_ms: u64,
     project_tag: Option<&str>,
+    status: Option<u16>,
 ) -> rusqlite::Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag) VALUES (?,?,?,?,?,?,?,?)",
-        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag],
+        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status) VALUES (?,?,?,?,?,?,?,?,?)",
+        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status],
     )?;
     Ok(())
 }
@@ -247,6 +261,7 @@ pub struct LogRow {
     pub cost: f64,
     pub duration_ms: u64,
     pub project_tag: Option<String>,
+    pub status: Option<u16>,
 }
 
 fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
@@ -260,30 +275,102 @@ fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
         cost: row.get(6)?,
         duration_ms: row.get(7)?,
         project_tag: row.get(8)?,
+        status: row.get(9)?,
     })
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LogFilter {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub project: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub page: u64,
+    pub page_size: u64,
 }
 
 pub fn list_logs(
     conn: &Connection,
     limit: u64,
-    days: Option<u64>,
+    _days: Option<u64>,
 ) -> rusqlite::Result<Vec<LogRow>> {
-    if let Some(d) = days {
-        let mut stmt = conn.prepare(
-            "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag \
-             FROM logs WHERE ts >= datetime('now', ?2) ORDER BY id DESC LIMIT ?1",
-        )?;
-        let modifier = format!("-{d} days");
-        let rows = stmt.query_map(params![limit, modifier], row_to_log)?;
-        rows.collect::<rusqlite::Result<Vec<LogRow>>>()
-    } else {
-        let mut stmt = conn.prepare(
-            "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag \
-             FROM logs ORDER BY id DESC LIMIT ?1",
-        )?;
-        let rows = stmt.query_map(params![limit], row_to_log)?;
-        rows.collect::<rusqlite::Result<Vec<LogRow>>>()
+    list_logs_filtered(conn, &LogFilter { page_size: limit, ..LogFilter::default() })
+}
+
+/// List logs with optional filters and pagination. Returns the requested page
+/// ordered by id descending.
+pub fn list_logs_filtered(
+    conn: &Connection,
+    filter: &LogFilter,
+) -> rusqlite::Result<Vec<LogRow>> {
+    let mut sql = String::from(
+        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status \
+         FROM logs WHERE 1=1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(p) = &filter.provider {
+        sql.push_str(" AND provider = ?");
+        params.push(Box::new(p.clone()));
     }
+    if let Some(m) = &filter.model {
+        sql.push_str(" AND model = ?");
+        params.push(Box::new(m.clone()));
+    }
+    if let Some(proj) = &filter.project {
+        sql.push_str(" AND project_tag = ?");
+        params.push(Box::new(proj.clone()));
+    }
+    if let Some(start) = &filter.start {
+        sql.push_str(" AND ts >= ?");
+        params.push(Box::new(start.clone()));
+    }
+    if let Some(end) = &filter.end {
+        sql.push_str(" AND ts < ?");
+        params.push(Box::new(end.clone()));
+    }
+
+    sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
+    let page_size = filter.page_size.max(1);
+    let offset = filter.page.saturating_sub(1) * page_size;
+    params.push(Box::new(page_size));
+    params.push(Box::new(offset));
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), row_to_log)?;
+    rows.collect::<rusqlite::Result<Vec<LogRow>>>()
+}
+
+/// Count logs matching the same filters (without pagination).
+pub fn count_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::Result<u64> {
+    let mut sql = String::from("SELECT COUNT(*) FROM logs WHERE 1=1");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(p) = &filter.provider {
+        sql.push_str(" AND provider = ?");
+        params.push(Box::new(p.clone()));
+    }
+    if let Some(m) = &filter.model {
+        sql.push_str(" AND model = ?");
+        params.push(Box::new(m.clone()));
+    }
+    if let Some(proj) = &filter.project {
+        sql.push_str(" AND project_tag = ?");
+        params.push(Box::new(proj.clone()));
+    }
+    if let Some(start) = &filter.start {
+        sql.push_str(" AND ts >= ?");
+        params.push(Box::new(start.clone()));
+    }
+    if let Some(end) = &filter.end {
+        sql.push_str(" AND ts < ?");
+        params.push(Box::new(end.clone()));
+    }
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    conn.query_row(&sql, param_refs.as_slice(), |row| row.get(0))
 }
 
 pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<crate::config::Project>> {
@@ -834,9 +921,10 @@ mod tests {
             0.003,
             1200,
             Some("cursor-app"),
+            Some(200),
         )
         .unwrap();
-        insert_log(&conn, "OpenAI", "gpt-4o-mini", 100, 50, 0.001, 800, None).unwrap();
+        insert_log(&conn, "OpenAI", "gpt-4o-mini", 100, 50, 0.001, 800, None, Some(200)).unwrap();
 
         let logs = list_logs(&conn, 10, None).unwrap();
         assert_eq!(logs.len(), 2);
@@ -895,7 +983,7 @@ mod tests {
         assert_eq!(limits[0].id, id);
         assert_eq!(limits[0].cap, 100.0);
 
-        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None).unwrap();
+        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200)).unwrap();
         let used = usage_for_limit(&conn, &limits[0]).unwrap();
         assert_eq!(used, 50.0);
 
@@ -930,8 +1018,8 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "ScopedProvider", "m", 10, 10, 0.0, 100, None).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None).unwrap();
+        insert_log(&conn, "ScopedProvider", "m", 10, 10, 0.0, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 20.0);
@@ -958,8 +1046,8 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "O'Reilly \"AI\"", "m", 5, 5, 0.0, 100, None).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None).unwrap();
+        insert_log(&conn, "O'Reilly \"AI\"", "m", 5, 5, 0.0, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 10.0);

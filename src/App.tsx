@@ -6,6 +6,7 @@ import Dashboard from "./components/Dashboard";
 import SettingsTab from "./components/Settings";
 import Projects from "./components/Projects";
 import Limits from "./components/Limits";
+import Logs from "./components/Logs";
 import Docs from "./components/Docs";
 import ThemeToggle, { initTheme } from "./components/ThemeToggle";
 import Banner from "./components/Banner";
@@ -26,7 +27,7 @@ type Settings = {
 };
 type Spend = { today: number; budget: number };
 
-type Tab = "dashboard" | "limits" | "providers" | "projects" | "settings" | "docs";
+type Tab = "dashboard" | "limits" | "providers" | "projects" | "settings" | "docs" | "logs";
 
 export default function App() {
   const { t } = useI18n();
@@ -75,7 +76,7 @@ export default function App() {
     listen<string>("set_tab", (event) => {
       const t = event.payload as Tab;
       if (
-        ["dashboard", "limits", "providers", "projects", "settings", "docs"].includes(t)
+        ["dashboard", "limits", "providers", "projects", "settings", "docs", "logs"].includes(t)
       ) {
         setTab(t);
       }
@@ -97,6 +98,7 @@ export default function App() {
     { id: "limits", label: t("limits") },
     { id: "providers", label: t("providers") },
     { id: "projects", label: t("projects") },
+    { id: "logs", label: t("logs") },
     { id: "settings", label: t("settings") },
     { id: "docs", label: t("docs") },
   ];
@@ -161,6 +163,7 @@ export default function App() {
         {tab === "projects" && (
           <Projects onChange={() => setTick((t) => t + 1)} />
         )}
+        {tab === "logs" && <Logs />}
         {tab === "settings" && (
           <SettingsTab
             settings={settings}

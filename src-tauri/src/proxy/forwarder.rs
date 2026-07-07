@@ -190,6 +190,7 @@ async fn finalize_forward(
                 c,
                 duration_ms,
                 project_tag.clone(),
+                Some(status.as_u16()),
             )
             .await;
         });
@@ -229,6 +230,7 @@ async fn finalize_forward(
                 c,
                 duration_ms,
                 project_tag.clone(),
+                Some(status.as_u16()),
             )
             .await;
         build_response(status, headers, Body::from(bytes))

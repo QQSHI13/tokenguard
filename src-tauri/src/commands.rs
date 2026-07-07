@@ -281,6 +281,50 @@ pub fn get_logs(
     db::list_logs(&conn, limit.unwrap_or(5000), days).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct LogFilterInput {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub project: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub page: Option<u64>,
+    pub page_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LogListResult {
+    pub rows: Vec<LogRow>,
+    pub total: u64,
+    pub page: u64,
+    pub page_size: u64,
+}
+
+#[tauri::command]
+pub fn get_logs_filtered(
+    state: State<'_, Arc<AppState>>,
+    filter: LogFilterInput,
+) -> Result<LogListResult, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let f = db::LogFilter {
+        provider: filter.provider,
+        model: filter.model,
+        project: filter.project,
+        start: filter.start,
+        end: filter.end,
+        page: filter.page.unwrap_or(1),
+        page_size: filter.page_size.unwrap_or(50).max(1),
+    };
+    let rows = db::list_logs_filtered(&conn, &f).map_err(|e| e.to_string())?;
+    let total = db::count_logs_filtered(&conn, &f).map_err(|e| e.to_string())?;
+    Ok(LogListResult {
+        rows,
+        total,
+        page: f.page,
+        page_size: f.page_size,
+    })
+}
+
 #[tauri::command]
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
