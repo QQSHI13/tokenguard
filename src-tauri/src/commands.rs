@@ -9,6 +9,7 @@ use crate::prices;
 use crate::secrets;
 use crate::state::AppState;
 use futures::StreamExt;
+use rusqlite::params;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
@@ -788,6 +789,34 @@ pub fn fill_provider_prices_from_database(
         }
     }
     Ok(out)
+}
+
+#[tauri::command]
+pub fn get_provider_usage(
+    state: State<'_, Arc<AppState>>,
+    provider_id: i64,
+    days: u64,
+) -> Result<Vec<db::DailyUsage>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let name: String = conn
+        .query_row(
+            "SELECT name FROM providers WHERE id = ?1",
+            params![provider_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    db::provider_daily_usage(&conn, &name, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_project_usage(
+    state: State<'_, Arc<AppState>>,
+    project_tag: String,
+    days: u64,
+) -> Result<Vec<db::DailyUsage>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let tag = if project_tag.is_empty() { None } else { Some(project_tag.as_str()) };
+    db::project_daily_usage(&conn, tag, days).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

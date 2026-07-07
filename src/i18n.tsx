@@ -242,6 +242,12 @@ export const translations = {
     pricesFilled: "Prices filled for {count} models",
     pricesRefreshFailed: "Price refresh failed: ",
     pricesRefreshed: "Refreshed {count} prices",
+    byProject: "By project",
+    byProvider: "By provider",
+    selectProject: "Select project",
+    selectProvider: "Select provider",
+    dailyUsage: "Daily usage",
+    noUsageData: "No usage data for this selection.",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -440,6 +446,12 @@ export const translations = {
     pricesFilled: "已为 {count} 个模型填充价格",
     pricesRefreshFailed: "价格刷新失败：",
     pricesRefreshed: "已刷新 {count} 个价格",
+    byProject: "按项目",
+    byProvider: "按服务商",
+    selectProject: "选择项目",
+    selectProvider: "选择服务商",
+    dailyUsage: "每日使用",
+    noUsageData: "该选择没有使用数据。",
   },
 } as const;
 

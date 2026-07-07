@@ -348,6 +348,76 @@ pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
     )
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DailyUsage {
+    pub day: String,
+    pub cost: f64,
+    pub tokens: u64,
+    pub requests: u64,
+}
+
+/// Aggregate usage per day for a given provider (by name) over the last `days`.
+/// `days = 0` means all history.
+pub fn provider_daily_usage(
+    conn: &Connection,
+    provider_name: &str,
+    days: u64,
+) -> rusqlite::Result<Vec<DailyUsage>> {
+    let mut sql = String::from(
+        "SELECT date(ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+         FROM logs WHERE provider = ?1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    params.push(Box::new(provider_name.to_string()));
+    if days > 0 {
+        sql.push_str(" AND ts >= datetime('now', ?2)");
+        params.push(Box::new(format!("-{days} days")));
+    }
+    sql.push_str(" GROUP BY date(ts) ORDER BY day");
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(DailyUsage {
+            day: row.get(0)?,
+            cost: row.get(1)?,
+            tokens: row.get(2)?,
+            requests: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Aggregate usage per day for a given project tag over the last `days`.
+/// `days = 0` means all history. `project_tag = None` aggregates untagged requests.
+pub fn project_daily_usage(
+    conn: &Connection,
+    project_tag: Option<&str>,
+    days: u64,
+) -> rusqlite::Result<Vec<DailyUsage>> {
+    let mut sql = String::from(
+        "SELECT date(ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+         FROM logs WHERE project_tag IS ?1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    params.push(Box::new(project_tag));
+    if days > 0 {
+        sql.push_str(" AND ts >= datetime('now', ?2)");
+        params.push(Box::new(format!("-{days} days")));
+    }
+    sql.push_str(" GROUP BY date(ts) ORDER BY day");
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(DailyUsage {
+            day: row.get(0)?,
+            cost: row.get(1)?,
+            tokens: row.get(2)?,
+            requests: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, base_url, format, auth, models, is_default FROM providers ORDER BY id",
