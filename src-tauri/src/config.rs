@@ -76,6 +76,7 @@ pub struct Provider {
     pub auth: AuthScheme,
     pub models: Vec<ModelMapping>,
     pub is_default: bool,
+    pub fallback_provider_id: Option<i64>,
 }
 
 /// Frontend-facing provider with a flag indicating whether a key is stored.
@@ -99,6 +100,8 @@ pub struct ProviderInput {
     /// On update: delete the stored key (api_key is ignored then).
     #[serde(default)]
     pub clear_key: bool,
+    #[serde(default)]
+    pub fallback_provider_id: Option<i64>,
 }
 
 /// A project workspace. `label_key` is the throwaway value the user sets as

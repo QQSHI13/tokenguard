@@ -32,6 +32,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "provider_costs_into_models",
         apply: migration_003_provider_costs_into_models,
     },
+    Migration {
+        id: 4,
+        name: "provider_fallback",
+        apply: migration_004_provider_fallback,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -89,6 +94,14 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
     // Older DBs created before duration_ms existed. Ignore "duplicate column" errors.
     let _ = conn.execute(
         "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    Ok(())
+}
+
+fn migration_004_provider_fallback(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute(
+        "ALTER TABLE providers ADD COLUMN fallback_provider_id INTEGER",
         [],
     );
     Ok(())
@@ -318,7 +331,7 @@ pub fn update_provider(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE providers SET name = ?1, base_url = ?2, format = ?3, auth = ?4, \
-         models = ?5, is_default = ?6 WHERE id = ?7",
+         models = ?5, is_default = ?6, fallback_provider_id = ?7 WHERE id = ?8",
         params![
             p.name,
             p.base_url,
@@ -326,6 +339,7 @@ pub fn update_provider(
             p.auth.as_db_str(),
             serde_json::to_string(&p.models).unwrap_or_default(),
             p.is_default as i64,
+            p.fallback_provider_id,
             id,
         ],
     )?;
@@ -420,13 +434,14 @@ pub fn project_daily_usage(
 
 pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, base_url, format, auth, models, is_default FROM providers ORDER BY id",
+        "SELECT id, name, base_url, format, auth, models, is_default, fallback_provider_id FROM providers ORDER BY id",
     )?;
     let rows = stmt.query_map([], |row| {
         let format_str: String = row.get(3)?;
         let auth_str: String = row.get(4)?;
         let models_str: String = row.get(5)?;
         let is_default: i64 = row.get(6)?;
+        let fallback_provider_id: Option<i64> = row.get(7)?;
         let models = parse_models(&models_str);
         Ok(Provider {
             id: row.get(0)?,
@@ -436,6 +451,7 @@ pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
             auth: AuthScheme::from_db_str(&auth_str),
             models,
             is_default: is_default != 0,
+            fallback_provider_id,
         })
     })?;
     rows.collect()
@@ -472,8 +488,8 @@ pub fn insert_provider(
     p: &crate::config::ProviderInput,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO providers (name, base_url, format, auth, models, is_default) \
-         VALUES (?,?,?,?,?,?)",
+        "INSERT INTO providers (name, base_url, format, auth, models, is_default, fallback_provider_id) \
+         VALUES (?,?,?,?,?,?,?)",
         params![
             p.name,
             p.base_url,
@@ -481,6 +497,7 @@ pub fn insert_provider(
             p.auth.as_db_str(),
             serde_json::to_string(&p.models).unwrap_or_default(),
             p.is_default as i64,
+            p.fallback_provider_id,
         ],
     )?;
     if p.is_default {
@@ -752,6 +769,7 @@ mod tests {
             }],
             is_default: true,
             clear_key: false,
+            fallback_provider_id: None,
         }
     }
 

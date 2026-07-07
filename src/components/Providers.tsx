@@ -22,6 +22,7 @@ type Provider = {
   auth: AuthScheme;
   models: ModelMapping[];
   is_default: boolean;
+  fallback_provider_id: number | null;
 };
 type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
 
@@ -34,6 +35,7 @@ type Input = {
   models: ModelMapping[];
   is_default: boolean;
   clear_key: boolean;
+  fallback_provider_id: number | null;
 };
 
 const PRESETS: {
@@ -85,6 +87,7 @@ function blank(): Input {
     models: [],
     is_default: true,
     clear_key: false,
+    fallback_provider_id: null,
   };
 }
 
@@ -98,6 +101,7 @@ function fromProvider(p: Provider): Input {
     models: [...p.models],
     is_default: p.is_default,
     clear_key: false,
+    fallback_provider_id: p.fallback_provider_id ?? null,
   };
 }
 
@@ -513,6 +517,27 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           />
           {t("defaultForFormat")}
         </label>
+        <Field label={t("fallbackProvider")}>
+          <select
+            value={form.fallback_provider_id ?? ""}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                fallback_provider_id: Number(e.target.value) || null,
+              })
+            }
+            className={inputCls}
+          >
+            <option value="">{t("noFallback")}</option>
+            {providers
+              .filter(({ provider: p }) => p.id !== editingId)
+              .map(({ provider: p }) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+        </Field>
 
         {error && <p className="text-xs text-red-400">{error}</p>}
         <button

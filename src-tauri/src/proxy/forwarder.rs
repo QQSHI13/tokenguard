@@ -1,5 +1,6 @@
 //! Forward requests to the real provider with per-format auth and
 //! transparent SSE streaming. Logs usage + cost after the response completes.
+//! Supports one fallback-provider retry for 5xx / 429 / network failures.
 
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, StatusCode};
@@ -15,6 +16,8 @@ use crate::state::{
     cached_input_cost_per_1k, input_output_cost_per_1k, remote_model_name, AppState,
 };
 
+/// Forward a request to the chosen provider, optionally falling back to another
+/// configured provider on transient upstream failures.
 #[allow(clippy::too_many_arguments)]
 pub async fn forward(
     state: Arc<AppState>,
@@ -26,45 +29,105 @@ pub async fn forward(
     api_key: String,
     project_tag: Option<String>,
 ) -> Response {
+    let model = extract_model(&body, provider.format);
+
+    // First attempt.
+    let (mut used_provider, mut used_key, mut primary_resp) =
+        match attempt_forward(&state, &path, &body, &req_headers, &provider, &api_key, &model).await
+        {
+            Ok(resp) => (provider.clone(), api_key.clone(), Some(resp)),
+            Err(_) => (provider.clone(), api_key.clone(), None),
+        };
+
+    // Decide whether to fall back.
+    let should_fallback = match &primary_resp {
+        Some(resp) => is_retryable_status(resp.status()),
+        None => true, // network failure
+    };
+
+    if should_fallback {
+        if let Some(fallback) = find_fallback_provider(&state, &provider, &model) {
+            if let Ok(key) = crate::secrets::get(&fallback.name) {
+                if let Ok(resp) = attempt_forward(
+                    &state,
+                    &path,
+                    &body,
+                    &req_headers,
+                    &fallback,
+                    &key,
+                    &model,
+                )
+                .await
+                {
+                    used_provider = fallback;
+                    used_key = key;
+                    primary_resp = Some(resp);
+                }
+            }
+        }
+    }
+
+    // Finalize the response (stream + log) for whichever provider we ended up using.
+    match primary_resp {
+        Some(resp) => {
+            finalize_forward(state, start, resp, used_provider, used_key, &model, project_tag).await
+        }
+        None => super::error_resp(
+            StatusCode::BAD_GATEWAY,
+            "upstream request failed and no fallback succeeded",
+        ),
+    }
+}
+
+/// Send one attempt to a provider and return the raw upstream response.
+async fn attempt_forward(
+    state: &Arc<AppState>,
+    path: &str,
+    body: &Bytes,
+    req_headers: &HeaderMap,
+    provider: &Provider,
+    api_key: &str,
+    model: &str,
+) -> Result<reqwest::Response, ()> {
     let base = provider.base_url.trim_end_matches('/');
     let url = format!("{base}{path}");
-    let client = state.client.clone();
-    let st = state.clone();
+    let final_body = rewrite_body_for_provider(body, provider, model);
 
-    let (final_body, model, _is_stream) = prepare_body(&body, provider.format);
-    let remote_model = remote_model_name(&provider, &model);
-
-    let mut req = client.post(&url);
-    req = apply_auth(req, provider.auth, &api_key);
+    let mut req = state.client.post(&url);
+    req = apply_auth(req, provider.auth, api_key);
     for (k, v) in req_headers.iter() {
         if is_passthrough_header(k) {
             req = req.header(k, v.clone());
         }
     }
 
-    let resp = match req.body(final_body).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            return super::error_resp(
-                StatusCode::BAD_GATEWAY,
-                &format!("upstream request failed: {e}"),
-            )
-        }
-    };
+    req.body(final_body).send().await.map_err(|_| ())
+}
 
+/// Stream the final upstream response back to the client and log usage.
+#[allow(clippy::too_many_arguments)]
+async fn finalize_forward(
+    state: Arc<AppState>,
+    start: std::time::Instant,
+    resp: reqwest::Response,
+    provider: Provider,
+    _api_key: String,
+    model: &str,
+    project_tag: Option<String>,
+) -> Response {
     let status = resp.status();
     let headers = resp.headers().clone();
+    let remote_model = remote_model_name(&provider, model);
     let is_sse = headers
         .get(axum::http::header::CONTENT_TYPE)
         .map(|v| v.to_str().unwrap_or("").contains("text/event-stream"))
         .unwrap_or(false);
 
     if is_sse {
-        // Consume the upstream stream in a dedicated task so logging always runs
-        // even if the client drops the response body after reading the content.
+        let st = state.clone();
         let prov = provider.clone();
-        let model_owned = model.clone();
-        let remote_model_owned = remote_model_name(&prov, &model_owned);
+        let model_owned = model.to_string();
+        let remote_model_owned = remote_model.clone();
         let (tx, rx) = tokio::sync::mpsc::channel::<
             Result<Bytes, Box<dyn std::error::Error + Send + Sync>>,
         >(32);
@@ -126,10 +189,10 @@ pub async fn forward(
             }
         };
         let usage = sse::extract_json(&bytes, provider.format);
-        let (input_cost, output_cost) = input_output_cost_per_1k(&provider, &model);
-        let cached_cost = cached_input_cost_per_1k(&provider, &model);
+        let (input_cost, output_cost) = input_output_cost_per_1k(&provider, model);
+        let cached_cost = cached_input_cost_per_1k(&provider, model);
         let c = cost::estimate(
-            &model,
+            model,
             &remote_model,
             usage.prompt,
             usage.completion,
@@ -142,7 +205,7 @@ pub async fn forward(
         state
             .log_request(
                 provider.clone(),
-                model.clone(),
+                model.to_string(),
                 usage.prompt,
                 usage.completion,
                 c,
@@ -170,37 +233,67 @@ fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -
     }
 }
 
-/// Parse the request body to read `model` and, for OpenAI streaming chat or
-/// completions requests, inject `stream_options: {"include_usage": true}`.
-/// Anthropic streaming already includes usage in its SSE events, so no extra
-/// option is injected there. Bytes are otherwise forwarded unchanged.
-fn prepare_body(body: &Bytes, format: ProviderFormat) -> (Bytes, String, bool) {
+/// Find a fallback provider that has the same format and supports the requested
+/// model (by local name).
+fn find_fallback_provider(
+    state: &Arc<AppState>,
+    primary: &Provider,
+    model: &str,
+) -> Option<Provider> {
+    let fallback_id = primary.fallback_provider_id?;
+    let cfg = state.config.read().ok()?;
+    let fallback = cfg.providers.iter().find(|p| p.id == fallback_id)?;
+    if fallback.format != primary.format {
+        return None;
+    }
+    if !fallback.models.iter().any(|m| m.local == model) {
+        return None;
+    }
+    Some(fallback.clone())
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
+}
+
+fn extract_model(body: &Bytes, _format: ProviderFormat) -> String {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return (body.clone(), String::new(), false);
+        return String::new();
     };
-    let model = v
-        .get("model")
+    v.get("model")
         .and_then(|m| m.as_str())
         .unwrap_or("")
-        .to_string();
-    let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+        .to_string()
+}
 
-    // Only inject stream_options for OpenAI chat/completions; the Responses API
-    // does not accept this option and reports usage in its own event shape.
+/// Rewrite the request body for the target provider: remap the model field to
+/// the provider's remote model name, and inject OpenAI stream_options when
+/// appropriate.
+fn rewrite_body_for_provider(body: &Bytes, provider: &Provider, local_model: &str) -> Bytes {
+    let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.clone();
+    };
+
+    let remote_model = remote_model_name(provider, local_model);
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "model".to_string(),
+            serde_json::Value::String(remote_model),
+        );
+    }
+
+    let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
     let is_chat_or_completions = v.get("messages").is_some() || v.get("prompt").is_some();
-    if format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
-        let mut v = v;
+    if provider.format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
         let mut opts = v
             .get("stream_options")
             .and_then(|o| o.as_object().cloned())
             .unwrap_or_default();
         opts.insert("include_usage".to_string(), serde_json::json!(true));
         v["stream_options"] = serde_json::Value::Object(opts);
-        if let Ok(new_body) = serde_json::to_vec(&v) {
-            return (Bytes::from(new_body), model, true);
-        }
     }
-    (body.clone(), model, is_stream)
+
+    serde_json::to_vec(&v).map(Bytes::from).unwrap_or_else(|_| body.clone())
 }
 
 fn apply_auth(

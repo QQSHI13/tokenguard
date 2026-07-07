@@ -155,25 +155,11 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             }
         };
 
-        // Rewrite the model field to the provider's remote model name if an alias
-        // is configured. This supports OpenAI/Anthropic model aliases and newer
-        // provider-specific model slugs while keeping the local API clean.
-        let remote_model = remote_model_name(&provider, &model);
-        let body_bytes = {
-            let mut json = body_json.clone();
-            if let Some(obj) = json.as_object_mut() {
-                obj.insert(
-                    "model".to_string(),
-                    serde_json::Value::String(remote_model.clone()),
-                );
-            }
-            serde_json::to_vec(&json).unwrap_or_else(|_| body_bytes.to_vec())
-        };
-
         // Estimate cost/tokens for limit checking before spending anything.
         // Money/token limits are enforced reactively for the current request because
         // we only know the true cost after the response. Request limits are enforced
         // atomically via in-memory counters.
+        let remote_model = remote_model_name(&provider, &model);
         let (input_cost, output_cost) = input_output_cost_per_1k(&provider, &model);
         let (estimated_cost, estimated_tokens) = crate::cost::estimate_request(
             &body_json,
