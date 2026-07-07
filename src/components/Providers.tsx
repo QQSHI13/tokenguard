@@ -26,6 +26,13 @@ type Provider = {
 };
 type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
 
+type ProviderHealth = {
+  ok: boolean;
+  latency_ms: number;
+  error: string | null;
+  checked_at: string;
+};
+
 type Input = {
   name: string;
   base_url: string;
@@ -112,9 +119,13 @@ export default function Providers({ onChange }: { onChange: () => void }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
+  const [health, setHealth] = useState<Record<number, ProviderHealth>>({});
 
   const refresh = useCallback(() => {
     invoke<ProviderDto[]>("list_providers").then(setProviders).catch(console.error);
+    invoke<Record<number, ProviderHealth>>("get_provider_healths")
+      .then(setHealth)
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -208,6 +219,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   <span className="text-sm font-medium text-neutral-200">
                     {p.name}
                   </span>
+                  <HealthDot health={health[p.id]} t={t} />
                   {p.is_default && (
                     <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
                       {t("default")}
@@ -553,6 +565,40 @@ export default function Providers({ onChange }: { onChange: () => void }) {
 
 const inputCls =
   "w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 focus:border-emerald-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200";
+
+function HealthDot({
+  health,
+  t,
+}: {
+  health: ProviderHealth | undefined;
+  t: (
+    key: keyof typeof import("../i18n").translations.en,
+    vars?: Record<string, string | number>,
+  ) => string;
+}) {
+  if (!health) {
+    return (
+      <span
+        title={t("healthUnknown")}
+        className="h-2 w-2 rounded-full bg-neutral-600"
+      />
+    );
+  }
+  if (health.ok) {
+    return (
+      <span
+        title={t("healthy", { ms: health.latency_ms })}
+        className="h-2 w-2 rounded-full bg-emerald-500"
+      />
+    );
+  }
+  return (
+    <span
+      title={health.error ?? t("unhealthy")}
+      className="h-2 w-2 rounded-full bg-red-500"
+    />
+  );
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

@@ -4,6 +4,7 @@ use crate::config::{
     Config, Limit, LimitAction, LimitMetric, LimitScope, Project, Provider, ProviderFormat,
 };
 use crate::db::{self, DbPool};
+use crate::health::{HealthCache, ProviderHealth};
 use crate::limits::LimitCounters;
 use crate::notifications;
 use crate::webhook;
@@ -129,6 +130,8 @@ pub struct AppState {
     next_request_id: AtomicU64,
     /// Tracks left-clicks on the tray icon to distinguish single vs double clicks.
     tray_click: Mutex<TrayClickState>,
+    /// Cached provider health check results.
+    provider_health: Arc<Mutex<HealthCache>>,
 }
 
 #[derive(Default)]
@@ -166,6 +169,7 @@ impl AppState {
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
             tray_click: Mutex::new(TrayClickState::default()),
+            provider_health: Arc::new(Mutex::new(HealthCache::default())),
         })
     }
 
@@ -462,6 +466,14 @@ impl AppState {
                 let _ = tray.set_menu(Some(menu));
             }
         }
+    }
+
+    pub fn all_provider_health(&self) -> std::collections::HashMap<i64, ProviderHealth> {
+        self.provider_health.lock().ok().map(|c| c.all()).unwrap_or_default()
+    }
+
+    pub fn provider_health_cache(&self) -> Arc<Mutex<HealthCache>> {
+        self.provider_health.clone()
     }
 
     pub fn toggle_pause(&self) -> bool {

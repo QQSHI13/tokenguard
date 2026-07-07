@@ -11,6 +11,7 @@ mod proxy;
 mod secrets;
 mod state;
 mod webhook;
+mod health;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Wry};
@@ -81,6 +82,8 @@ pub fn run() {
             commands::fill_provider_prices_from_database,
             commands::get_provider_usage,
             commands::get_project_usage,
+            commands::check_provider_health,
+            commands::get_provider_healths,
             commands::get_logs_filtered,
             commands::backup_database,
             commands::restore_database,
@@ -115,6 +118,18 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = proxy::server::serve(s, port, shutdown_rx).await {
                     tracing::error!("proxy server error: {e}");
+                }
+            });
+
+            // Run provider health checks periodically and cache the results.
+            let s = state.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    let providers = s.config.read().map(|cfg| cfg.providers.clone()).unwrap_or_default();
+                    crate::health::refresh_all(&s.client, &providers, s.provider_health_cache()).await;
                 }
             });
 

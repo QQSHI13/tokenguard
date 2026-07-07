@@ -5,6 +5,7 @@ use crate::config::{
     ProviderDto, ProviderInput,
 };
 use crate::db::{self, LogRow};
+use crate::health::{self, ProviderHealth};
 use crate::prices;
 use crate::secrets;
 use crate::state::AppState;
@@ -892,6 +893,38 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
             },
         },
     ]
+}
+
+// ---- provider health ----
+
+#[tauri::command]
+pub async fn check_provider_health(
+    state: State<'_, Arc<AppState>>,
+    id: i64,
+) -> Result<ProviderHealth, String> {
+    let provider = {
+        let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+        cfg.providers
+            .iter()
+            .find(|p| p.id == id)
+            .cloned()
+            .ok_or("provider not found")?
+    };
+    let health = health::check_provider(&state.inner().client, &provider).await;
+    state
+        .inner()
+        .provider_health_cache()
+        .lock()
+        .map(|mut c| c.insert(id, health.clone()))
+        .map_err(|e| e.to_string())?;
+    Ok(health)
+}
+
+#[tauri::command]
+pub fn get_provider_healths(
+    state: State<'_, Arc<AppState>>,
+) -> Result<std::collections::HashMap<i64, ProviderHealth>, String> {
+    Ok(state.inner().all_provider_health())
 }
 
 // ---- license key ----
