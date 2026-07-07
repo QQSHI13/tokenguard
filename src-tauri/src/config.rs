@@ -254,6 +254,10 @@ impl LimitAction {
     }
 }
 
+fn all_days() -> u8 {
+    0b1111111
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
     pub id: i64,
@@ -266,6 +270,12 @@ pub struct Limit {
     pub scope_id: Option<i64>,
     pub action: LimitAction,
     pub enabled: bool,
+    #[serde(default)]
+    pub active_hours_start: Option<String>,
+    #[serde(default)]
+    pub active_hours_end: Option<String>,
+    #[serde(default = "all_days")]
+    pub active_days: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,6 +289,12 @@ pub struct LimitInput {
     pub scope_id: Option<i64>,
     pub action: LimitAction,
     pub enabled: bool,
+    #[serde(default)]
+    pub active_hours_start: Option<String>,
+    #[serde(default)]
+    pub active_hours_end: Option<String>,
+    #[serde(default = "all_days")]
+    pub active_days: u8,
 }
 
 #[derive(Debug, Clone)]

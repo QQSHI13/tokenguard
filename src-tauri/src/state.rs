@@ -67,6 +67,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
+use chrono::{Datelike, Timelike};
 
 /// Pure scope-matching logic, extracted for unit testing.
 pub fn limit_scope_matches(
@@ -262,6 +263,9 @@ impl AppState {
             if !limit_scope_matches(limit, provider_id, project_tag, &cfg.projects) {
                 continue;
             }
+            if !is_limit_active(limit) {
+                continue;
+            }
 
             let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
 
@@ -447,6 +451,44 @@ impl AppState {
         self.refresh_tray();
         new
     }
+}
+
+/// Parse a "HH:MM" string into minutes since midnight.
+fn parse_minutes(s: &str) -> Option<u32> {
+    let mut parts = s.split(':');
+    let h: u32 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    if h >= 24 || m >= 60 {
+        return None;
+    }
+    Some(h * 60 + m)
+}
+
+/// Return true if the current UTC time falls inside the limit's optional
+/// schedule. A missing schedule means always active.
+pub fn is_limit_active(limit: &Limit) -> bool {
+    let now = chrono::Utc::now();
+
+    if limit.active_days != 0b1111111 {
+        // Bit 0 = Monday .. bit 6 = Sunday.
+        let weekday = now.weekday().num_days_from_monday() as u8;
+        if limit.active_days & (1 << weekday) == 0 {
+            return false;
+        }
+    }
+
+    if let (Some(start), Some(end)) = (&limit.active_hours_start, &limit.active_hours_end) {
+        if let (Some(start_min), Some(end_min)) = (parse_minutes(start), parse_minutes(end)) {
+            let cur = now.hour() as u32 * 60 + now.minute() as u32;
+            if start_min <= end_min {
+                return cur >= start_min && cur <= end_min;
+            } else {
+                return cur >= start_min || cur <= end_min;
+            }
+        }
+    }
+
+    true
 }
 
 fn build_tray_menu(
@@ -679,6 +721,9 @@ mod tests {
             scope_id,
             action: crate::config::LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         }
     }
 

@@ -47,6 +47,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "logs_bodies",
         apply: migration_006_logs_bodies,
     },
+    Migration {
+        id: 7,
+        name: "limit_schedules",
+        apply: migration_007_limit_schedules,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -112,6 +117,16 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
 fn migration_006_logs_bodies(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute("ALTER TABLE logs ADD COLUMN request_body TEXT", []);
     let _ = conn.execute("ALTER TABLE logs ADD COLUMN response_body TEXT", []);
+    Ok(())
+}
+
+fn migration_007_limit_schedules(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE limits ADD COLUMN active_hours_start TEXT", []);
+    let _ = conn.execute("ALTER TABLE limits ADD COLUMN active_hours_end TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE limits ADD COLUMN active_days INTEGER NOT NULL DEFAULT 127",
+        [],
+    );
     Ok(())
 }
 
@@ -629,6 +644,7 @@ fn row_to_limit(row: &rusqlite::Row) -> rusqlite::Result<Limit> {
     let scope_str: String = row.get(7)?;
     let action_str: String = row.get(9)?;
     let enabled: i64 = row.get(10)?;
+    let active_days: i64 = row.get(13).unwrap_or(127);
 
     let period = if period_str == "custom_sec" {
         LimitPeriod::CustomSec(period_value as u64)
@@ -647,12 +663,16 @@ fn row_to_limit(row: &rusqlite::Row) -> rusqlite::Result<Limit> {
         scope_id: row.get(8)?,
         action: LimitAction::from_db_str(&action_str),
         enabled: enabled != 0,
+        active_hours_start: row.get(11)?,
+        active_hours_end: row.get(12)?,
+        active_days: active_days as u8,
     })
 }
 
 pub fn list_limits(conn: &Connection) -> rusqlite::Result<Vec<Limit>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled FROM limits ORDER BY id",
+        "SELECT id, name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
+         active_hours_start, active_hours_end, active_days FROM limits ORDER BY id",
     )?;
     let rows = stmt.query_map([], row_to_limit)?;
     rows.collect()
@@ -664,8 +684,9 @@ pub fn insert_limit(conn: &Connection, l: &LimitInput) -> rusqlite::Result<i64> 
         p => (p.as_db_str(), 0),
     };
     conn.execute(
-        "INSERT INTO limits (name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled) \
-         VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO limits (name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
+         active_hours_start, active_hours_end, active_days) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             l.name,
             l.metric.as_db_str(),
@@ -677,6 +698,9 @@ pub fn insert_limit(conn: &Connection, l: &LimitInput) -> rusqlite::Result<i64> 
             l.scope_id,
             l.action.as_db_str(),
             l.enabled as i64,
+            l.active_hours_start,
+            l.active_hours_end,
+            l.active_days as i64,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -689,7 +713,8 @@ pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Res
     };
     conn.execute(
         "UPDATE limits SET name = ?1, metric = ?2, period = ?3, period_value = ?4, cap = ?5, \
-         warning_threshold = ?6, scope = ?7, scope_id = ?8, action = ?9, enabled = ?10 WHERE id = ?11",
+         warning_threshold = ?6, scope = ?7, scope_id = ?8, action = ?9, enabled = ?10, \
+         active_hours_start = ?11, active_hours_end = ?12, active_days = ?13 WHERE id = ?14",
         params![
             l.name,
             l.metric.as_db_str(),
@@ -701,6 +726,9 @@ pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Res
             l.scope_id,
             l.action.as_db_str(),
             l.enabled as i64,
+            l.active_hours_start,
+            l.active_hours_end,
+            l.active_days as i64,
             id,
         ],
     )?;
@@ -802,6 +830,9 @@ pub fn migrate_legacy_budget(conn: &Connection) -> rusqlite::Result<()> {
         scope_id: None,
         action: LimitAction::Warn,
         enabled: true,
+        active_hours_start: None,
+        active_hours_end: None,
+        active_days: 0b1111111,
     };
     insert_limit(conn, &limit)?;
     Ok(())
@@ -1004,6 +1035,9 @@ mod tests {
             scope_id: None,
             action: LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         };
         let id = insert_limit(&conn, &limit).unwrap();
 
@@ -1042,6 +1076,9 @@ mod tests {
             scope_id: Some(provider_id),
             action: LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         };
         let limit_id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();
@@ -1070,6 +1107,9 @@ mod tests {
             scope_id: Some(provider_id),
             action: LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         };
         let limit_id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();
@@ -1095,6 +1135,9 @@ mod tests {
             scope_id: None,
             action: LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         };
         let id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();

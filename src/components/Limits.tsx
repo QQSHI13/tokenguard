@@ -24,6 +24,9 @@ type Limit = {
   scope_id: number | null;
   action: LimitAction;
   enabled: boolean;
+  active_hours_start: string | null;
+  active_hours_end: string | null;
+  active_days: number;
 };
 
 type LimitInput = Omit<Limit, "id">;
@@ -77,6 +80,16 @@ function storeCap(metric: LimitMetric, value: number): number {
   return value;
 }
 
+const DAYS = [
+  { bit: 0, key: "mon" as const },
+  { bit: 1, key: "tue" as const },
+  { bit: 2, key: "wed" as const },
+  { bit: 3, key: "thu" as const },
+  { bit: 4, key: "fri" as const },
+  { bit: 5, key: "sat" as const },
+  { bit: 6, key: "sun" as const },
+];
+
 function blankLimit(): LimitInput {
   return {
     name: "",
@@ -88,6 +101,9 @@ function blankLimit(): LimitInput {
     scope_id: null,
     action: "warn",
     enabled: true,
+    active_hours_start: null,
+    active_hours_end: null,
+    active_days: 0b1111111,
   };
 }
 
@@ -506,6 +522,61 @@ export default function Limits({ onChange }: { onChange: () => void }) {
               />
               {t("enabled")}
             </label>
+          </div>
+
+          <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-900/20 p-3">
+            <h3 className="text-xs font-medium text-neutral-400">{t("schedule")}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("activeHoursStart")}>
+                <input
+                  type="time"
+                  value={form.active_hours_start ?? ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      active_hours_start: e.target.value || null,
+                    })
+                  }
+                  className={inputCls}
+                />
+              </Field>
+              <Field label={t("activeHoursEnd")}>
+                <input
+                  type="time"
+                  value={form.active_hours_end ?? ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      active_hours_end: e.target.value || null,
+                    })
+                  }
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <div>
+              <span className="mb-1 block text-[11px] text-neutral-500">{t("activeDays")}</span>
+              <div className="flex flex-wrap gap-2">
+                {DAYS.map((d) => (
+                  <label
+                    key={d.bit}
+                    className="flex items-center gap-1 text-[11px] text-neutral-400"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={(form.active_days & (1 << d.bit)) !== 0}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? form.active_days | (1 << d.bit)
+                          : form.active_days & ~(1 << d.bit);
+                        setForm({ ...form, active_days: next });
+                      }}
+                    />
+                    {t(d.key)}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}

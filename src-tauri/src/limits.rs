@@ -102,6 +102,9 @@ mod tests {
             scope_id: None,
             action: LimitAction::Warn,
             enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
         }
     }
 
