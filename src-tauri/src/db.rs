@@ -874,6 +874,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let auto_export_folder = get_setting(conn, "auto_export_folder");
+    let webhook_url = get_setting(conn, "webhook_url").filter(|s| !s.is_empty());
     Ok(Config {
         providers,
         projects,
@@ -883,6 +884,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         log_bodies,
         auto_export_days,
         auto_export_folder,
+        webhook_url,
     })
 }
 

@@ -14,6 +14,7 @@ type Settings = {
   log_bodies: boolean;
   auto_export_days: number;
   auto_export_folder: string | null;
+  webhook_url: string | null;
 } | null;
 
 export default function SettingsTab({
@@ -42,6 +43,8 @@ export default function SettingsTab({
   const [autoExportDays, setAutoExportDays] = useState(String(settings?.auto_export_days ?? 0));
   const [autoExportFolder, setAutoExportFolder] = useState(settings?.auto_export_folder ?? "");
   const [autoExportStatus, setAutoExportStatus] = useState<string | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState(settings?.webhook_url ?? "");
+  const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -147,6 +150,10 @@ export default function SettingsTab({
     }
   };
 
+  useEffect(() => {
+    setWebhookUrl(settings?.webhook_url ?? "");
+  }, [settings?.webhook_url]);
+
   const handlePickAutoExportFolder = async () => {
     const folder = await open({ directory: true });
     if (!folder) return;
@@ -163,6 +170,29 @@ export default function SettingsTab({
       setAutoExportStatus(t("autoExportSaved"));
     } catch (e) {
       setAutoExportStatus(String(e));
+    }
+  };
+
+  const handleSaveWebhook = async () => {
+    setWebhookStatus(null);
+    try {
+      await invoke("set_webhook_url", { url: webhookUrl.trim() || null });
+      onChanged();
+      setWebhookStatus(t("webhookSaved"));
+    } catch (e) {
+      setWebhookStatus(String(e));
+    }
+  };
+
+  const handleTestWebhook = async () => {
+    setWebhookStatus(null);
+    const url = webhookUrl.trim();
+    if (!url) return;
+    try {
+      await invoke("test_webhook", { url });
+      setWebhookStatus(t("webhookTestSent"));
+    } catch (e) {
+      setWebhookStatus(String(e));
     }
   };
 
@@ -265,6 +295,44 @@ export default function SettingsTab({
           />
           {t("logRequestBodies")}
         </label>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("webhookNotifications")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("webhookNotificationsHelp")}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="url"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder={t("webhookUrlPlaceholder")}
+            className="flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <button
+            onClick={handleSaveWebhook}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+          <button
+            onClick={handleTestWebhook}
+            disabled={!webhookUrl.trim()}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {t("test")}
+          </button>
+        </div>
+        {webhookStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              webhookStatus.includes(t("webhookSaved")) || webhookStatus.includes(t("webhookTestSent"))
+                ? "text-emerald-600"
+                : "text-red-600"
+            }`}
+          >
+            {webhookStatus}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

@@ -25,6 +25,7 @@ pub struct SettingsDto {
     pub log_bodies: bool,
     pub auto_export_days: u32,
     pub auto_export_folder: Option<String>,
+    pub webhook_url: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -227,6 +228,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         log_bodies: cfg.log_bodies,
         auto_export_days: cfg.auto_export_days,
         auto_export_folder: cfg.auto_export_folder.clone(),
+        webhook_url: cfg.webhook_url.clone(),
     })
 }
 
@@ -389,6 +391,34 @@ pub fn maybe_run_auto_export(state: State<'_, Arc<AppState>>) -> Result<Option<S
 #[tauri::command]
 pub fn run_auto_export_now_cmd(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     run_auto_export_now(&state)
+}
+
+#[tauri::command]
+pub fn set_webhook_url(
+    state: State<'_, Arc<AppState>>,
+    url: Option<String>,
+) -> Result<(), String> {
+    let value = url.unwrap_or_default();
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "webhook_url", &value).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .webhook_url = Some(value).filter(|s| !s.is_empty());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn test_webhook(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+) -> Result<(), String> {
+    crate::webhook::send_test(&state.inner().client, &url).await
 }
 
 #[tauri::command]

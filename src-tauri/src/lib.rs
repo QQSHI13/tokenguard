@@ -10,6 +10,7 @@ mod prices;
 mod proxy;
 mod secrets;
 mod state;
+mod webhook;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Wry};
@@ -48,6 +49,8 @@ pub fn run() {
             commands::set_budget,
             commands::set_port,
             commands::set_log_bodies,
+            commands::set_webhook_url,
+            commands::test_webhook,
             commands::pause_resume,
             commands::get_today_spend,
             commands::get_logs,

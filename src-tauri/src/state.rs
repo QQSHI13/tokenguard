@@ -6,6 +6,7 @@ use crate::config::{
 use crate::db::{self, DbPool};
 use crate::limits::LimitCounters;
 use crate::notifications;
+use crate::webhook;
 
 /// Pure routing logic, extracted for unit testing.
 pub fn route_in_list(
@@ -255,6 +256,7 @@ impl AppState {
         };
 
         let mut violations = Vec::new();
+        let webhook_url = cfg.webhook_url.clone();
         let now = Instant::now();
         for limit in &cfg.limits {
             if !limit.enabled {
@@ -290,6 +292,18 @@ impl AppState {
 
             let total = used + current;
             if limit.cap > 0.0 && total >= limit.cap {
+                if self.should_notify_block(limit.id) {
+                    if let Some(ref url) = webhook_url {
+                        webhook::send_limit_event(
+                            &self.client,
+                            url,
+                            "limit_hit",
+                            limit,
+                            total,
+                            limit.cap,
+                        );
+                    }
+                }
                 // Blocked/paused requests don't count; the caller will release.
                 if limit.metric == LimitMetric::Requests
                     && (limit.action == LimitAction::Block || limit.action == LimitAction::Pause)
@@ -319,6 +333,16 @@ impl AppState {
                     .unwrap_or(true);
                 if should_notify {
                     notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
+                    if let Some(ref url) = webhook_url {
+                        webhook::send_limit_event(
+                            &self.client,
+                            url,
+                            "limit_warning",
+                            limit,
+                            used,
+                            limit.cap,
+                        );
+                    }
                     if let Ok(mut map) = self.last_warning.lock() {
                         map.insert(limit.id, now);
                     }

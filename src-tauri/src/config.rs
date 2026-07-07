@@ -307,6 +307,7 @@ pub struct Config {
     pub log_bodies: bool,
     pub auto_export_days: u32,
     pub auto_export_folder: Option<String>,
+    pub webhook_url: Option<String>,
 }
 
 impl Default for Config {
@@ -320,6 +321,7 @@ impl Default for Config {
             log_bodies: false,
             auto_export_days: 0,
             auto_export_folder: None,
+            webhook_url: None,
         }
     }
 }
