@@ -15,6 +15,7 @@ use std::sync::Arc;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
 
 #[derive(Debug, serde::Serialize)]
 pub struct SettingsDto {
@@ -27,6 +28,7 @@ pub struct SettingsDto {
     pub auto_export_days: u32,
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
+    pub auto_start: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -230,6 +232,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         auto_export_days: cfg.auto_export_days,
         auto_export_folder: cfg.auto_export_folder.clone(),
         webhook_url: cfg.webhook_url.clone(),
+        auto_start: cfg.auto_start,
     })
 }
 
@@ -420,6 +423,37 @@ pub async fn test_webhook(
     url: String,
 ) -> Result<(), String> {
     crate::webhook::send_test(&state.inner().client, &url).await
+}
+
+#[tauri::command]
+pub fn get_auto_start(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_auto_start(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<bool, String> {
+    if enabled {
+        app.autolaunch().enable().map_err(|e| e.to_string())?;
+    } else {
+        app.autolaunch().disable().map_err(|e| e.to_string())?;
+    }
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "auto_start", if enabled { "1" } else { "0" })
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .auto_start = enabled;
+    Ok(enabled)
 }
 
 #[tauri::command]
@@ -1173,6 +1207,15 @@ pub fn get_project_usage(
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     let tag = if project_tag.is_empty() { None } else { Some(project_tag.as_str()) };
     db::project_daily_usage(&conn, tag, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_monthly_usage(
+    state: State<'_, Arc<AppState>>,
+    months: Option<u32>,
+) -> Result<Vec<db::MonthlyUsage>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    db::monthly_usage(&conn, months.unwrap_or(12)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

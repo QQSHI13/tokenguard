@@ -308,6 +308,7 @@ pub struct Config {
     pub auto_export_days: u32,
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
+    pub auto_start: bool,
 }
 
 impl Default for Config {
@@ -322,6 +323,7 @@ impl Default for Config {
             auto_export_days: 0,
             auto_export_folder: None,
             webhook_url: None,
+            auto_start: false,
         }
     }
 }

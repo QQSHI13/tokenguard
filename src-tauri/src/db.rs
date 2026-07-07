@@ -489,6 +489,14 @@ pub struct DailyUsage {
     pub requests: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MonthlyUsage {
+    pub month: String,
+    pub cost: f64,
+    pub tokens: u64,
+    pub requests: u64,
+}
+
 /// Aggregate usage per day for a given provider (by name) over the last `days`.
 /// `days = 0` means all history.
 pub fn provider_daily_usage(
@@ -543,6 +551,24 @@ pub fn project_daily_usage(
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         Ok(DailyUsage {
             day: row.get(0)?,
+            cost: row.get(1)?,
+            tokens: row.get(2)?,
+            requests: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Aggregate usage per month for the last `months` months (including the current month).
+pub fn monthly_usage(conn: &Connection, months: u32) -> rusqlite::Result<Vec<MonthlyUsage>> {
+    let sql = "SELECT strftime('%Y-%m', ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+               FROM logs WHERE ts >= datetime('now', 'start of month', ?1) \
+               GROUP BY strftime('%Y-%m', ts) ORDER BY month";
+    let offset = format!("-{} months", months.saturating_sub(1));
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([&offset], |row| {
+        Ok(MonthlyUsage {
+            month: row.get(0)?,
             cost: row.get(1)?,
             tokens: row.get(2)?,
             requests: row.get(3)?,
@@ -875,6 +901,9 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         .unwrap_or(0);
     let auto_export_folder = get_setting(conn, "auto_export_folder");
     let webhook_url = get_setting(conn, "webhook_url").filter(|s| !s.is_empty());
+    let auto_start = get_setting(conn, "auto_start")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     Ok(Config {
         providers,
         projects,
@@ -885,6 +914,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         auto_export_days,
         auto_export_folder,
         webhook_url,
+        auto_start,
     })
 }
 

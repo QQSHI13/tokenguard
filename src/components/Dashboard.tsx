@@ -39,6 +39,13 @@ type DailyUsage = {
   requests: number;
 };
 
+type MonthlyUsage = {
+  month: string;
+  cost: number;
+  tokens: number;
+  requests: number;
+};
+
 type SimpleProvider = { id: number; name: string };
 type SimpleProject = { id: number; name: string };
 
@@ -69,6 +76,8 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState<number | "">("");
   const [providerUsage, setProviderUsage] = useState<DailyUsage[]>([]);
   const [projectUsage, setProjectUsage] = useState<DailyUsage[]>([]);
+  const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage[]>([]);
+  const [monthlyMetric, setMonthlyMetric] = useState<Metric>("cost");
 
   const refresh = useCallback(() => {
     invoke<Log[]>("get_logs", { limit: 5000 }).then(setLogs).catch(console.error);
@@ -89,6 +98,9 @@ export default function Dashboard() {
         setProjects(list);
         setProjectCount(list.length);
       })
+      .catch(console.error);
+    invoke<MonthlyUsage[]>("get_monthly_usage", { months: 12 })
+      .then(setMonthlyUsage)
       .catch(console.error);
   }, []);
 
@@ -299,6 +311,39 @@ export default function Dashboard() {
               </div>
             </div>
             <UsageChart logs={shown} metric={chartMetric} range={range} t={t} />
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {t("monthlyUsage")}
+              </h3>
+              <div className="flex gap-1">
+                {(["cost", "tokens", "requests"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMonthlyMetric(m)}
+                    className={`rounded px-2 py-0.5 text-[10px] font-medium ${
+                      monthlyMetric === m
+                        ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                        : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                    }`}
+                  >
+                    {t(m)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <DailyUsageChart
+              data={monthlyUsage.map((u) => ({
+                day: u.month,
+                cost: u.cost,
+                tokens: u.tokens,
+                requests: u.requests,
+              }))}
+              metric={monthlyMetric}
+              t={t}
+            />
           </div>
 
           {limitStatus.length > 0 && (

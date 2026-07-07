@@ -40,6 +40,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             commands::list_providers,
             commands::add_provider,
@@ -82,6 +86,7 @@ pub fn run() {
             commands::fill_provider_prices_from_database,
             commands::get_provider_usage,
             commands::get_project_usage,
+            commands::get_monthly_usage,
             commands::check_provider_health,
             commands::get_provider_healths,
             commands::get_logs_filtered,
@@ -90,6 +95,8 @@ pub fn run() {
             commands::set_auto_export,
             commands::maybe_run_auto_export,
             commands::run_auto_export_now_cmd,
+            commands::get_auto_start,
+            commands::set_auto_start,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

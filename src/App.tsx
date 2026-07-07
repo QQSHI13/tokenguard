@@ -28,6 +28,7 @@ type Settings = {
   auto_export_days: number;
   auto_export_folder: string | null;
   webhook_url: string | null;
+  auto_start: boolean;
 };
 type Spend = { today: number; budget: number };
 

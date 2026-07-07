@@ -15,6 +15,7 @@ type Settings = {
   auto_export_days: number;
   auto_export_folder: string | null;
   webhook_url: string | null;
+  auto_start: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -45,6 +46,8 @@ export default function SettingsTab({
   const [autoExportStatus, setAutoExportStatus] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState(settings?.webhook_url ?? "");
   const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
+  const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
+  const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -153,6 +156,21 @@ export default function SettingsTab({
   useEffect(() => {
     setWebhookUrl(settings?.webhook_url ?? "");
   }, [settings?.webhook_url]);
+
+  useEffect(() => {
+    setAutoStart(settings?.auto_start ?? false);
+  }, [settings?.auto_start]);
+
+  const handleAutoStartChange = async (enabled: boolean) => {
+    setAutoStartStatus(null);
+    try {
+      await invoke("set_auto_start", { enabled });
+      setAutoStart(enabled);
+      setAutoStartStatus(t("autoStartSaved"));
+    } catch (e) {
+      setAutoStartStatus(String(e));
+    }
+  };
 
   const handlePickAutoExportFolder = async () => {
     const folder = await open({ directory: true });
@@ -331,6 +349,28 @@ export default function SettingsTab({
             }`}
           >
             {webhookStatus}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("autoStart")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("autoStartHelp")}</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-400">
+          <input
+            type="checkbox"
+            checked={autoStart}
+            onChange={(e) => handleAutoStartChange(e.target.checked)}
+          />
+          {t("autoStartOnLogin")}
+        </label>
+        {autoStartStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              autoStartStatus.includes(t("autoStartSaved")) ? "text-emerald-600" : "text-red-600"
+            }`}
+          >
+            {autoStartStatus}
           </p>
         )}
       </section>
