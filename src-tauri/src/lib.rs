@@ -6,6 +6,7 @@ mod cost;
 mod db;
 mod limits;
 mod notifications;
+mod prices;
 mod proxy;
 mod secrets;
 mod state;
@@ -69,6 +70,9 @@ pub fn run() {
             commands::check_for_update,
             commands::download_update,
             commands::get_device_fingerprint,
+            commands::get_default_model_prices,
+            commands::refresh_model_prices_from_url,
+            commands::fill_provider_prices_from_database,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

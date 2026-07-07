@@ -370,7 +370,33 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           </label>
         )}
         <div>
-          <label className="mb-1 block text-[11px] text-neutral-500">{t("models")}</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="text-[11px] text-neutral-500">{t("models")}</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const filled = await invoke<ModelMapping[]>(
+                      "fill_provider_prices_from_database",
+                      { input: form }
+                    );
+                    setForm({ ...form, models: filled });
+                    const count = filled.filter(
+                      (m) =>
+                        m.input_cost_per_1k !== null || m.output_cost_per_1k !== null
+                    ).length;
+                    alert(t("pricesFilled", { count }));
+                  } catch (err) {
+                    alert(String(err));
+                  }
+                }}
+                className="text-[10px] text-emerald-500 hover:text-emerald-400"
+              >
+                {t("fillPricesFromDatabase")}
+              </button>
+            </div>
+          </div>
           <div className="space-y-2">
             {form.models.map((m, i) => (
               <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2">
