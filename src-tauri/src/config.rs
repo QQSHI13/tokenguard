@@ -124,6 +124,8 @@ pub enum LimitMetric {
     Tokens,
     Requests,
     TimeSec,
+    RequestsPerMinute,
+    TokensPerMinute,
 }
 
 impl LimitMetric {
@@ -133,6 +135,8 @@ impl LimitMetric {
             Self::Tokens => "tokens",
             Self::Requests => "requests",
             Self::TimeSec => "time_sec",
+            Self::RequestsPerMinute => "requests_per_minute",
+            Self::TokensPerMinute => "tokens_per_minute",
         }
     }
     pub fn from_db_str(s: &str) -> Self {
@@ -140,8 +144,14 @@ impl LimitMetric {
             "tokens" => Self::Tokens,
             "requests" => Self::Requests,
             "time_sec" => Self::TimeSec,
+            "requests_per_minute" => Self::RequestsPerMinute,
+            "tokens_per_minute" => Self::TokensPerMinute,
             _ => Self::Money,
         }
+    }
+    /// True for rate-based metrics that use a fixed rolling window.
+    pub fn is_rate(self) -> bool {
+        matches!(self, Self::RequestsPerMinute | Self::TokensPerMinute)
     }
 }
 

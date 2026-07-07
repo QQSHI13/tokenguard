@@ -126,9 +126,9 @@ export const translations = {
     presets: "Presets",
     howLimitsWork: "How limits work",
     limitsHelp1:
-      "Money, tokens, requests, and time caps are supported.",
+      "Money, tokens, requests, time, and per-minute rate caps are supported.",
     limitsHelp2:
-      "Periods reset automatically: hourly, daily, weekly, monthly, or a custom number of seconds.",
+      "Periods reset automatically: hourly, daily, weekly, monthly, or a custom number of seconds. RPM/TPM use a 60-second rolling window.",
     limitsHelp3: "Scope a limit to a provider or project, or keep it global.",
     limitsHelp4:
       "Block returns 429, pause pauses the proxy, warn only logs and colors the tray icon.",
@@ -252,6 +252,10 @@ export const translations = {
     forecastHitBudget: "At today's rate, you will hit your daily budget in {hours} hours.",
     forecastNoSpend: "No spend yet today — forecast unavailable.",
     forecastOverBudget: "You are already over your daily budget.",
+    requestsPerMinute: "Requests / minute",
+    tokensPerMinute: "Tokens / minute",
+    rpm: "RPM",
+    tpm: "TPM",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -336,8 +340,8 @@ export const translations = {
     customSeconds: "自定义（秒）…",
     presets: "预设",
     howLimitsWork: "限额如何工作",
-    limitsHelp1: "支持金额、令牌、请求和时间上限。",
-    limitsHelp2: "周期自动重置：每小时、每天、每周、每月或自定义秒数。",
+    limitsHelp1: "支持金额、令牌、请求、时间和每分钟速率上限。",
+    limitsHelp2: "周期自动重置：每小时、每天、每周、每月或自定义秒数。RPM/TPM 使用 60 秒滚动窗口。",
     limitsHelp3: "可将限额设为全局、某个服务商或某个项目。",
     limitsHelp4:
       "阻止会返回 429，暂停会暂停代理，仅警告会记录日志并改变托盘图标颜色。",
@@ -460,6 +464,10 @@ export const translations = {
     forecastHitBudget: "按当前速率，你将在 {hours} 小时后达到每日预算。",
     forecastNoSpend: "今日暂无支出 — 无法预测。",
     forecastOverBudget: "你已超出每日预算。",
+    requestsPerMinute: "每分钟请求数",
+    tokensPerMinute: "每分钟令牌数",
+    rpm: "RPM",
+    tpm: "TPM",
   },
 } as const;
 

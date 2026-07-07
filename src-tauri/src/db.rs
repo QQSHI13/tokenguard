@@ -593,12 +593,13 @@ pub fn delete_limit(conn: &Connection, id: i64) -> rusqlite::Result<()> {
 
 /// Sum the metric for a limit over its rolling period.
 /// For `Once` limits, sums over all history.
+/// Rate-based metrics (RPM/TPM) always use a 60-second rolling window.
 pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64> {
     let mut sql = String::from("SELECT COALESCE(SUM(");
     let column = match limit.metric {
         LimitMetric::Money => "cost",
-        LimitMetric::Tokens => "prompt_tokens + completion_tokens",
-        LimitMetric::Requests => "1",
+        LimitMetric::Tokens | LimitMetric::TokensPerMinute => "prompt_tokens + completion_tokens",
+        LimitMetric::Requests | LimitMetric::RequestsPerMinute => "1",
         LimitMetric::TimeSec => "duration_ms / 1000.0",
     };
     sql.push_str(column);
@@ -606,7 +607,13 @@ pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64
 
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-    if let Some(seconds) = limit.period.seconds() {
+    let window_seconds = if limit.metric.is_rate() {
+        Some(60)
+    } else {
+        limit.period.seconds()
+    };
+
+    if let Some(seconds) = window_seconds {
         // Compute the cutoff timestamp in Rust to keep the query parameterised.
         let cutoff = chrono::Utc::now() - chrono::TimeDelta::seconds(seconds as i64);
         sql.push_str(" AND ts >= ?");

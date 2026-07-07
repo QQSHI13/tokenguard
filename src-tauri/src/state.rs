@@ -262,18 +262,21 @@ impl AppState {
 
             let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
 
-            // For request limits, reserve one in the atomic counter first so
+            // For request-based limits, reserve one in the atomic counter first so
             // concurrent requests see each other. If the request is going to be
             // blocked/paused, the caller must call release_request_limit() later.
-            let (current, used) = if limit.metric == LimitMetric::Requests {
+            // Rate-based metrics use a 60-second rolling window (see db::usage_for_limit).
+            let (current, used) = if limit.metric == LimitMetric::Requests
+                || limit.metric == LimitMetric::RequestsPerMinute
+            {
                 let reserved = self.limit_counters.increment(limit, 1.0);
                 (1.0, persisted + reserved - 1.0)
             } else {
                 let current = match limit.metric {
                     LimitMetric::Money => cost,
-                    LimitMetric::Tokens => tokens as f64,
+                    LimitMetric::Tokens | LimitMetric::TokensPerMinute => tokens as f64,
                     LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
-                    LimitMetric::Requests => unreachable!(),
+                    LimitMetric::Requests | LimitMetric::RequestsPerMinute => unreachable!(),
                 };
                 (current, persisted)
             };
@@ -321,7 +324,7 @@ impl AppState {
     /// Release a reserved request-limit unit when a request is blocked/paused
     /// before it reaches the upstream provider.
     pub fn release_request_limit(&self, limit: &Limit) {
-        if limit.metric == LimitMetric::Requests {
+        if limit.metric == LimitMetric::Requests || limit.metric == LimitMetric::RequestsPerMinute {
             self.limit_counters.increment(limit, -1.0);
         }
     }

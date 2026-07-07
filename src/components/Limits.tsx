@@ -2,7 +2,13 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 
-type LimitMetric = "money" | "tokens" | "requests" | "time_sec";
+type LimitMetric =
+  | "money"
+  | "tokens"
+  | "requests"
+  | "time_sec"
+  | "requests_per_minute"
+  | "tokens_per_minute";
 type LimitPeriod = "once" | "hourly" | "daily" | "weekly" | "monthly" | { custom_sec: number };
 type LimitScope = "global" | "provider" | "project";
 type LimitAction = "warn" | "block" | "pause";
@@ -92,6 +98,8 @@ export default function Limits({ onChange }: { onChange: () => void }) {
     { id: "tokens", label: t("tokens"), unit: t("tokens").toLowerCase(), step: "1" },
     { id: "requests", label: t("requests"), unit: t("requests").toLowerCase(), step: "1" },
     { id: "time_sec", label: t("time"), unit: t("hours"), step: "0.1" },
+    { id: "requests_per_minute", label: t("requestsPerMinute"), unit: t("rpm"), step: "1" },
+    { id: "tokens_per_minute", label: t("tokensPerMinute"), unit: t("tpm"), step: "1" },
   ];
 
   const PERIODS: { id: Exclude<LimitPeriod, { custom_sec: number }>; label: string }[] = [

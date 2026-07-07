@@ -24,7 +24,7 @@ impl LimitCounters {
     /// Atomically add `delta` to the in-flight counter for `limit` and return
     /// the new counter value.
     pub fn increment(&self, limit: &Limit, delta: f64) -> f64 {
-        let key = (limit.id, period_key(limit.period));
+        let key = counter_key(limit);
         let entry = self
             .counters
             .entry(key)
@@ -35,7 +35,7 @@ impl LimitCounters {
     /// Read the current in-flight counter for a limit without modifying it.
     #[cfg(test)]
     pub fn get(&self, limit: &Limit) -> f64 {
-        let key = (limit.id, period_key(limit.period));
+        let key = counter_key(limit);
         self.counters
             .get(&key)
             .map(|v| f64::from_bits(v.load(Ordering::Relaxed)))
@@ -59,18 +59,29 @@ fn atomic_f64_add(atomic: &AtomicU64, delta: f64) -> f64 {
     }
 }
 
+fn counter_key(limit: &Limit) -> (i64, String) {
+    if limit.metric.is_rate() {
+        // Rate-based metrics (RPM/TPM) use a fixed 60-second rolling window.
+        (limit.id, period_key_seconds(60))
+    } else {
+        (limit.id, period_key(limit.period))
+    }
+}
+
+fn period_key_seconds(seconds: u64) -> String {
+    let seconds = seconds.max(1) as i64;
+    let now = Utc::now().timestamp();
+    let bucket_start = (now / seconds) * seconds;
+    bucket_start.to_string()
+}
+
 /// A key that identifies the current rolling-window bucket for a limit period.
 /// It must match the `ts >= now - period_seconds` window used by the SQLite
 /// usage query, so requests that fall in the same bucket share a counter.
 fn period_key(period: LimitPeriod) -> String {
     match period {
         LimitPeriod::Once => "once".to_string(),
-        _ => {
-            let seconds = period.seconds().unwrap_or(0).max(1) as i64;
-            let now = Utc::now().timestamp();
-            let bucket_start = (now / seconds) * seconds;
-            bucket_start.to_string()
-        }
+        _ => period_key_seconds(period.seconds().unwrap_or(0)),
     }
 }
 
