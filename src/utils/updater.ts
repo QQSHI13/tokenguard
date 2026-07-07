@@ -28,6 +28,10 @@ export async function downloadUpdate(assetUrl: string): Promise<string> {
   return await invoke<string>("download_update", { assetUrl });
 }
 
+export async function installUpdate(path: string): Promise<void> {
+  await invoke("install_update", { path });
+}
+
 export async function runAutoUpdate() {
   try {
     const info = await checkForUpdate();

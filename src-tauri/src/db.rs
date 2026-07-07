@@ -839,6 +839,10 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let log_bodies = get_setting(conn, "log_bodies")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    let auto_export_days = get_setting(conn, "auto_export_days")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let auto_export_folder = get_setting(conn, "auto_export_folder");
     Ok(Config {
         providers,
         projects,
@@ -846,6 +850,8 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         port,
         budget,
         log_bodies,
+        auto_export_days,
+        auto_export_folder,
     })
 }
 

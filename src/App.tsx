@@ -25,6 +25,8 @@ type Settings = {
   proxy_url: string;
   provider_count: number;
   log_bodies: boolean;
+  auto_export_days: number;
+  auto_export_folder: string | null;
 };
 type Spend = { today: number; budget: number };
 

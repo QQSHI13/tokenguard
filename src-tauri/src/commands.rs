@@ -11,6 +11,8 @@ use crate::state::AppState;
 use futures::StreamExt;
 use rusqlite::params;
 use std::sync::Arc;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, serde::Serialize)]
@@ -21,6 +23,8 @@ pub struct SettingsDto {
     pub proxy_url: String,
     pub provider_count: usize,
     pub log_bodies: bool,
+    pub auto_export_days: u32,
+    pub auto_export_folder: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -221,6 +225,8 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         proxy_url: format!("http://localhost:{}", cfg.port),
         provider_count: cfg.providers.len(),
         log_bodies: cfg.log_bodies,
+        auto_export_days: cfg.auto_export_days,
+        auto_export_folder: cfg.auto_export_folder.clone(),
     })
 }
 
@@ -270,6 +276,119 @@ pub fn restore_database(
     // the restored file.
     std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
     state.inner().app.restart();
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AutoExportInput {
+    pub days: u32,
+    pub folder: String,
+}
+
+#[tauri::command]
+pub fn set_auto_export(
+    state: State<'_, Arc<AppState>>,
+    input: AutoExportInput,
+) -> Result<(), String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "auto_export_days", &input.days.to_string())
+            .map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "auto_export_folder", &input.folder).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    let mut cfg = state.inner().config.write().map_err(|e| e.to_string())?;
+    cfg.auto_export_days = input.days;
+    cfg.auto_export_folder = Some(input.folder);
+    Ok(())
+}
+
+fn last_auto_export_at(conn: &rusqlite::Connection) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
+    match db::get_setting(conn, "last_auto_export_at") {
+        Some(v) => chrono::DateTime::parse_from_rfc3339(&v)
+            .map(|dt| Some(dt.with_timezone(&chrono::Utc)))
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+pub fn is_auto_export_due(state: &Arc<AppState>) -> Result<bool, String> {
+    let cfg = state.config.read().map_err(|e| e.to_string())?;
+    if cfg.auto_export_days == 0 {
+        return Ok(false);
+    }
+    let folder = match &cfg.auto_export_folder {
+        Some(f) if !f.is_empty() => f,
+        _ => return Ok(false),
+    };
+    let folder_path = std::path::PathBuf::from(folder);
+    if !folder_path.exists() {
+        return Ok(false);
+    }
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    let last = last_auto_export_at(&conn)?;
+    let due = match last {
+        Some(t) => {
+            let interval = chrono::Duration::days(cfg.auto_export_days as i64);
+            chrono::Utc::now() - t >= interval
+        }
+        None => true,
+    };
+    Ok(due)
+}
+
+pub fn run_auto_export_now(state: &Arc<AppState>) -> Result<String, String> {
+    let cfg = state.config.read().map_err(|e| e.to_string())?;
+    let folder = cfg
+        .auto_export_folder
+        .as_ref()
+        .ok_or("auto export folder not set")?;
+    if folder.is_empty() {
+        return Err("auto export folder not set".into());
+    }
+    std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+
+    let rows = {
+        let conn = state.db.get().map_err(|e| e.to_string())?;
+        db::list_logs(&conn, 100_000, None).map_err(|e| e.to_string())?
+    };
+    let filename = format!("tokenguard-usage-{}.csv", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let path = std::path::PathBuf::from(folder).join(&filename);
+
+    let mut w = String::from(
+        "timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n",
+    );
+    for r in rows.iter().rev() {
+        w.push_str(&format!(
+            "{},{},{},{},{},{:.6},{}\n",
+            r.ts,
+            csv_escape(&r.provider),
+            csv_escape(&r.model),
+            r.prompt_tokens,
+            r.completion_tokens,
+            r.cost,
+            r.project_tag.as_deref().unwrap_or(""),
+        ));
+    }
+    std::fs::write(&path, w).map_err(|e| e.to_string())?;
+
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, "last_auto_export_at", &chrono::Utc::now().to_rfc3339())
+        .map_err(|e| e.to_string())?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn maybe_run_auto_export(state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
+    if !is_auto_export_due(&state)? {
+        return Ok(None);
+    }
+    run_auto_export_now(&state).map(Some)
+}
+
+#[tauri::command]
+pub fn run_auto_export_now_cmd(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    run_auto_export_now(&state)
 }
 
 #[tauri::command]
@@ -757,6 +876,55 @@ pub fn delete_license_key() -> Result<(), String> {
     secrets::delete("license")
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct RegisteredDevice {
+    pub fingerprint: String,
+    pub registered_at: String,
+    pub current: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct DeviceListDto {
+    pub devices: Vec<RegisteredDevice>,
+    pub max_devices: usize,
+}
+
+#[tauri::command]
+pub async fn get_registered_devices(
+    key: String,
+    device: String,
+) -> Result<DeviceListDto, String> {
+    let url = format!(
+        "https://tokenguard-license.qingquanshi65.workers.dev/api/license/devices?key={key}&device={device}"
+    );
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("failed to contact license server: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("license server returned {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let max_devices = json["maxDevices"].as_u64().unwrap_or(2) as usize;
+    let devices = json["devices"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|d| {
+                    Some(RegisteredDevice {
+                        fingerprint: d["fingerprint"].as_str()?.to_string(),
+                        registered_at: d["registeredAt"].as_str()?.to_string(),
+                        current: d["current"].as_bool().unwrap_or(false),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(DeviceListDto {
+        devices,
+        max_devices,
+    })
+}
+
 // ---- update (GitHub Releases) ----
 
 #[derive(Debug, serde::Serialize)]
@@ -965,4 +1133,47 @@ pub async fn download_update(app: AppHandle, asset_url: String) -> Result<String
 
     let path_str = path.to_string_lossy().to_string();
     Ok(path_str)
+}
+
+#[tauri::command]
+pub fn install_update(path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(path);
+    if !path.exists() {
+        return Err("installer not found".into());
+    }
+
+    let os = std::env::consts::OS;
+    let path_str = path.to_string_lossy().to_string();
+
+    match os {
+        "windows" => {
+            // Launch the MSI installer. For a silent install use:
+            //   msiexec /i "path" /qn
+            // We use /passive so the user sees progress but doesn't need to interact.
+            std::process::Command::new("msiexec")
+                .args(["/i", &path_str, "/passive"])
+                .spawn()
+                .map_err(|e| format!("failed to start installer: {e}"))?;
+        }
+        "macos" => {
+            // Open the DMG; user drags the app to Applications.
+            std::process::Command::new("open")
+                .arg(&path_str)
+                .spawn()
+                .map_err(|e| format!("failed to open DMG: {e}"))?;
+        }
+        "linux" => {
+            // Make AppImage executable and run it.
+            #[cfg(unix)]
+            {
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+            }
+            std::process::Command::new(&path_str)
+                .spawn()
+                .map_err(|e| format!("failed to run AppImage: {e}"))?;
+        }
+        _ => return Err("unsupported OS".into()),
+    }
+
+    Ok(())
 }

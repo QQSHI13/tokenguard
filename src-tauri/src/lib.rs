@@ -68,8 +68,10 @@ pub fn run() {
             commands::get_license_key,
             commands::set_license_key,
             commands::delete_license_key,
+            commands::get_registered_devices,
             commands::check_for_update,
             commands::download_update,
+            commands::install_update,
             commands::get_device_fingerprint,
             commands::get_default_model_prices,
             commands::refresh_model_prices_from_url,
@@ -79,6 +81,9 @@ pub fn run() {
             commands::get_logs_filtered,
             commands::backup_database,
             commands::restore_database,
+            commands::set_auto_export,
+            commands::maybe_run_auto_export,
+            commands::run_auto_export_now_cmd,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -112,6 +117,13 @@ pub fn run() {
 
             state.refresh_tray();
             tracing::info!("Token Guard started — proxy on http://127.0.0.1:{port}");
+
+            // Run scheduled usage export if due.
+            if crate::commands::is_auto_export_due(&state).unwrap_or(false) {
+                if let Err(e) = crate::commands::run_auto_export_now(&state) {
+                    tracing::warn!("auto export failed: {e}");
+                }
+            }
 
             // Graceful Ctrl+C: close windows first so WebView2 can tear down
             // before the process exits (avoids the "Failed to unregister class" noise).

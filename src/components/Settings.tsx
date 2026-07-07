@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import License from "./License";
-import { checkForUpdate, downloadUpdate, type UpdateInfo } from "../utils/updater";
+import { checkForUpdate, downloadUpdate, installUpdate, type UpdateInfo } from "../utils/updater";
 import { save, open } from "@tauri-apps/plugin-dialog";
 
 type Settings = {
@@ -12,6 +12,8 @@ type Settings = {
   proxy_url: string;
   provider_count: number;
   log_bodies: boolean;
+  auto_export_days: number;
+  auto_export_folder: string | null;
 } | null;
 
 export default function SettingsTab({
@@ -37,6 +39,9 @@ export default function SettingsTab({
   const [priceError, setPriceError] = useState<string | null>(null);
   const [priceCount, setPriceCount] = useState<number | null>(null);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [autoExportDays, setAutoExportDays] = useState(String(settings?.auto_export_days ?? 0));
+  const [autoExportFolder, setAutoExportFolder] = useState(settings?.auto_export_folder ?? "");
+  const [autoExportStatus, setAutoExportStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -79,6 +84,16 @@ export default function SettingsTab({
       const path = await downloadUpdate(updateInfo.asset_url);
       setUpdatePath(path);
       setUpdateStatus("done");
+    } catch (e) {
+      setUpdateStatus("error");
+      setUpdateError(String(e));
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!updatePath) return;
+    try {
+      await installUpdate(updatePath);
     } catch (e) {
       setUpdateStatus("error");
       setUpdateError(String(e));
@@ -129,6 +144,35 @@ export default function SettingsTab({
       setBackupStatus(t("restoreRestarting"));
     } catch (e) {
       setBackupStatus(String(e));
+    }
+  };
+
+  const handlePickAutoExportFolder = async () => {
+    const folder = await open({ directory: true });
+    if (!folder) return;
+    setAutoExportFolder(folder);
+  };
+
+  const handleSaveAutoExport = async () => {
+    setAutoExportStatus(null);
+    try {
+      const days = Number(autoExportDays) || 0;
+      await invoke("set_auto_export", {
+        input: { days, folder: autoExportFolder },
+      });
+      setAutoExportStatus(t("autoExportSaved"));
+    } catch (e) {
+      setAutoExportStatus(String(e));
+    }
+  };
+
+  const handleRunAutoExportNow = async () => {
+    setAutoExportStatus(null);
+    try {
+      const path = await invoke<string>("run_auto_export_now_cmd");
+      setAutoExportStatus(t("autoExportSavedTo", { path }));
+    } catch (e) {
+      setAutoExportStatus(String(e));
     }
   };
 
@@ -258,6 +302,14 @@ export default function SettingsTab({
               {updateStatus === "downloading" ? t("working") : t("downloadUpdate")}
             </button>
           )}
+          {updatePath && (
+            <button
+              onClick={handleInstallUpdate}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              {t("installUpdate")}
+            </button>
+          )}
         </div>
         {updateInfo && updateStatus !== "downloading" && updateStatus !== "done" && (
           <p className="mt-2 text-xs text-emerald-600">
@@ -342,6 +394,60 @@ export default function SettingsTab({
             }`}
           >
             {backupStatus}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("autoExport")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          {t("autoExportHelp")}
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={autoExportDays}
+            onChange={(e) => setAutoExportDays(e.target.value)}
+            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <span className="text-xs text-neutral-500">{t("days")}</span>
+          <button
+            onClick={handlePickAutoExportFolder}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("selectFolder")}
+          </button>
+        </div>
+        {autoExportFolder && (
+          <p className="mt-2 break-all text-xs text-neutral-600 dark:text-neutral-400">
+            {autoExportFolder}
+          </p>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={handleSaveAutoExport}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+          <button
+            onClick={handleRunAutoExportNow}
+            disabled={!autoExportFolder}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {t("exportNow")}
+          </button>
+        </div>
+        {autoExportStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              autoExportStatus.includes("saved") || autoExportStatus.includes("已导出")
+                ? "text-emerald-600"
+                : "text-red-600"
+            }`}
+          >
+            {autoExportStatus}
           </p>
         )}
       </section>

@@ -5,6 +5,9 @@ import {
   setLicenseKey,
   clearLicenseKey,
   getDeviceId,
+  normalizeLicenseKey,
+  formatLicenseKey,
+  type RegisteredDevice,
 } from "../utils/license";
 import { useI18n } from "../i18n";
 
@@ -21,9 +24,38 @@ export default function License({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<RegisteredDevice[]>([]);
+  const [maxDevices, setMaxDevices] = useState(2);
+
+  const loadStoredKey = async () => {
+    const k = await getLicenseKey();
+    setStoredKey(k ? formatLicenseKey(k) : null);
+  };
+
+  const loadDevices = async () => {
+    const raw = await getLicenseKey();
+    if (!raw) {
+      setDevices([]);
+      return;
+    }
+    try {
+      const device = await getDeviceId();
+      const res = await fetch(
+        `${WORKER_URL}/api/license/devices?key=${encodeURIComponent(normalizeLicenseKey(raw))}&device=${encodeURIComponent(device)}`
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setDevices(data.devices ?? []);
+        setMaxDevices(data.maxDevices ?? 2);
+      }
+    } catch (e) {
+      console.error("Failed to load devices", e);
+    }
+  };
 
   useEffect(() => {
-    getLicenseKey().then(setStoredKey).catch(console.error);
+    loadStoredKey().catch(console.error);
+    loadDevices().catch(console.error);
   }, [licensed]);
 
   const showError = (msg: string) => {
@@ -42,8 +74,9 @@ export default function License({
     setError(null);
     try {
       const device = await getDeviceId();
+      const normalized = normalizeLicenseKey(key);
       const res = await fetch(
-        `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key.trim().toUpperCase())}&device=${encodeURIComponent(device)}`
+        `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(normalized)}&device=${encodeURIComponent(device)}`
       );
       const data = await res.json();
       if (data.valid) {
@@ -69,11 +102,12 @@ export default function License({
     setError(null);
     try {
       const device = await getDeviceId();
+      const normalized = normalizeLicenseKey(key);
       const res = await fetch(`${WORKER_URL}/api/license/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: key.trim().toUpperCase(),
+          key: normalized,
           deviceFingerprint: device,
         }),
       });
@@ -82,8 +116,8 @@ export default function License({
         showError(data.error || t("registrationFailed"));
         return;
       }
-      await setLicenseKey(key.trim().toUpperCase());
-      setStoredKey(key.trim().toUpperCase());
+      await setLicenseKey(normalized);
+      setStoredKey(formatLicenseKey(normalized));
       onChange(true);
       showMessage(
         t("registeredThisDevice", {
@@ -109,15 +143,44 @@ export default function License({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: current,
+          key: normalizeLicenseKey(current),
           deviceFingerprint: device,
         }),
       });
       await clearLicenseKey();
       setStoredKey(null);
       setKey("");
+      setDevices([]);
       onChange(false);
       showMessage(t("deviceUnregistered"));
+    } catch (e) {
+      showError(t("couldNotReachLicenseServer"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const unregisterOther = async (fingerprint: string) => {
+    const current = storedKey;
+    if (!current) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${WORKER_URL}/api/license/unregister`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: normalizeLicenseKey(current),
+          deviceFingerprint: fingerprint,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showError(data.error || t("unregisterFailed"));
+        return;
+      }
+      showMessage(t("deviceUnregistered"));
+      await loadDevices();
     } catch (e) {
       showError(t("couldNotReachLicenseServer"));
     } finally {
@@ -138,6 +201,37 @@ export default function License({
           <code className="block truncate rounded-md border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
             {storedKey}
           </code>
+          <p className="text-xs text-neutral-500">
+            {t("registeredDevices", { count: devices.length, max: maxDevices })}
+          </p>
+          {devices.length > 0 && (
+            <ul className="space-y-2">
+              {devices.map((d, i) => (
+                <li
+                  key={d.fingerprint}
+                  className="flex items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-950"
+                >
+                  <span className="text-neutral-700 dark:text-neutral-300">
+                    {d.current ? t("thisDevice") : t("deviceN", { n: i + 1 })}
+                    {d.registeredAt && (
+                      <span className="ml-2 text-neutral-400">
+                        {new Date(d.registeredAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                  {!d.current && (
+                    <button
+                      onClick={() => unregisterOther(d.fingerprint)}
+                      disabled={loading}
+                      className="rounded-md bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {t("unregister")}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <button
             onClick={unregister}
             disabled={loading}
@@ -152,7 +246,16 @@ export default function License({
             <input
               type="text"
               value={key}
-              onChange={(e) => setKey(e.target.value)}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^0-9a-zA-Z]/g, '').toUpperCase().slice(0, 16);
+                const parts = [
+                  raw.slice(0, 4),
+                  raw.slice(4, 8),
+                  raw.slice(8, 12),
+                  raw.slice(12, 16),
+                ].filter(Boolean);
+                setKey(parts.join('-'));
+              }}
               placeholder={t("licenseKeyPlaceholder")}
               className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
             />

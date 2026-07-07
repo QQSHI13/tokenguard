@@ -4,6 +4,22 @@ const DEVICE_ID_KEY = "tokenguard-device-id";
 
 export const WORKER_URL = "https://tokenguard-license.qingquanshi65.workers.dev";
 
+export function normalizeLicenseKey(key: string): string {
+  return key.replace(/[-\s]/g, '').toUpperCase();
+}
+
+export function formatLicenseKey(key: string): string {
+  const clean = normalizeLicenseKey(key);
+  if (clean.length !== 16) return clean;
+  return `${clean.slice(0, 4)}-${clean.slice(4, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}`;
+}
+
+export type RegisteredDevice = {
+  fingerprint: string;
+  registeredAt: string;
+  current: boolean;
+};
+
 export async function getLicenseKey(): Promise<string | null> {
   try {
     return await invoke<string | null>("get_license_key");

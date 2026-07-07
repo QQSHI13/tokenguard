@@ -289,6 +289,8 @@ pub struct Config {
     pub port: u16,
     pub budget: f64,
     pub log_bodies: bool,
+    pub auto_export_days: u32,
+    pub auto_export_folder: Option<String>,
 }
 
 impl Default for Config {
@@ -300,6 +302,8 @@ impl Default for Config {
             port: 3742,
             budget: 0.0,
             log_bodies: false,
+            auto_export_days: 0,
+            auto_export_folder: None,
         }
     }
 }
