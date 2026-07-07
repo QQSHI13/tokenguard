@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
+import {
+  sendNotification,
+  isPermissionGranted,
+  requestPermission,
+} from "@tauri-apps/plugin-notification";
 
-const GITHUB_REPO = "QQSHI13/tokenguard";
-
-type UpdateInfo = {
+export type UpdateInfo = {
   version: string;
   asset_url: string;
   downloaded_path?: string;
@@ -18,12 +20,20 @@ async function ensureNotificationPermission() {
   return true;
 }
 
-export async function checkForUpdate() {
+export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  return await invoke<UpdateInfo | null>("check_for_update");
+}
+
+export async function downloadUpdate(assetUrl: string): Promise<string> {
+  return await invoke<string>("download_update", { assetUrl });
+}
+
+export async function runAutoUpdate() {
   try {
-    const info = await invoke<UpdateInfo | null>("check_for_update");
+    const info = await checkForUpdate();
     if (!info) return;
 
-    const path = await invoke<string>("download_update", { assetUrl: info.asset_url });
+    const path = await downloadUpdate(info.asset_url);
 
     await ensureNotificationPermission();
     sendNotification({
@@ -31,6 +41,6 @@ export async function checkForUpdate() {
       body: `Version ${info.version} downloaded to ${path}`,
     });
   } catch (e) {
-    console.error("Update check failed:", e);
+    console.error("Auto update failed:", e);
   }
 }

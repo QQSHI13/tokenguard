@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { clearLicenseKey, validateStoredKey } from "../utils/license";
+import { useI18n } from "../i18n";
 
 type BannerConfig = {
   enabled: boolean;
@@ -46,6 +47,7 @@ export default function Banner({
   licensed: boolean;
   onLicenseChange: (licensed: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const [state, setState] = useState<BannerState>(loadState);
 
@@ -134,10 +136,10 @@ export default function Banner({
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            {banners.title}
+            {t("supportTokenGuard")}
           </h3>
           <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
-            {banners.body}
+            {t("buyLicenseKeyToRemoveBanner")}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -145,13 +147,13 @@ export default function Banner({
             onClick={handleCta}
             className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
           >
-            Learn more
+            {t("learnMore")}
           </button>
           <button
             onClick={handleDismiss}
             className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
           >
-            Dismiss
+            {t("dismiss")}
           </button>
         </div>
       </div>

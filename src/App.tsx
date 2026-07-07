@@ -15,7 +15,7 @@ import {
   validateStoredKey,
   getLicenseKey,
 } from "./utils/license";
-import { checkForUpdate } from "./utils/updater";
+import { runAutoUpdate } from "./utils/updater";
 
 type Settings = {
   port: number;
@@ -65,8 +65,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    checkForUpdate();
-    const i = setInterval(checkForUpdate, 1000 * 60 * 60 * 4); // every 4 hours
+    runAutoUpdate();
+    const i = setInterval(runAutoUpdate, 1000 * 60 * 60 * 4); // every 4 hours
     return () => clearInterval(i);
   }, []);
 

@@ -689,13 +689,14 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
         return Ok(None);
     }
 
-    // License check: only proceed for valid license keys.
+    // License check: only proceed for valid, device-registered license keys.
     let key = match get_license_key() {
         Ok(Some(k)) => k,
         _ => return Ok(None),
     };
+    let device = get_device_fingerprint()?;
     let validate_url = format!(
-        "https://tokenguard-license.qingquanshi65.workers.dev/api/license/validate?key={key}"
+        "https://tokenguard-license.qingquanshi65.workers.dev/api/license/validate?key={key}&device={device}"
     );
     let valid_resp = reqwest::get(&validate_url)
         .await
@@ -783,10 +784,5 @@ pub async fn download_update(app: AppHandle, asset_url: String) -> Result<String
     }
 
     let path_str = path.to_string_lossy().to_string();
-    crate::notifications::notify(
-        &app,
-        "Token Guard — Update ready",
-        &format!("Downloaded to {path_str}"),
-    );
     Ok(path_str)
 }

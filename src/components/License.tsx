@@ -6,6 +6,7 @@ import {
   clearLicenseKey,
   getDeviceId,
 } from "../utils/license";
+import { useI18n } from "../i18n";
 
 export default function License({
   licensed,
@@ -14,6 +15,7 @@ export default function License({
   licensed: boolean;
   onChange: (licensed: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [key, setKey] = useState("");
   const [storedKey, setStoredKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,12 +47,17 @@ export default function License({
       );
       const data = await res.json();
       if (data.valid) {
-        showMessage(`Key is valid. Registered devices: ${data.devices ?? 0}/${data.maxDevices ?? 2}`);
+        showMessage(
+          t("keyIsValid", {
+            devices: data.devices ?? 0,
+            maxDevices: data.maxDevices ?? 2,
+          }),
+        );
       } else {
-        showError("Key is invalid or revoked.");
+        showError(t("keyIsInvalid"));
       }
     } catch (e) {
-      showError("Could not reach license server.");
+      showError(t("couldNotReachLicenseServer"));
     } finally {
       setLoading(false);
     }
@@ -72,17 +79,20 @@ export default function License({
       });
       const data = await res.json();
       if (!res.ok) {
-        showError(data.error || "Registration failed.");
+        showError(data.error || t("registrationFailed"));
         return;
       }
       await setLicenseKey(key.trim().toUpperCase());
       setStoredKey(key.trim().toUpperCase());
       onChange(true);
       showMessage(
-        `Registered this device. Devices: ${data.devices ?? 1}/${data.maxDevices ?? 2}`
+        t("registeredThisDevice", {
+          devices: data.devices ?? 1,
+          maxDevices: data.maxDevices ?? 2,
+        }),
       );
     } catch (e) {
-      showError("Could not reach license server.");
+      showError(t("couldNotReachLicenseServer"));
     } finally {
       setLoading(false);
     }
@@ -107,9 +117,9 @@ export default function License({
       setStoredKey(null);
       setKey("");
       onChange(false);
-      showMessage("This device has been unregistered.");
+      showMessage(t("deviceUnregistered"));
     } catch (e) {
-      showError("Could not reach license server.");
+      showError(t("couldNotReachLicenseServer"));
     } finally {
       setLoading(false);
     }
@@ -117,14 +127,14 @@ export default function License({
 
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-      <h2 className="text-sm font-semibold">License key</h2>
+      <h2 className="text-sm font-semibold">{t("licenseKey")}</h2>
       <p className="mt-1 text-[11px] text-neutral-500">
-        Buy a key on the website to remove the banner.
+        {t("licenseKeyHelp")}
       </p>
 
       {licensed && storedKey ? (
         <div className="mt-4 space-y-3">
-          <p className="text-sm text-emerald-600">✓ Licensed on this device</p>
+          <p className="text-sm text-emerald-600">{t("licensedOnThisDevice")}</p>
           <code className="block truncate rounded-md border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
             {storedKey}
           </code>
@@ -133,7 +143,7 @@ export default function License({
             disabled={loading}
             className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
           >
-            {loading ? "Working..." : "Unregister this device"}
+            {loading ? t("working") : t("unregisterThisDevice")}
           </button>
         </div>
       ) : (
@@ -143,7 +153,7 @@ export default function License({
               type="text"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder="XXXX-XXXX-XXXX-XXXX"
+              placeholder={t("licenseKeyPlaceholder")}
               className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
             />
           </div>
@@ -153,14 +163,14 @@ export default function License({
               disabled={loading || !key.trim()}
               className="rounded-md bg-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
             >
-              Validate
+              {t("validate")}
             </button>
             <button
               onClick={register}
               disabled={loading || !key.trim()}
               className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {loading ? "Working..." : "Activate this device"}
+              {loading ? t("working") : t("activateThisDevice")}
             </button>
           </div>
         </div>

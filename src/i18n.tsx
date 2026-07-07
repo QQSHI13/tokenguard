@@ -33,7 +33,10 @@ export function storeLanguage(lang: Language) {
 type I18nContextValue = {
   lang: Language;
   setLang: (lang: Language) => void;
-  t: (key: keyof typeof translations.en) => string;
+  t: (
+    key: keyof typeof translations.en,
+    vars?: Record<string, string | number>,
+  ) => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -203,6 +206,33 @@ export const translations = {
     onboardingConnectTitle: "Point your client at Token Guard",
     onboardingConnectSubtitle: "Use these values in your LLM client or coding agent.",
     exampleRequest: "Example request",
+    licenseKey: "License key",
+    licenseKeyHelp: "Buy a key on the website to remove the banner.",
+    licensedOnThisDevice: "✓ Licensed on this device",
+    unregisterThisDevice: "Unregister this device",
+    licenseKeyPlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    validate: "Validate",
+    activateThisDevice: "Activate this device",
+    working: "Working...",
+    keyIsValid: "Key is valid. Registered devices: {devices}/{maxDevices}",
+    keyIsInvalid: "Key is invalid or revoked.",
+    couldNotReachLicenseServer: "Could not reach license server.",
+    registrationFailed: "Registration failed.",
+    registeredThisDevice: "Registered this device. Devices: {devices}/{maxDevices}",
+    deviceUnregistered: "This device has been unregistered.",
+    supportTokenGuard: "Support Token Guard",
+    buyLicenseKeyToRemoveBanner: "Buy a license key to remove this banner.",
+    learnMore: "Learn more",
+    dismiss: "Dismiss",
+    updateCheck: "Update check",
+    checkForUpdates: "Check for updates",
+    updateChecking: "Checking...",
+    updateAvailable: "Version {version} is available",
+    updateDownloaded: "Update downloaded to {path}",
+    updateUpToDate: "Token Guard is up to date",
+    updateCheckFailed: "Update check failed: {error}",
+    updateCheckHelp: "Check for a newer version from GitHub Releases.",
+    downloadUpdate: "Download update",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -365,6 +395,33 @@ export const translations = {
     onboardingConnectTitle: "将你的客户端指向 Token Guard",
     onboardingConnectSubtitle: "在你的 LLM 客户端或编程代理中使用以下值。",
     exampleRequest: "示例请求",
+    licenseKey: "许可证密钥",
+    licenseKeyHelp: "在网站上购买密钥以移除横幅。",
+    licensedOnThisDevice: "✓ 本设备已授权",
+    unregisterThisDevice: "解绑本设备",
+    licenseKeyPlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    validate: "验证",
+    activateThisDevice: "激活本设备",
+    working: "处理中...",
+    keyIsValid: "密钥有效。已注册设备：{devices}/{maxDevices}",
+    keyIsInvalid: "密钥无效或已吊销。",
+    couldNotReachLicenseServer: "无法连接到许可证服务器。",
+    registrationFailed: "注册失败。",
+    registeredThisDevice: "已注册本设备。设备数：{devices}/{maxDevices}",
+    deviceUnregistered: "本设备已解绑。",
+    supportTokenGuard: "支持 Token Guard",
+    buyLicenseKeyToRemoveBanner: "购买许可证密钥以移除此横幅。",
+    learnMore: "了解更多",
+    dismiss: "关闭",
+    updateCheck: "更新检查",
+    checkForUpdates: "检查更新",
+    updateChecking: "检查中...",
+    updateAvailable: "版本 {version} 可用",
+    updateDownloaded: "更新已下载到 {path}",
+    updateUpToDate: "Token Guard 已是最新版本",
+    updateCheckFailed: "更新检查失败：{error}",
+    updateCheckHelp: "从 GitHub Releases 检查新版本。",
+    downloadUpdate: "下载更新",
   },
 } as const;
 
@@ -380,7 +437,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLangState(next);
   };
 
-  const t = (key: keyof typeof translations.en) => translations[lang][key];
+  const t = (
+    key: keyof typeof translations.en,
+    vars?: Record<string, string | number>,
+  ) => {
+    let s: string = translations[lang][key];
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) {
+        s = s.replaceAll(`{${k}}`, String(v));
+      }
+    }
+    return s;
+  };
 
   return (
     <I18nContext.Provider value={{ lang, setLang, t }}>
