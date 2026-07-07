@@ -10,6 +10,7 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
+  log_bodies: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -166,6 +167,28 @@ export default function SettingsTab({
             {t("save")}
           </button>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("requestInspector")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          {t("requestInspectorHelp")}
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-400">
+          <input
+            type="checkbox"
+            checked={settings?.log_bodies ?? false}
+            onChange={async (e) => {
+              try {
+                await invoke("set_log_bodies", { enabled: e.target.checked });
+                onChanged();
+              } catch (err) {
+                alert(String(err));
+              }
+            }}
+          />
+          {t("logRequestBodies")}
+        </label>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

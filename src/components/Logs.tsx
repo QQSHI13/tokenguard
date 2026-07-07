@@ -13,6 +13,8 @@ type Log = {
   duration_ms: number;
   project_tag: string | null;
   status: number | null;
+  request_body: string | null;
+  response_body: string | null;
 };
 
 type LogResult = {
@@ -23,6 +25,15 @@ type LogResult = {
 };
 
 const PAGE_SIZE = 50;
+
+function formatJson(s: string | null): string {
+  if (!s) return "";
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
 
 export default function Logs() {
   const { t } = useI18n();
@@ -36,6 +47,7 @@ export default function Logs() {
   const [end, setEnd] = useState("");
   const [providers, setProviders] = useState<{ provider: { name: string } }[]>([]);
   const [projects, setProjects] = useState<{ name: string }[]>([]);
+  const [detail, setDetail] = useState<Log | null>(null);
 
   const refresh = useCallback(() => {
     const filter: Record<string, unknown> = {
@@ -153,12 +165,13 @@ export default function Logs() {
               <th className="px-3 py-2 text-right font-medium">{t("cost")}</th>
               <th className="px-3 py-2 font-medium">{t("project")}</th>
               <th className="px-3 py-2 text-center font-medium">{t("logStatus")}</th>
+              <th className="px-3 py-2 text-center font-medium"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-neutral-600">
+                <td colSpan={9} className="px-3 py-6 text-center text-neutral-600">
                   {t("noLogsFound")}
                 </td>
               </tr>
@@ -187,11 +200,51 @@ export default function Logs() {
                 <td className={`px-3 py-1.5 text-center font-medium ${statusClass(l.status)}`}>
                   {l.status ?? "—"}
                 </td>
+                <td className="px-3 py-1.5 text-center">
+                  <button
+                    onClick={() => setDetail(l)}
+                    className="text-[10px] text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+                  >
+                    {t("viewDetails")}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-lg border border-neutral-200 bg-white p-4 text-xs text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold">
+                {t("requestInspector")} #{detail.id}
+              </h3>
+              <button
+                onClick={() => setDetail(null)}
+                className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+              >
+                {t("close")}
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <h4 className="mb-1 font-medium text-neutral-500">{t("requestBody")}</h4>
+                <pre className="max-h-48 overflow-auto rounded-md bg-neutral-100 p-2 dark:bg-neutral-950">
+                  {detail.request_body ? formatJson(detail.request_body) : t("noBodyLogged")}
+                </pre>
+              </div>
+              <div>
+                <h4 className="mb-1 font-medium text-neutral-500">{t("responseBody")}</h4>
+                <pre className="max-h-48 overflow-auto rounded-md bg-neutral-100 p-2 dark:bg-neutral-950">
+                  {detail.response_body ? formatJson(detail.response_body) : t("noBodyLogged")}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-xs">

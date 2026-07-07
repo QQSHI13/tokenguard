@@ -42,6 +42,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "logs_status",
         apply: migration_005_logs_status,
     },
+    Migration {
+        id: 6,
+        name: "logs_bodies",
+        apply: migration_006_logs_bodies,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -101,6 +106,12 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
         [],
     );
+    Ok(())
+}
+
+fn migration_006_logs_bodies(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE logs ADD COLUMN request_body TEXT", []);
+    let _ = conn.execute("ALTER TABLE logs ADD COLUMN response_body TEXT", []);
     Ok(())
 }
 
@@ -241,11 +252,13 @@ pub fn insert_log(
     duration_ms: u64,
     project_tag: Option<&str>,
     status: Option<u16>,
+    request_body: Option<&str>,
+    response_body: Option<&str>,
 ) -> rusqlite::Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status) VALUES (?,?,?,?,?,?,?,?,?)",
-        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status],
+        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body],
     )?;
     Ok(())
 }
@@ -262,6 +275,8 @@ pub struct LogRow {
     pub duration_ms: u64,
     pub project_tag: Option<String>,
     pub status: Option<u16>,
+    pub request_body: Option<String>,
+    pub response_body: Option<String>,
 }
 
 fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
@@ -276,6 +291,8 @@ fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
         duration_ms: row.get(7)?,
         project_tag: row.get(8)?,
         status: row.get(9)?,
+        request_body: row.get(10)?,
+        response_body: row.get(11)?,
     })
 }
 
@@ -305,7 +322,7 @@ pub fn list_logs_filtered(
     filter: &LogFilter,
 ) -> rusqlite::Result<Vec<LogRow>> {
     let mut sql = String::from(
-        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status \
+        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body \
          FROM logs WHERE 1=1",
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -819,12 +836,16 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let budget = get_setting(conn, "budget")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
+    let log_bodies = get_setting(conn, "log_bodies")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     Ok(Config {
         providers,
         projects,
         limits,
         port,
         budget,
+        log_bodies,
     })
 }
 
@@ -922,9 +943,11 @@ mod tests {
             1200,
             Some("cursor-app"),
             Some(200),
+            None,
+            None,
         )
         .unwrap();
-        insert_log(&conn, "OpenAI", "gpt-4o-mini", 100, 50, 0.001, 800, None, Some(200)).unwrap();
+        insert_log(&conn, "OpenAI", "gpt-4o-mini", 100, 50, 0.001, 800, None, Some(200), None, None).unwrap();
 
         let logs = list_logs(&conn, 10, None).unwrap();
         assert_eq!(logs.len(), 2);
@@ -983,7 +1006,7 @@ mod tests {
         assert_eq!(limits[0].id, id);
         assert_eq!(limits[0].cap, 100.0);
 
-        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200), None, None).unwrap();
         let used = usage_for_limit(&conn, &limits[0]).unwrap();
         assert_eq!(used, 50.0);
 
@@ -1018,8 +1041,8 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "ScopedProvider", "m", 10, 10, 0.0, 100, None, Some(200)).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "ScopedProvider", "m", 10, 10, 0.0, 100, None, Some(200), None, None).unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200), None, None).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 20.0);
@@ -1046,8 +1069,8 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "O'Reilly \"AI\"", "m", 5, 5, 0.0, 100, None, Some(200)).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "O'Reilly \"AI\"", "m", 5, 5, 0.0, 100, None, Some(200), None, None).unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200), None, None).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 10.0);

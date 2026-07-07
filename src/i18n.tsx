@@ -269,6 +269,13 @@ export const translations = {
     nextPage: "Next",
     noLogsFound: "No logs found.",
     viewDetails: "View details",
+    requestInspector: "Request inspector",
+    requestInspectorHelp: "Store request and response bodies in the local database for debugging. Disabled by default for privacy.",
+    logRequestBodies: "Log request/response bodies",
+    requestBody: "Request body",
+    responseBody: "Response body",
+    noBodyLogged: "No body logged for this request.",
+    close: "Close",
   },
   "zh-CN": {
     appTitle: "Token Guard",
@@ -495,6 +502,13 @@ export const translations = {
     nextPage: "下一页",
     noLogsFound: "未找到日志。",
     viewDetails: "查看详情",
+    requestInspector: "请求检查器",
+    requestInspectorHelp: "将请求和响应体存储在本地数据库中以供调试。默认关闭以保护隐私。",
+    logRequestBodies: "记录请求/响应体",
+    requestBody: "请求体",
+    responseBody: "响应体",
+    noBodyLogged: "该请求没有记录请求/响应体。",
+    close: "关闭",
   },
 } as const;
 

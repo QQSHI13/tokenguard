@@ -24,6 +24,7 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
+  log_bodies: boolean;
 };
 type Spend = { today: number; budget: number };
 

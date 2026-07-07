@@ -31,6 +31,16 @@ pub async fn forward(
     project_tag: Option<String>,
 ) -> Response {
     let model = extract_model(&body, provider.format);
+    let log_bodies = state
+        .config
+        .read()
+        .map(|cfg| cfg.log_bodies)
+        .unwrap_or(false);
+    let request_body = if log_bodies {
+        maybe_string_body(&body)
+    } else {
+        None
+    };
 
     // Retry the primary provider up to 2 extra times with exponential backoff.
     const BACKOFFS: [u64; 3] = [0, 200, 500];
@@ -88,7 +98,17 @@ pub async fn forward(
     // Finalize the response (stream + log) for whichever provider we ended up using.
     match final_resp {
         Some(resp) => {
-            finalize_forward(state, start, resp, used_provider, used_key, &model, project_tag).await
+            finalize_forward(
+                state,
+                start,
+                resp,
+                used_provider,
+                used_key,
+                &model,
+                project_tag,
+                request_body,
+            )
+            .await
         }
         None => super::error_resp(
             StatusCode::BAD_GATEWAY,
@@ -132,6 +152,7 @@ async fn finalize_forward(
     _api_key: String,
     model: &str,
     project_tag: Option<String>,
+    request_body: Option<String>,
 ) -> Response {
     let status = resp.status();
     let headers = resp.headers().clone();
@@ -191,6 +212,8 @@ async fn finalize_forward(
                 duration_ms,
                 project_tag.clone(),
                 Some(status.as_u16()),
+                request_body.clone(),
+                None,
             )
             .await;
         });
@@ -207,6 +230,7 @@ async fn finalize_forward(
                 )
             }
         };
+        let response_body = maybe_string_body(&bytes);
         let usage = sse::extract_json(&bytes, provider.format);
         let (input_cost, output_cost) = input_output_cost_per_1k(&provider, model);
         let cached_cost = cached_input_cost_per_1k(&provider, model);
@@ -231,6 +255,8 @@ async fn finalize_forward(
                 duration_ms,
                 project_tag.clone(),
                 Some(status.as_u16()),
+                request_body,
+                response_body,
             )
             .await;
         build_response(status, headers, Body::from(bytes))
@@ -274,6 +300,18 @@ fn find_fallback_provider(
 
 fn is_retryable_status(status: reqwest::StatusCode) -> bool {
     status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
+}
+
+/// Convert a raw body to a UTF-8 string for logging, capping size so the DB
+/// does not grow unbounded on large binary responses.
+fn maybe_string_body(body: &Bytes) -> Option<String> {
+    const MAX_LOG_BODY_BYTES: usize = 256 * 1024;
+    if body.len() > MAX_LOG_BODY_BYTES {
+        let truncated = &body[..MAX_LOG_BODY_BYTES];
+        String::from_utf8(truncated.to_vec()).ok()
+    } else {
+        String::from_utf8(body.to_vec()).ok()
+    }
 }
 
 fn extract_model(body: &Bytes, _format: ProviderFormat) -> String {

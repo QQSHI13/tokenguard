@@ -47,6 +47,7 @@ pub fn run() {
             commands::get_settings,
             commands::set_budget,
             commands::set_port,
+            commands::set_log_bodies,
             commands::pause_resume,
             commands::get_today_spend,
             commands::get_logs,

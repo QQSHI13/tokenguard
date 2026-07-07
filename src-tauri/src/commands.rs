@@ -20,6 +20,7 @@ pub struct SettingsDto {
     pub paused: bool,
     pub proxy_url: String,
     pub provider_count: usize,
+    pub log_bodies: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -219,7 +220,24 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: format!("http://localhost:{}", cfg.port),
         provider_count: cfg.providers.len(),
+        log_bodies: cfg.log_bodies,
     })
+}
+
+#[tauri::command]
+pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "log_bodies", if enabled { "1" } else { "0" }).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .log_bodies = enabled;
+    Ok(())
 }
 
 #[tauri::command]
