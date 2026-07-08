@@ -113,10 +113,12 @@ export default function App() {
   return (
     <div className="flex h-full bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <aside className="flex w-48 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-600 text-xs font-bold text-white">
-            TG
-          </div>
+        <div className="flex items-center gap-2.5 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          <img
+            src="/logo.svg"
+            alt="Token Guard"
+            className="h-7 w-7 shrink-0"
+          />
           <div>
             <h1 className="text-sm font-semibold leading-tight">
               {t("appTitle")}
