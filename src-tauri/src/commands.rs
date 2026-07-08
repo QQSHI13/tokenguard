@@ -9,7 +9,7 @@ use crate::health::{self, ProviderHealth};
 use crate::prices;
 use crate::secrets;
 use crate::state::AppState;
-use futures::StreamExt;
+use tokio_stream::StreamExt;
 use rusqlite::params;
 use std::sync::Arc;
 #[cfg(unix)]

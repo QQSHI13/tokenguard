@@ -4,9 +4,8 @@
 //! when a provider model does not have explicit user-provided costs. Prices can
 //! be refreshed at runtime from a remote JSON URL without an app release.
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// Price entry for a single model.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
@@ -20,9 +19,11 @@ pub struct ModelPrice {
     pub cached_input_per_1k: Option<f64>,
 }
 
-/// Built-in default prices for common models. These are loaded once at startup
-/// and can be overridden by `refresh_prices_from_url` at runtime.
-static DEFAULT_PRICES: Lazy<Mutex<HashMap<String, ModelPrice>>> = Lazy::new(|| {
+/// Built-in default prices for common models. These are loaded once at first
+/// use and can be overridden by `refresh_prices_from_url` at runtime.
+static DEFAULT_PRICES: OnceLock<Mutex<HashMap<String, ModelPrice>>> = OnceLock::new();
+
+fn init_default_prices() -> Mutex<HashMap<String, ModelPrice>> {
     let mut map = HashMap::new();
 
     // OpenAI
@@ -180,18 +181,22 @@ static DEFAULT_PRICES: Lazy<Mutex<HashMap<String, ModelPrice>>> = Lazy::new(|| {
     );
 
     Mutex::new(map)
-});
+}
+
+fn default_prices() -> &'static Mutex<HashMap<String, ModelPrice>> {
+    DEFAULT_PRICES.get_or_init(init_default_prices)
+}
 
 /// Return a copy of the current default price map.
 pub fn get_default_prices() -> HashMap<String, ModelPrice> {
-    DEFAULT_PRICES.lock().map(|m| m.clone()).unwrap_or_default()
+    default_prices().lock().map(|m| m.clone()).unwrap_or_default()
 }
 
 /// Look up a default price entry by local model name (case-insensitive, and
 /// tolerant of common prefixes/suffixes).
 pub fn lookup_default_price(model: &str) -> Option<ModelPrice> {
     let key = normalize_model_name(model);
-    let map = DEFAULT_PRICES.lock().ok()?;
+    let map = default_prices().lock().ok()?;
 
     // Exact normalized match.
     if let Some(p) = map.get(&key) {
@@ -237,7 +242,7 @@ pub async fn refresh_prices_from_url(url: &str) -> Result<usize, String> {
         .await
         .map_err(|e| format!("price JSON is invalid: {e}"))?;
 
-    let mut map = DEFAULT_PRICES.lock().map_err(|e| e.to_string())?;
+    let mut map = default_prices().lock().map_err(|e| e.to_string())?;
     let count = fetched.len();
     *map = fetched;
     Ok(count)

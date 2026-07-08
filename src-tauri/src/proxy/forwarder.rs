@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, StatusCode};
 use axum::response::Response;
 use bytes::Bytes;
-use futures::StreamExt;
+use tokio_stream::StreamExt;
 use std::sync::Arc;
 
 use crate::config::{AuthScheme, Provider, ProviderFormat};
