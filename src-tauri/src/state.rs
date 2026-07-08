@@ -64,12 +64,12 @@ pub fn input_output_cost_per_1k(
         .unwrap_or((None, None))
 }
 
+use chrono::{Datelike, Timelike};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
-use chrono::{Datelike, Timelike};
 
 /// Pure scope-matching logic, extracted for unit testing.
 pub fn limit_scope_matches(
@@ -237,10 +237,7 @@ impl AppState {
     /// Check whether a project's spend in its budget period has exceeded its
     /// budget. Returns `(used, budget, action)` when the budget is configured
     /// and exceeded; otherwise None.
-    pub fn check_project_budget(
-        &self,
-        project_tag: &str,
-    ) -> Option<(f64, f64, LimitAction)> {
+    pub fn check_project_budget(&self, project_tag: &str) -> Option<(f64, f64, LimitAction)> {
         let Ok(conn) = self.db.get() else {
             tracing::error!("failed to get DB connection from pool for project budget");
             return None;
@@ -252,7 +249,8 @@ impl AppState {
         if project.budget <= 0.0 {
             return None;
         }
-        let used = db::project_period_spend(&conn, project_tag, project.budget_period).unwrap_or(0.0);
+        let used =
+            db::project_period_spend(&conn, project_tag, project.budget_period).unwrap_or(0.0);
         if used >= project.budget {
             Some((used, project.budget, project.budget_action))
         } else {
@@ -528,7 +526,11 @@ impl AppState {
     }
 
     pub fn all_provider_health(&self) -> std::collections::HashMap<i64, ProviderHealth> {
-        self.provider_health.lock().ok().map(|c| c.all()).unwrap_or_default()
+        self.provider_health
+            .lock()
+            .ok()
+            .map(|c| c.all())
+            .unwrap_or_default()
     }
 
     pub fn provider_health_cache(&self) -> Arc<Mutex<HealthCache>> {
@@ -639,11 +641,8 @@ fn build_tray_menu(
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![
-        &spend_item,
-        &budget_item,
-        &status_item,
-    ];
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        vec![&spend_item, &budget_item, &status_item];
     if let Some(ref c) = critical_item {
         items.push(c);
     }

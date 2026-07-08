@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod cost;
 mod db;
+mod health;
 mod limits;
 mod notifications;
 mod prices;
@@ -11,7 +12,6 @@ mod proxy;
 mod secrets;
 mod state;
 mod webhook;
-mod health;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Wry};
@@ -160,8 +160,13 @@ pub fn run() {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    let providers = s.config.read().map(|cfg| cfg.providers.clone()).unwrap_or_default();
-                    crate::health::refresh_all(&s.client, &providers, s.provider_health_cache()).await;
+                    let providers = s
+                        .config
+                        .read()
+                        .map(|cfg| cfg.providers.clone())
+                        .unwrap_or_default();
+                    crate::health::refresh_all(&s.client, &providers, s.provider_health_cache())
+                        .await;
                 }
             });
 

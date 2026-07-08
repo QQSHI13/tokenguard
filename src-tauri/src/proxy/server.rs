@@ -22,7 +22,11 @@ pub async fn serve(
     expose_to_lan: bool,
     shutdown: tokio::sync::watch::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let bind_addr = if expose_to_lan { "0.0.0.0" } else { "127.0.0.1" };
+    let bind_addr = if expose_to_lan {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
     let listener = tokio::net::TcpListener::bind((bind_addr, port)).await?;
     tracing::info!("Token Guard proxy listening on http://{bind_addr}:{port}");
     let app = router(state);

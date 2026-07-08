@@ -6,8 +6,8 @@ use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, StatusCode};
 use axum::response::Response;
 use bytes::Bytes;
-use tokio_stream::StreamExt;
 use std::sync::Arc;
+use tokio_stream::StreamExt;
 
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
@@ -52,7 +52,16 @@ pub async fn forward(
         if delay_ms > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
-        match attempt_forward(&state, &path, &body, &req_headers, &provider, &api_key, &model).await
+        match attempt_forward(
+            &state,
+            &path,
+            &body,
+            &req_headers,
+            &provider,
+            &api_key,
+            &model,
+        )
+        .await
         {
             Ok(resp) => {
                 let retryable = is_retryable_status(resp.status());
@@ -76,16 +85,9 @@ pub async fn forward(
     if should_fallback {
         if let Some(fallback) = find_fallback_provider(&state, &provider, &model) {
             if let Ok(key) = crate::secrets::get(&fallback.name) {
-                if let Ok(resp) = attempt_forward(
-                    &state,
-                    &path,
-                    &body,
-                    &req_headers,
-                    &fallback,
-                    &key,
-                    &model,
-                )
-                .await
+                if let Ok(resp) =
+                    attempt_forward(&state, &path, &body, &req_headers, &fallback, &key, &model)
+                        .await
                 {
                     used_provider = fallback;
                     used_key = key;
@@ -339,10 +341,7 @@ fn rewrite_body_for_provider(body: &Bytes, provider: &Provider, local_model: &st
 
     let remote_model = remote_model_name(provider, local_model);
     if let Some(obj) = v.as_object_mut() {
-        obj.insert(
-            "model".to_string(),
-            serde_json::Value::String(remote_model),
-        );
+        obj.insert("model".to_string(), serde_json::Value::String(remote_model));
     }
 
     let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
@@ -356,7 +355,9 @@ fn rewrite_body_for_provider(body: &Bytes, provider: &Provider, local_model: &st
         v["stream_options"] = serde_json::Value::Object(opts);
     }
 
-    serde_json::to_vec(&v).map(Bytes::from).unwrap_or_else(|_| body.clone())
+    serde_json::to_vec(&v)
+        .map(Bytes::from)
+        .unwrap_or_else(|_| body.clone())
 }
 
 fn apply_auth(

@@ -9,13 +9,13 @@ use crate::health::{self, ProviderHealth};
 use crate::prices;
 use crate::secrets;
 use crate::state::AppState;
-use tokio_stream::StreamExt;
 use rusqlite::params;
-use std::sync::Arc;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
+use tokio_stream::StreamExt;
 
 #[derive(Debug, serde::Serialize)]
 pub struct SettingsDto {
@@ -358,10 +358,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
 }
 
 #[tauri::command]
-pub fn backup_database(
-    state: State<'_, Arc<AppState>>,
-    target_path: String,
-) -> Result<(), String> {
+pub fn backup_database(state: State<'_, Arc<AppState>>, target_path: String) -> Result<(), String> {
     let target = std::path::PathBuf::from(target_path);
     if target.exists() {
         return Err("target file already exists".into());
@@ -429,7 +426,9 @@ pub fn set_auto_export(
     Ok(())
 }
 
-fn last_auto_export_at(conn: &rusqlite::Connection) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
+fn last_auto_export_at(
+    conn: &rusqlite::Connection,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
     match db::get_setting(conn, "last_auto_export_at") {
         Some(v) => chrono::DateTime::parse_from_rfc3339(&v)
             .map(|dt| Some(dt.with_timezone(&chrono::Utc)))
@@ -478,12 +477,14 @@ pub fn run_auto_export_now(state: &Arc<AppState>) -> Result<String, String> {
         let conn = state.db.get().map_err(|e| e.to_string())?;
         db::list_logs(&conn, 100_000, None).map_err(|e| e.to_string())?
     };
-    let filename = format!("tokenguard-usage-{}.csv", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let filename = format!(
+        "tokenguard-usage-{}.csv",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
     let path = std::path::PathBuf::from(folder).join(&filename);
 
-    let mut w = String::from(
-        "timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n",
-    );
+    let mut w =
+        String::from("timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n");
     for r in rows.iter().rev() {
         w.push_str(&format!(
             "{},{},{},{},{},{:.6},{}\n",
@@ -499,8 +500,12 @@ pub fn run_auto_export_now(state: &Arc<AppState>) -> Result<String, String> {
     std::fs::write(&path, w).map_err(|e| e.to_string())?;
 
     let conn = state.db.get().map_err(|e| e.to_string())?;
-    db::set_setting(&conn, "last_auto_export_at", &chrono::Utc::now().to_rfc3339())
-        .map_err(|e| e.to_string())?;
+    db::set_setting(
+        &conn,
+        "last_auto_export_at",
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -519,10 +524,7 @@ pub fn run_auto_export_now_cmd(state: State<'_, Arc<AppState>>) -> Result<String
 }
 
 #[tauri::command]
-pub fn set_webhook_url(
-    state: State<'_, Arc<AppState>>,
-    url: Option<String>,
-) -> Result<(), String> {
+pub fn set_webhook_url(state: State<'_, Arc<AppState>>, url: Option<String>) -> Result<(), String> {
     let value = url.unwrap_or_default();
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
@@ -539,10 +541,7 @@ pub fn set_webhook_url(
 }
 
 #[tauri::command]
-pub async fn test_webhook(
-    state: State<'_, Arc<AppState>>,
-    url: String,
-) -> Result<(), String> {
+pub async fn test_webhook(state: State<'_, Arc<AppState>>, url: String) -> Result<(), String> {
     crate::webhook::send_test(&state.inner().client, &url).await
 }
 
@@ -567,13 +566,11 @@ pub fn cleanup_logs_now(state: State<'_, Arc<AppState>>) -> Result<usize, String
 }
 
 #[tauri::command]
-pub fn set_key_rotation_days(
-    state: State<'_, Arc<AppState>>,
-    days: u32,
-) -> Result<u32, String> {
+pub fn set_key_rotation_days(state: State<'_, Arc<AppState>>, days: u32) -> Result<u32, String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "key_rotation_days", &days.to_string()).map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "key_rotation_days", &days.to_string())
+            .map_err(|e| e.to_string())?;
         drop(conn);
     }
     state
@@ -612,13 +609,11 @@ pub fn set_auto_start(
 }
 
 #[tauri::command]
-pub fn set_log_retention_days(
-    state: State<'_, Arc<AppState>>,
-    days: u32,
-) -> Result<u32, String> {
+pub fn set_log_retention_days(state: State<'_, Arc<AppState>>, days: u32) -> Result<u32, String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "log_retention_days", &days.to_string()).map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "log_retention_days", &days.to_string())
+            .map_err(|e| e.to_string())?;
         drop(conn);
     }
     state
@@ -634,7 +629,8 @@ pub fn set_log_retention_days(
 pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "log_bodies", if enabled { "1" } else { "0" }).map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "log_bodies", if enabled { "1" } else { "0" })
+            .map_err(|e| e.to_string())?;
         drop(conn);
     }
     state
@@ -647,10 +643,7 @@ pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<
 }
 
 #[tauri::command]
-pub fn set_expose_to_lan(
-    state: State<'_, Arc<AppState>>,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::set_setting(&conn, "expose_to_lan", if enabled { "1" } else { "0" })
@@ -1304,10 +1297,7 @@ pub struct DeviceListDto {
 }
 
 #[tauri::command]
-pub async fn get_registered_devices(
-    key: String,
-    device: String,
-) -> Result<DeviceListDto, String> {
+pub async fn get_registered_devices(key: String, device: String) -> Result<DeviceListDto, String> {
     let url = format!(
         "https://tokenguard-license.qingquanshi65.workers.dev/api/license/devices?key={key}&device={device}"
     );
@@ -1507,7 +1497,11 @@ pub fn get_project_usage(
     days: u64,
 ) -> Result<Vec<db::DailyUsage>, String> {
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-    let tag = if project_tag.is_empty() { None } else { Some(project_tag.as_str()) };
+    let tag = if project_tag.is_empty() {
+        None
+    } else {
+        Some(project_tag.as_str())
+    };
     db::project_daily_usage(&conn, tag, days).map_err(|e| e.to_string())
 }
 

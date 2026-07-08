@@ -146,7 +146,10 @@ fn migration_007_limit_schedules(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn migration_008_project_budgets(conn: &Connection) -> rusqlite::Result<()> {
-    let _ = conn.execute("ALTER TABLE projects ADD COLUMN budget REAL NOT NULL DEFAULT 0", []);
+    let _ = conn.execute(
+        "ALTER TABLE projects ADD COLUMN budget REAL NOT NULL DEFAULT 0",
+        [],
+    );
     let _ = conn.execute(
         "ALTER TABLE projects ADD COLUMN budget_period TEXT NOT NULL DEFAULT 'daily'",
         [],
@@ -179,10 +182,7 @@ fn migration_010_audit_events(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn migration_005_logs_status(conn: &Connection) -> rusqlite::Result<()> {
-    let _ = conn.execute(
-        "ALTER TABLE logs ADD COLUMN status INTEGER",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE logs ADD COLUMN status INTEGER", []);
     Ok(())
 }
 
@@ -375,15 +375,18 @@ pub fn list_logs(
     limit: u64,
     _days: Option<u64>,
 ) -> rusqlite::Result<Vec<LogRow>> {
-    list_logs_filtered(conn, &LogFilter { page_size: limit, ..LogFilter::default() })
+    list_logs_filtered(
+        conn,
+        &LogFilter {
+            page_size: limit,
+            ..LogFilter::default()
+        },
+    )
 }
 
 /// List logs with optional filters and pagination. Returns the requested page
 /// ordered by id descending.
-pub fn list_logs_filtered(
-    conn: &Connection,
-    filter: &LogFilter,
-) -> rusqlite::Result<Vec<LogRow>> {
+pub fn list_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::Result<Vec<LogRow>> {
     let mut sql = String::from(
         "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body \
          FROM logs WHERE 1=1",
@@ -442,9 +445,7 @@ pub fn list_audit_events(
     days: u32,
     limit: u64,
 ) -> rusqlite::Result<Vec<AuditEvent>> {
-    let mut sql = String::from(
-        "SELECT id, ts, event_type, details FROM audit_events WHERE 1=1",
-    );
+    let mut sql = String::from("SELECT id, ts, event_type, details FROM audit_events WHERE 1=1");
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if days > 0 {
         sql.push_str(" AND ts >= datetime('now', ?1)");
@@ -1205,7 +1206,20 @@ mod tests {
             None,
         )
         .unwrap();
-        insert_log(&conn, "OpenAI", "gpt-4o-mini", 100, 50, 0.001, 800, None, Some(200), None, None).unwrap();
+        insert_log(
+            &conn,
+            "OpenAI",
+            "gpt-4o-mini",
+            100,
+            50,
+            0.001,
+            800,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
 
         let logs = list_logs(&conn, 10, None).unwrap();
         assert_eq!(logs.len(), 2);
@@ -1267,7 +1281,20 @@ mod tests {
         assert_eq!(limits[0].id, id);
         assert_eq!(limits[0].cap, 100.0);
 
-        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200), None, None).unwrap();
+        insert_log(
+            &conn,
+            "OpenAI",
+            "gpt-4o",
+            30,
+            20,
+            0.001,
+            100,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
         let used = usage_for_limit(&conn, &limits[0]).unwrap();
         assert_eq!(used, 50.0);
 
@@ -1305,8 +1332,34 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "ScopedProvider", "m", 10, 10, 0.0, 100, None, Some(200), None, None).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200), None, None).unwrap();
+        insert_log(
+            &conn,
+            "ScopedProvider",
+            "m",
+            10,
+            10,
+            0.0,
+            100,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
+        insert_log(
+            &conn,
+            "Other",
+            "m",
+            100,
+            100,
+            0.0,
+            100,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 20.0);
@@ -1336,8 +1389,34 @@ mod tests {
         let limits = list_limits(&conn).unwrap();
         let found = limits.iter().find(|l| l.id == limit_id).unwrap();
 
-        insert_log(&conn, "O'Reilly \"AI\"", "m", 5, 5, 0.0, 100, None, Some(200), None, None).unwrap();
-        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200), None, None).unwrap();
+        insert_log(
+            &conn,
+            "O'Reilly \"AI\"",
+            "m",
+            5,
+            5,
+            0.0,
+            100,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
+        insert_log(
+            &conn,
+            "Other",
+            "m",
+            100,
+            100,
+            0.0,
+            100,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 10.0);

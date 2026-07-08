@@ -88,11 +88,7 @@ pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHea
 }
 
 /// Run health checks for every configured provider and store the results.
-pub async fn refresh_all(
-    client: &Client,
-    providers: &[Provider],
-    cache: Arc<Mutex<HealthCache>>,
-) {
+pub async fn refresh_all(client: &Client, providers: &[Provider], cache: Arc<Mutex<HealthCache>>) {
     for provider in providers {
         let health = check_provider(client, provider).await;
         if let Ok(mut c) = cache.lock() {

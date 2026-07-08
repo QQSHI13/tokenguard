@@ -189,7 +189,10 @@ fn default_prices() -> &'static Mutex<HashMap<String, ModelPrice>> {
 
 /// Return a copy of the current default price map.
 pub fn get_default_prices() -> HashMap<String, ModelPrice> {
-    default_prices().lock().map(|m| m.clone()).unwrap_or_default()
+    default_prices()
+        .lock()
+        .map(|m| m.clone())
+        .unwrap_or_default()
 }
 
 /// Look up a default price entry by local model name (case-insensitive, and
