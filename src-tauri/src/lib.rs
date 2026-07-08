@@ -90,6 +90,7 @@ pub fn run() {
             commands::check_provider_health,
             commands::get_provider_healths,
             commands::get_logs_filtered,
+            commands::replay_request,
             commands::backup_database,
             commands::restore_database,
             commands::set_auto_export,

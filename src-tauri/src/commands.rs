@@ -522,6 +522,72 @@ pub fn get_today_spend(state: State<'_, Arc<AppState>>) -> Result<SpendDto, Stri
 }
 
 #[tauri::command]
+pub async fn replay_request(
+    state: State<'_, Arc<AppState>>,
+    log_id: i64,
+) -> Result<String, String> {
+    let log = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::get_log(&conn, log_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("log not found")?
+    };
+    let request_body = log.request_body.ok_or("request body was not logged")?;
+    if request_body.is_empty() {
+        return Err("request body was not logged".into());
+    }
+
+    let provider = {
+        let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+        cfg.providers
+            .iter()
+            .find(|p| p.name == log.provider)
+            .cloned()
+            .ok_or("provider no longer exists")?
+    };
+    let api_key = crate::secrets::get(&provider.name)?;
+
+    // Infer the original endpoint from the provider format and logged body.
+    let path = match provider.format {
+        crate::config::ProviderFormat::Anthropic => "/v1/messages".to_string(),
+        crate::config::ProviderFormat::OpenAI => {
+            let body_json: serde_json::Value =
+                serde_json::from_str(&request_body).unwrap_or(serde_json::Value::Null);
+            if body_json.get("messages").is_some() {
+                "/v1/chat/completions".to_string()
+            } else if body_json.get("prompt").is_some() {
+                "/v1/completions".to_string()
+            } else {
+                "/v1/chat/completions".to_string()
+            }
+        }
+    };
+
+    let base = provider.base_url.trim_end_matches('/');
+    let url = format!("{base}{path}");
+    let mut req = state.inner().client.post(&url);
+    req = match provider.auth {
+        crate::config::AuthScheme::Bearer => req.bearer_auth(&api_key),
+        crate::config::AuthScheme::XApiKey => req
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", "2023-06-01"),
+        crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
+    };
+    for (k, v) in &provider.extra_headers {
+        req = req.header(k, v);
+    }
+
+    let resp = req
+        .body(request_body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(format!("HTTP {status}\n{body}"))
+}
+
+#[tauri::command]
 pub fn get_logs(
     state: State<'_, Arc<AppState>>,
     limit: Option<u64>,

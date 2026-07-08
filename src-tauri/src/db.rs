@@ -403,6 +403,16 @@ pub fn list_logs_filtered(
     rows.collect::<rusqlite::Result<Vec<LogRow>>>()
 }
 
+/// Fetch a single log row by id.
+pub fn get_log(conn: &Connection, id: i64) -> rusqlite::Result<Option<LogRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body \
+         FROM logs WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![id], row_to_log)?;
+    rows.next().transpose()
+}
+
 /// Count logs matching the same filters (without pagination).
 pub fn count_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::Result<u64> {
     let mut sql = String::from("SELECT COUNT(*) FROM logs WHERE 1=1");

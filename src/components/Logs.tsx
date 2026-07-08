@@ -48,6 +48,7 @@ export default function Logs() {
   const [providers, setProviders] = useState<{ provider: { name: string } }[]>([]);
   const [projects, setProjects] = useState<{ name: string }[]>([]);
   const [detail, setDetail] = useState<Log | null>(null);
+  const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     const filter: Record<string, unknown> = {
@@ -81,6 +82,18 @@ export default function Logs() {
   }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const replay = async (log: Log) => {
+    setReplayStatus(t("replaying"));
+    try {
+      const result = await invoke<string>("replay_request", { logId: log.id });
+      setReplayStatus(t("replayDone"));
+      alert(result);
+    } catch (err) {
+      setReplayStatus(t("replayFailed"));
+      alert(String(err));
+    }
+  };
 
   const statusClass = (s: number | null) => {
     if (s === null) return "text-neutral-500";
@@ -221,12 +234,26 @@ export default function Logs() {
               <h3 className="font-semibold">
                 {t("requestInspector")} #{detail.id}
               </h3>
-              <button
-                onClick={() => setDetail(null)}
-                className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-              >
-                {t("close")}
-              </button>
+              <div className="flex items-center gap-2">
+                {detail.request_body && (
+                  <button
+                    onClick={() => replay(detail)}
+                    disabled={replayStatus === t("replaying")}
+                    className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {replayStatus === t("replaying") ? t("working") : t("replay")}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setDetail(null);
+                    setReplayStatus(null);
+                  }}
+                  className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                >
+                  {t("close")}
+                </button>
+              </div>
             </div>
             <div className="space-y-3">
               <div>
