@@ -576,7 +576,7 @@ pub fn is_limit_active(limit: &Limit) -> bool {
 
     if let (Some(start), Some(end)) = (&limit.active_hours_start, &limit.active_hours_end) {
         if let (Some(start_min), Some(end_min)) = (parse_minutes(start), parse_minutes(end)) {
-            let cur = now.hour() as u32 * 60 + now.minute() as u32;
+            let cur = now.hour() * 60 + now.minute();
             if start_min <= end_min {
                 return cur >= start_min && cur <= end_min;
             } else {

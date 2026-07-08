@@ -100,7 +100,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 LimitAction::Block => {
                     notifications::limit_blocked(
                         &state.app,
-                        &project_tag.as_deref().unwrap_or(""),
+                        project_tag.as_deref().unwrap_or(""),
                         used,
                         budget,
                     );
@@ -114,7 +114,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 LimitAction::Pause => {
                     notifications::limit_paused(
                         &state.app,
-                        &project_tag.as_deref().unwrap_or(""),
+                        project_tag.as_deref().unwrap_or(""),
                         used,
                         budget,
                     );
@@ -127,7 +127,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
                 LimitAction::Warn => {
                     notifications::limit_warning(
                         &state.app,
-                        &project_tag.as_deref().unwrap_or(""),
+                        project_tag.as_deref().unwrap_or(""),
                         used,
                         budget,
                     );
@@ -261,7 +261,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             state,
             start,
             path,
-            body_bytes.into(),
+            body_bytes,
             req_headers,
             provider,
             api_key,
