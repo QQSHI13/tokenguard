@@ -29,6 +29,8 @@ pub struct SettingsDto {
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
     pub auto_start: bool,
+    pub key_rotation_days: u32,
+    pub log_retention_days: u32,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -60,18 +62,35 @@ pub struct LimitPreset {
 pub fn list_providers(state: State<'_, Arc<AppState>>) -> Result<Vec<ProviderDto>, String> {
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
-    drop(conn);
     Ok(providers
         .into_iter()
         .map(|p| {
             let (api_key_set, key_error) = secrets::status(&p.name);
+            let key_created_at = db::get_setting(&conn, &provider_key_setting_name(&p.name));
             ProviderDto {
                 provider: p,
                 api_key_set,
                 key_error,
+                key_created_at,
             }
         })
         .collect())
+}
+
+fn provider_key_setting_name(provider_name: &str) -> String {
+    format!("provider_key_created_at:{provider_name}")
+}
+
+fn record_provider_key_time(
+    conn: &rusqlite::Connection,
+    provider_name: &str,
+) -> Result<(), String> {
+    db::set_setting(
+        conn,
+        &provider_key_setting_name(provider_name),
+        &chrono::Utc::now().to_rfc3339(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn validate_provider_input(input: &ProviderInput) -> Result<(), String> {
@@ -97,6 +116,11 @@ pub fn add_provider(
     validate_provider_input(&input)?;
     if !input.api_key.is_empty() {
         secrets::set(&input.name, &input.api_key)?;
+        {
+            let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+            record_provider_key_time(&conn, &input.name)?;
+            drop(conn);
+        }
     }
     let provider = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
@@ -115,11 +139,19 @@ pub fn add_provider(
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
+    state.audit("provider_added", &format!("name={}", input.name));
     let (api_key_set, key_error) = secrets::status(&input.name);
+    let key_created_at = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        let ts = db::get_setting(&conn, &provider_key_setting_name(&input.name));
+        drop(conn);
+        ts
+    };
     Ok(ProviderDto {
         provider,
         api_key_set,
         key_error,
+        key_created_at,
     })
 }
 
@@ -135,8 +167,16 @@ pub fn delete_provider(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), S
             .find(|p| p.id == id)
             .map(|p| p.name.clone())
     };
-    if let Some(name) = name {
-        let _ = secrets::delete(&name);
+    if let Some(ref name) = name {
+        let _ = secrets::delete(name);
+        {
+            let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+            let _ = conn.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                rusqlite::params![provider_key_setting_name(name)],
+            );
+            drop(conn);
+        }
     }
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
@@ -144,6 +184,9 @@ pub fn delete_provider(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), S
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    if let Some(name) = name {
+        state.audit("provider_deleted", &format!("name={name}"));
     }
     Ok(())
 }
@@ -154,8 +197,15 @@ pub fn keyring_selftest() -> String {
 }
 
 #[tauri::command]
-pub fn set_provider_key(name: String, key: String) -> Result<(), String> {
-    secrets::set(&name, &key)
+pub fn set_provider_key(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    key: String,
+) -> Result<(), String> {
+    secrets::set(&name, &key)?;
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    record_provider_key_time(&conn, &name)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -195,11 +245,43 @@ pub fn update_provider(
     }
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        if input.clear_key {
+            let _ = conn.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                rusqlite::params![provider_key_setting_name(&input.name)],
+            );
+            if old_name != input.name {
+                let _ = conn.execute(
+                    "DELETE FROM settings WHERE key = ?1",
+                    rusqlite::params![provider_key_setting_name(&old_name)],
+                );
+            }
+        } else if !input.api_key.is_empty() {
+            record_provider_key_time(&conn, &input.name)?;
+        } else if old_name != input.name {
+            // Copy the original creation timestamp to the new provider name.
+            if let Some(ts) = db::get_setting(&conn, &provider_key_setting_name(&old_name)) {
+                db::set_setting(&conn, &provider_key_setting_name(&input.name), &ts)
+                    .map_err(|e| e.to_string())?;
+            }
+            let _ = conn.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                rusqlite::params![provider_key_setting_name(&old_name)],
+            );
+        }
+        drop(conn);
+    }
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::update_provider(&conn, id, &input).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
+    state.audit(
+        "provider_updated",
+        &format!("id={id} old_name={old_name} new_name={}", input.name),
+    );
     let p = {
         let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
         cfg.providers
@@ -209,10 +291,17 @@ pub fn update_provider(
             .ok_or("provider not found after update")?
     };
     let (api_key_set, key_error) = secrets::status(&input.name);
+    let key_created_at = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        let ts = db::get_setting(&conn, &provider_key_setting_name(&input.name));
+        drop(conn);
+        ts
+    };
     Ok(ProviderDto {
         provider: p,
         api_key_set,
         key_error,
+        key_created_at,
     })
 }
 
@@ -233,6 +322,18 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         auto_export_folder: cfg.auto_export_folder.clone(),
         webhook_url: cfg.webhook_url.clone(),
         auto_start: cfg.auto_start,
+        key_rotation_days: state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?
+            .key_rotation_days,
+        log_retention_days: state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?
+            .log_retention_days,
     })
 }
 
@@ -431,6 +532,40 @@ pub fn get_auto_start(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn cleanup_logs_now(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
+    let days = state
+        .inner()
+        .config
+        .read()
+        .map_err(|e| e.to_string())?
+        .log_retention_days;
+    if days == 0 {
+        return Ok(0);
+    }
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    db::cleanup_old_logs(&conn, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_key_rotation_days(
+    state: State<'_, Arc<AppState>>,
+    days: u32,
+) -> Result<u32, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "key_rotation_days", &days.to_string()).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .key_rotation_days = days;
+    Ok(days)
+}
+
+#[tauri::command]
 pub fn set_auto_start(
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
@@ -454,6 +589,25 @@ pub fn set_auto_start(
         .map_err(|e| e.to_string())?
         .auto_start = enabled;
     Ok(enabled)
+}
+
+#[tauri::command]
+pub fn set_log_retention_days(
+    state: State<'_, Arc<AppState>>,
+    days: u32,
+) -> Result<u32, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "log_retention_days", &days.to_string()).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .log_retention_days = days;
+    Ok(days)
 }
 
 #[tauri::command]
@@ -696,6 +850,34 @@ pub fn export_logs(
     }
 }
 
+/// Export audit events as CSV or JSON text.
+#[tauri::command]
+pub fn export_audit_logs(
+    state: State<'_, Arc<AppState>>,
+    format: String,
+    days: u32,
+) -> Result<String, String> {
+    let rows = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::list_audit_events(&conn, days, 100_000).map_err(|e| e.to_string())?
+    };
+    match format.as_str() {
+        "json" => Ok(serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?),
+        _ => {
+            let mut w = String::from("timestamp,event_type,details\n");
+            for r in rows.iter().rev() {
+                w.push_str(&format!(
+                    "{},{},{}\n",
+                    r.ts,
+                    csv_escape(&r.event_type),
+                    csv_escape(&r.details),
+                ));
+            }
+            Ok(w)
+        }
+    }
+}
+
 fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') {
         format!("\"{}\"", s.replace('"', "\"\""))
@@ -797,6 +979,7 @@ pub fn add_project(
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
     }
+    state.audit("project_added", &format!("name={}", input.name));
     Ok(Project {
         id,
         name: input.name,
@@ -809,12 +992,22 @@ pub fn add_project(
 
 #[tauri::command]
 pub fn delete_project(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
+    let name = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        let projects = db::list_projects(&conn).map_err(|e| e.to_string())?;
+        let name = projects.iter().find(|p| p.id == id).map(|p| p.name.clone());
+        drop(conn);
+        name
+    };
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::delete_project(&conn, id).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    if let Some(name) = name {
+        state.audit("project_deleted", &format!("name={name}"));
     }
     Ok(())
 }

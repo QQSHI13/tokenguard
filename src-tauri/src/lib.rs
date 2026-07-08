@@ -54,14 +54,18 @@ pub fn run() {
             commands::set_budget,
             commands::set_port,
             commands::set_log_bodies,
+            commands::set_log_retention_days,
+            commands::cleanup_logs_now,
             commands::set_webhook_url,
             commands::test_webhook,
+            commands::set_key_rotation_days,
             commands::pause_resume,
             commands::get_today_spend,
             commands::get_logs,
             commands::write_text_file,
             commands::get_models,
             commands::export_logs,
+            commands::export_audit_logs,
             commands::refresh_models,
             commands::list_projects,
             commands::add_project,
@@ -112,6 +116,24 @@ pub fn run() {
                 .map_err(|e| format!("failed to get DB connection: {e}"))?;
             let config = db::load_config(&conn)?;
             let port = config.port;
+
+            // Delete old logs and audit events if a retention period is configured.
+            if config.log_retention_days > 0 {
+                match db::cleanup_old_logs(&conn, config.log_retention_days) {
+                    Ok(deleted) if deleted > 0 => {
+                        tracing::info!("deleted {deleted} old log rows");
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("log cleanup failed: {e}"),
+                }
+                match db::cleanup_old_audit_events(&conn, config.log_retention_days) {
+                    Ok(deleted) if deleted > 0 => {
+                        tracing::info!("deleted {deleted} old audit events");
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("audit cleanup failed: {e}"),
+                }
+            }
 
             let state = Arc::new(state::AppState::new(pool, db_path, config, handle)?);
 

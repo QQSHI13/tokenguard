@@ -87,6 +87,7 @@ pub struct ProviderDto {
     pub provider: Provider,
     pub api_key_set: bool,
     pub key_error: Option<String>,
+    pub key_created_at: Option<String>,
 }
 
 /// Input for creating a provider (includes the API key once, for storage).
@@ -366,6 +367,8 @@ pub struct Config {
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
     pub auto_start: bool,
+    pub key_rotation_days: u32,
+    pub log_retention_days: u32,
 }
 
 impl Default for Config {
@@ -381,6 +384,8 @@ impl Default for Config {
             auto_export_folder: None,
             webhook_url: None,
             auto_start: false,
+            key_rotation_days: 90,
+            log_retention_days: 0,
         }
     }
 }

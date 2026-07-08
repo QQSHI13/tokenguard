@@ -62,6 +62,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "provider_extra_headers",
         apply: migration_009_provider_extra_headers,
     },
+    Migration {
+        id: 10,
+        name: "audit_events",
+        apply: migration_010_audit_events,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -156,6 +161,21 @@ fn migration_008_project_budgets(conn: &Connection) -> rusqlite::Result<()> {
 fn migration_009_provider_extra_headers(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute("ALTER TABLE providers ADD COLUMN extra_headers TEXT", []);
     Ok(())
+}
+
+fn migration_010_audit_events(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
+        ",
+    )
 }
 
 fn migration_005_logs_status(conn: &Connection) -> rusqlite::Result<()> {
@@ -403,6 +423,70 @@ pub fn list_logs_filtered(
     rows.collect::<rusqlite::Result<Vec<LogRow>>>()
 }
 
+/// Insert an audit event.
+pub fn insert_audit_event(
+    conn: &Connection,
+    event_type: &str,
+    details: &str,
+) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO audit_events (ts, event_type, details) VALUES (?1, ?2, ?3)",
+        params![chrono::Utc::now().to_rfc3339(), event_type, details],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// List audit events from the last `days` days. `days = 0` means all.
+pub fn list_audit_events(
+    conn: &Connection,
+    days: u32,
+    limit: u64,
+) -> rusqlite::Result<Vec<AuditEvent>> {
+    let mut sql = String::from(
+        "SELECT id, ts, event_type, details FROM audit_events WHERE 1=1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if days > 0 {
+        sql.push_str(" AND ts >= datetime('now', ?1)");
+        params.push(Box::new(format!("-{days} days")));
+    }
+    sql.push_str(" ORDER BY id DESC LIMIT ?");
+    params.push(Box::new(limit));
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(AuditEvent {
+            id: row.get(0)?,
+            ts: row.get(1)?,
+            event_type: row.get(2)?,
+            details: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Delete audit events older than `days` days. Returns the number of rows deleted.
+pub fn cleanup_old_audit_events(conn: &Connection, days: u32) -> rusqlite::Result<usize> {
+    if days == 0 {
+        return Ok(0);
+    }
+    conn.execute(
+        "DELETE FROM audit_events WHERE ts < datetime('now', ?1)",
+        params![format!("-{days} days")],
+    )
+}
+
+/// Delete logs older than `days` days. Returns the number of rows deleted.
+pub fn cleanup_old_logs(conn: &Connection, days: u32) -> rusqlite::Result<usize> {
+    if days == 0 {
+        return Ok(0);
+    }
+    conn.execute(
+        "DELETE FROM logs WHERE ts < datetime('now', ?1)",
+        params![format!("-{days} days")],
+    )
+}
+
 /// Fetch a single log row by id.
 pub fn get_log(conn: &Connection, id: i64) -> rusqlite::Result<Option<LogRow>> {
     let mut stmt = conn.prepare(
@@ -565,6 +649,14 @@ pub struct MonthlyUsage {
     pub cost: f64,
     pub tokens: u64,
     pub requests: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AuditEvent {
+    pub id: i64,
+    pub ts: String,
+    pub event_type: String,
+    pub details: String,
 }
 
 /// Aggregate usage per day for a given provider (by name) over the last `days`.
@@ -980,6 +1072,12 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let auto_start = get_setting(conn, "auto_start")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    let key_rotation_days = get_setting(conn, "key_rotation_days")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90);
+    let log_retention_days = get_setting(conn, "log_retention_days")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     Ok(Config {
         providers,
         projects,
@@ -991,6 +1089,8 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         auto_export_folder,
         webhook_url,
         auto_start,
+        key_rotation_days,
+        log_retention_days,
     })
 }
 

@@ -25,7 +25,12 @@ type Provider = {
   fallback_provider_id: number | null;
   extra_headers: [string, string][];
 };
-type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
+type ProviderDto = {
+  provider: Provider;
+  api_key_set: boolean;
+  key_error: string | null;
+  key_created_at: string | null;
+};
 
 type ProviderHealth = {
   ok: boolean;
@@ -86,6 +91,14 @@ const PRESETS: {
   },
 ];
 
+function isKeyOld(createdAt: string | null, thresholdDays: number): boolean {
+  if (!createdAt) return false;
+  const created = new Date(createdAt);
+  if (isNaN(created.getTime())) return false;
+  const days = (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return days >= thresholdDays;
+}
+
 function blank(): Input {
   return {
     name: "",
@@ -124,11 +137,15 @@ export default function Providers({ onChange }: { onChange: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<number | null>(null);
   const [health, setHealth] = useState<Record<number, ProviderHealth>>({});
+  const [keyRotationDays, setKeyRotationDays] = useState(90);
 
   const refresh = useCallback(() => {
     invoke<ProviderDto[]>("list_providers").then(setProviders).catch(console.error);
     invoke<Record<number, ProviderHealth>>("get_provider_healths")
       .then(setHealth)
+      .catch(console.error);
+    invoke<{ key_rotation_days: number }>("get_settings")
+      .then((s) => setKeyRotationDays(s.key_rotation_days || 90))
       .catch(console.error);
   }, []);
 
@@ -209,7 +226,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           {providers.length === 0 && (
             <p className="text-xs text-neutral-600">{t("noProvidersYet")}</p>
           )}
-          {providers.map(({ provider: p, api_key_set, key_error }) => (
+          {providers.map(({ provider: p, api_key_set, key_error, key_created_at }) => (
             <div
               key={p.id}
               className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
@@ -243,6 +260,14 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                   ) : (
                     <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
                       {t("noKey")}
+                    </span>
+                  )}
+                  {api_key_set && isKeyOld(key_created_at, keyRotationDays) && (
+                    <span
+                      title={t("keyRotationWarning")}
+                      className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300"
+                    >
+                      {t("rotateKey")}
                     </span>
                   )}
                 </div>

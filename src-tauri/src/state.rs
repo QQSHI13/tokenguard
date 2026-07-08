@@ -224,6 +224,16 @@ impl AppState {
         db::today_spend(&conn).unwrap_or(0.0)
     }
 
+    pub fn audit(&self, event_type: &str, details: &str) {
+        let Ok(conn) = self.db.get() else {
+            tracing::error!("failed to get DB connection for audit event");
+            return;
+        };
+        if let Err(e) = db::insert_audit_event(&conn, event_type, details) {
+            tracing::warn!("failed to insert audit event: {e}");
+        }
+    }
+
     /// Check whether a project's spend in its budget period has exceeded its
     /// budget. Returns `(used, budget, action)` when the budget is configured
     /// and exceeded; otherwise None.
@@ -322,6 +332,17 @@ impl AppState {
 
             let total = used + current;
             if limit.cap > 0.0 && total >= limit.cap {
+                self.audit(
+                    "limit_hit",
+                    &format!(
+                        "limit={} metric={} action={} used={:.4} cap={:.4}",
+                        limit.name,
+                        limit.metric.as_db_str(),
+                        limit.action.as_db_str(),
+                        total,
+                        limit.cap
+                    ),
+                );
                 if self.should_notify_block(limit.id) {
                     if let Some(ref url) = webhook_url {
                         webhook::send_limit_event(
@@ -362,6 +383,17 @@ impl AppState {
                     })
                     .unwrap_or(true);
                 if should_notify {
+                    self.audit(
+                        "limit_warning",
+                        &format!(
+                            "limit={} metric={} used={:.4} cap={:.4} threshold={:.2}",
+                            limit.name,
+                            limit.metric.as_db_str(),
+                            used,
+                            limit.cap,
+                            limit.warning_threshold
+                        ),
+                    );
                     notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
                     if let Some(ref url) = webhook_url {
                         webhook::send_limit_event(
@@ -475,20 +507,21 @@ impl AppState {
             ICON_GREEN
         };
 
+        let budget = self.config.read().map(|cfg| cfg.budget).unwrap_or(0.0);
+        let critical_deref = critical.as_deref();
         let tooltip = format!(
             "Token Guard — ${spend:.2} today{paused}{critical}",
             paused = if paused { " (paused)" } else { "" },
-            critical = critical
+            critical = critical_deref
                 .map(|c| format!(" — limit: {c}"))
                 .unwrap_or_default(),
         );
-
         if let Some(tray) = self.app.tray_by_id("main") {
             let _ = tray.set_tooltip(Some(&tooltip));
             if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
                 let _ = tray.set_icon(Some(img));
             }
-            if let Ok(menu) = build_tray_menu(&self.app, spend, paused) {
+            if let Ok(menu) = build_tray_menu(&self.app, spend, budget, paused, critical_deref) {
                 let _ = tray.set_menu(Some(menu));
             }
         }
@@ -556,7 +589,9 @@ pub fn is_limit_active(limit: &Limit) -> bool {
 fn build_tray_menu(
     app: &AppHandle<Wry>,
     spend: f64,
+    budget: f64,
     paused: bool,
+    critical: Option<&str>,
 ) -> Result<Menu<Wry>, tauri::Error> {
     let spend_item = MenuItem::with_id(
         app,
@@ -565,6 +600,28 @@ fn build_tray_menu(
         false,
         None::<&str>,
     )?;
+    let budget_text = if budget > 0.0 {
+        format!("Budget: ${spend:.2} / ${budget:.2}")
+    } else {
+        "Budget: not set".to_string()
+    };
+    let budget_item = MenuItem::with_id(app, "budget", budget_text, false, None::<&str>)?;
+    let status_item = MenuItem::with_id(
+        app,
+        "status",
+        if paused {
+            "Status: paused".to_string()
+        } else {
+            "Status: active".to_string()
+        },
+        false,
+        None::<&str>,
+    )?;
+    let critical_text = critical.map(|c| format!("Limit: {c}"));
+    let critical_item = critical_text
+        .as_ref()
+        .map(|c| MenuItem::with_id(app, "critical", c.clone(), false, None::<&str>))
+        .transpose()?;
     let open_item = MenuItem::with_id(app, "open", "Open Dashboard", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let pause_item = MenuItem::with_id(
@@ -582,22 +639,27 @@ fn build_tray_menu(
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let items: [&dyn tauri::menu::IsMenuItem<Wry>; 8] = [
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![
         &spend_item,
-        &sep1,
-        &open_item,
-        &settings_item,
-        &sep2,
-        &pause_item,
-        &sep3,
-        &quit_item,
+        &budget_item,
+        &status_item,
     ];
+    if let Some(ref c) = critical_item {
+        items.push(c);
+    }
+    items.push(&sep1);
+    items.push(&open_item);
+    items.push(&settings_item);
+    items.push(&sep2);
+    items.push(&pause_item);
+    items.push(&sep3);
+    items.push(&quit_item);
     Menu::with_items(app, &items)
 }
 
 /// Build the tray icon at startup. Left-click toggles pause.
 pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
-    let menu = build_tray_menu(app, 0.0, false)?;
+    let menu = build_tray_menu(app, 0.0, 0.0, false, None)?;
     let icon = tauri::image::Image::from_bytes(ICON_GREEN)?;
     TrayIconBuilder::with_id("main")
         .icon(icon)

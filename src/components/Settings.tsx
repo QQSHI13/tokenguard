@@ -16,6 +16,8 @@ type Settings = {
   auto_export_folder: string | null;
   webhook_url: string | null;
   auto_start: boolean;
+  key_rotation_days: number;
+  log_retention_days: number;
 } | null;
 
 export default function SettingsTab({
@@ -48,6 +50,12 @@ export default function SettingsTab({
   const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
+  const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
+  const [keyRotationStatus, setKeyRotationStatus] = useState<string | null>(null);
+  const [logRetentionDays, setLogRetentionDays] = useState(String(settings?.log_retention_days ?? 0));
+  const [logRetentionStatus, setLogRetentionStatus] = useState<string | null>(null);
+  const [auditExportDays, setAuditExportDays] = useState("7");
+  const [auditExportStatus, setAuditExportStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -161,6 +169,46 @@ export default function SettingsTab({
     setAutoStart(settings?.auto_start ?? false);
   }, [settings?.auto_start]);
 
+  useEffect(() => {
+    setKeyRotationDays(String(settings?.key_rotation_days ?? 90));
+  }, [settings?.key_rotation_days]);
+
+  useEffect(() => {
+    setLogRetentionDays(String(settings?.log_retention_days ?? 0));
+  }, [settings?.log_retention_days]);
+
+  const handleSaveKeyRotation = async () => {
+    setKeyRotationStatus(null);
+    try {
+      const days = Number(keyRotationDays) || 90;
+      await invoke("set_key_rotation_days", { days });
+      setKeyRotationStatus(t("keyRotationSaved"));
+    } catch (e) {
+      setKeyRotationStatus(String(e));
+    }
+  };
+
+  const handleSaveLogRetention = async () => {
+    setLogRetentionStatus(null);
+    try {
+      const days = Number(logRetentionDays) || 0;
+      await invoke("set_log_retention_days", { days });
+      setLogRetentionStatus(t("logRetentionSaved"));
+    } catch (e) {
+      setLogRetentionStatus(String(e));
+    }
+  };
+
+  const handleCleanupLogsNow = async () => {
+    setLogRetentionStatus(null);
+    try {
+      const deleted = await invoke<number>("cleanup_logs_now");
+      setLogRetentionStatus(t("logRetentionCleaned", { count: deleted }));
+    } catch (e) {
+      setLogRetentionStatus(String(e));
+    }
+  };
+
   const handleAutoStartChange = async (enabled: boolean) => {
     setAutoStartStatus(null);
     try {
@@ -221,6 +269,25 @@ export default function SettingsTab({
       setAutoExportStatus(t("autoExportSavedTo", { path }));
     } catch (e) {
       setAutoExportStatus(String(e));
+    }
+  };
+
+  const handleExportAuditLogs = async (format: "csv" | "json") => {
+    setAuditExportStatus(null);
+    try {
+      const days = Number(auditExportDays) || 0;
+      const content = await invoke<string>("export_audit_logs", { format, days });
+      const extension = format;
+      const defaultName = `tokenguard-audit-${new Date().toISOString().slice(0, 10)}.${extension}`;
+      const path = await save({
+        defaultPath: defaultName,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+      });
+      if (!path) return;
+      await invoke("write_text_file", { path, content });
+      setAuditExportStatus(t("auditExportSaved", { path }));
+    } catch (e) {
+      setAuditExportStatus(String(e));
     }
   };
 
@@ -376,6 +443,36 @@ export default function SettingsTab({
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("keyRotation")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("keyRotationHelp")}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            value={keyRotationDays}
+            onChange={(e) => setKeyRotationDays(e.target.value)}
+            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <span className="text-xs text-neutral-500">{t("days")}</span>
+          <button
+            onClick={handleSaveKeyRotation}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+        </div>
+        {keyRotationStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              keyRotationStatus.includes(t("keyRotationSaved")) ? "text-emerald-600" : "text-red-600"
+            }`}
+          >
+            {keyRotationStatus}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="text-sm font-semibold">{t("keychain")}</h2>
         <p className="mt-1 text-[11px] text-neutral-500">
           {t("keychainHelp")}
@@ -507,6 +604,48 @@ export default function SettingsTab({
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("logRetention")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("logRetentionHelp")}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={logRetentionDays}
+            onChange={(e) => setLogRetentionDays(e.target.value)}
+            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <span className="text-xs text-neutral-500">{t("days")}</span>
+          <button
+            onClick={handleSaveLogRetention}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={handleCleanupLogsNow}
+            disabled={!Number(logRetentionDays)}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {t("cleanupLogsNow")}
+          </button>
+        </div>
+        {logRetentionStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              logRetentionStatus.includes(t("logRetentionSaved")) ||
+              logRetentionStatus.includes(t("logRetentionCleaned"))
+                ? "text-emerald-600"
+                : "text-red-600"
+            }`}
+          >
+            {logRetentionStatus}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="text-sm font-semibold">{t("autoExport")}</h2>
         <p className="mt-1 text-[11px] text-neutral-500">
           {t("autoExportHelp")}
@@ -556,6 +695,44 @@ export default function SettingsTab({
             }`}
           >
             {autoExportStatus}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("auditExport")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("auditExportHelp")}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={auditExportDays}
+            onChange={(e) => setAuditExportDays(e.target.value)}
+            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <span className="text-xs text-neutral-500">{t("days")}</span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => handleExportAuditLogs("csv")}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("exportCsv")}
+          </button>
+          <button
+            onClick={() => handleExportAuditLogs("json")}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("exportJson")}
+          </button>
+        </div>
+        {auditExportStatus && (
+          <p
+            className={`mt-2 text-xs ${
+              auditExportStatus.includes(t("auditExportSaved")) ? "text-emerald-600" : "text-red-600"
+            }`}
+          >
+            {auditExportStatus}
           </p>
         )}
       </section>
