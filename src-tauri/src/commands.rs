@@ -722,7 +722,7 @@ pub fn add_project(
     }
     let id = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::insert_project(&conn, &input.name, &input.label_key).map_err(|e| e.to_string())?
+        db::insert_project(&conn, &input).map_err(|e| e.to_string())?
     };
     // reload config
     {
@@ -735,6 +735,9 @@ pub fn add_project(
         id,
         name: input.name,
         label_key: input.label_key,
+        budget: input.budget,
+        budget_period: input.budget_period,
+        budget_action: input.budget_action,
     })
 }
 

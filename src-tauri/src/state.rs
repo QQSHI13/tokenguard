@@ -224,6 +224,32 @@ impl AppState {
         db::today_spend(&conn).unwrap_or(0.0)
     }
 
+    /// Check whether a project's spend in its budget period has exceeded its
+    /// budget. Returns `(used, budget, action)` when the budget is configured
+    /// and exceeded; otherwise None.
+    pub fn check_project_budget(
+        &self,
+        project_tag: &str,
+    ) -> Option<(f64, f64, LimitAction)> {
+        let Ok(conn) = self.db.get() else {
+            tracing::error!("failed to get DB connection from pool for project budget");
+            return None;
+        };
+        let Ok(cfg) = self.config.read() else {
+            return None;
+        };
+        let project = cfg.projects.iter().find(|p| p.name == project_tag)?;
+        if project.budget <= 0.0 {
+            return None;
+        }
+        let used = db::project_period_spend(&conn, project_tag, project.budget_period).unwrap_or(0.0);
+        if used >= project.budget {
+            Some((used, project.budget, project.budget_action))
+        } else {
+            None
+        }
+    }
+
     /// Map a client-supplied API key (the label_key the user set in their
     /// coding agent) to a project name. None if no project matches.
     pub fn project_for_key(&self, key: &str) -> Option<String> {
@@ -782,6 +808,9 @@ mod tests {
             id: 3,
             name: "cursor-app".into(),
             label_key: "tg_abc".into(),
+            budget: 0.0,
+            budget_period: crate::config::BudgetPeriod::Daily,
+            budget_action: crate::config::LimitAction::Warn,
         }];
         let limit = mk_limit(LimitScope::Project, Some(3));
         assert!(limit_scope_matches(

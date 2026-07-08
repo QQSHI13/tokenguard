@@ -2,7 +2,17 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 
-type Project = { id: number; name: string; label_key: string };
+type BudgetAction = "warn" | "block" | "pause";
+type BudgetPeriod = "daily" | "weekly" | "monthly";
+
+type Project = {
+  id: number;
+  name: string;
+  label_key: string;
+  budget: number;
+  budget_period: BudgetPeriod;
+  budget_action: BudgetAction;
+};
 
 function genKey(): string {
   const bytes = new Uint8Array(16);
@@ -16,6 +26,9 @@ export default function Projects({ onChange }: { onChange: () => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState("");
   const [labelKey, setLabelKey] = useState(genKey());
+  const [budget, setBudget] = useState("");
+  const [budgetPeriod, setBudgetPeriod] = useState<BudgetPeriod>("daily");
+  const [budgetAction, setBudgetAction] = useState<BudgetAction>("warn");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
 
@@ -31,9 +44,20 @@ export default function Projects({ onChange }: { onChange: () => void }) {
     e.preventDefault();
     setError(null);
     try {
-      await invoke("add_project", { input: { name: name.trim(), label_key: labelKey } });
+      await invoke("add_project", {
+        input: {
+          name: name.trim(),
+          label_key: labelKey,
+          budget: Number(budget) || 0,
+          budget_period: budgetPeriod,
+          budget_action: budgetAction,
+        },
+      });
       setName("");
       setLabelKey(genKey());
+      setBudget("");
+      setBudgetPeriod("daily");
+      setBudgetAction("warn");
       refresh();
       onChange();
     } catch (err) {
@@ -89,6 +113,11 @@ export default function Projects({ onChange }: { onChange: () => void }) {
                     {copied === p.id ? t("copied") : t("copy")}
                   </button>
                 </div>
+                {p.budget > 0 && (
+                  <div className="mt-1 text-[10px] text-neutral-500">
+                    {t("budget")}: ${p.budget.toFixed(2)} / {t(p.budget_period)} · {t("action")}: {t(p.budget_action)}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => remove(p.id, p.name)}
@@ -134,6 +163,45 @@ export default function Projects({ onChange }: { onChange: () => void }) {
             </button>
           </div>
         </label>
+        <div className="grid grid-cols-3 gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-neutral-500">{t("budget")}</span>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={budget}
+              onChange={(e) => setBudget(e.target.value)}
+              placeholder="0"
+              className={inputCls}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-neutral-500">{t("period")}</span>
+            <select
+              value={budgetPeriod}
+              onChange={(e) => setBudgetPeriod(e.target.value as BudgetPeriod)}
+              className={inputCls}
+            >
+              <option value="daily">{t("daily")}</option>
+              <option value="weekly">{t("weekly")}</option>
+              <option value="monthly">{t("monthly")}</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-neutral-500">{t("action")}</span>
+            <select
+              value={budgetAction}
+              onChange={(e) => setBudgetAction(e.target.value as BudgetAction)}
+              className={inputCls}
+            >
+              <option value="warn">{t("warn")}</option>
+              <option value="block">{t("block")}</option>
+              <option value="pause">{t("pause")}</option>
+            </select>
+          </label>
+        </div>
+        <p className="text-[10px] text-neutral-500">{t("projectBudgetHelp")}</p>
         {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"

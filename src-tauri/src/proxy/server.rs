@@ -103,6 +103,53 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             );
         }
 
+        // Per-project budget enforcement.
+        if let Some((used, budget, action)) = project_tag.as_ref().and_then(|t| state.check_project_budget(t)) {
+            match action {
+                LimitAction::Block => {
+                    notifications::limit_blocked(
+                        &state.app,
+                        &project_tag.as_deref().unwrap_or(""),
+                        used,
+                        budget,
+                    );
+                    return super::error_resp(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &format!(
+                            "project budget exceeded: {used:.2} / {budget:.2}",
+                        ),
+                    );
+                }
+                LimitAction::Pause => {
+                    notifications::limit_paused(
+                        &state.app,
+                        &project_tag.as_deref().unwrap_or(""),
+                        used,
+                        budget,
+                    );
+                    state.toggle_pause();
+                    return super::error_resp(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "project budget exceeded — proxy paused",
+                    );
+                }
+                LimitAction::Warn => {
+                    notifications::limit_warning(
+                        &state.app,
+                        &project_tag.as_deref().unwrap_or(""),
+                        used,
+                        budget,
+                    );
+                    tracing::warn!(
+                        "project budget warning: {} ({:.2}/{:.2})",
+                        project_tag.as_deref().unwrap_or(""),
+                        used,
+                        budget
+                    );
+                }
+            }
+        }
+
         // 32 MiB ceiling — large prompts happen.
         let body_bytes = match axum::body::to_bytes(req.into_body(), 32 * 1024 * 1024).await {
             Ok(b) => b,

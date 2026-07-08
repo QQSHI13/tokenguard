@@ -1,8 +1,8 @@
 //! SQLite: schema, queries, config load.
 
 use crate::config::{
-    AuthScheme, Config, Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod, LimitScope,
-    ModelMapping, Provider, ProviderFormat,
+    AuthScheme, BudgetPeriod, Config, Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod,
+    LimitScope, ModelMapping, Provider, ProviderFormat,
 };
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -51,6 +51,11 @@ const MIGRATIONS: &[Migration] = &[
         id: 7,
         name: "limit_schedules",
         apply: migration_007_limit_schedules,
+    },
+    Migration {
+        id: 8,
+        name: "project_budgets",
+        apply: migration_008_project_budgets,
     },
 ];
 
@@ -125,6 +130,19 @@ fn migration_007_limit_schedules(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute("ALTER TABLE limits ADD COLUMN active_hours_end TEXT", []);
     let _ = conn.execute(
         "ALTER TABLE limits ADD COLUMN active_days INTEGER NOT NULL DEFAULT 127",
+        [],
+    );
+    Ok(())
+}
+
+fn migration_008_project_budgets(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN budget REAL NOT NULL DEFAULT 0", []);
+    let _ = conn.execute(
+        "ALTER TABLE projects ADD COLUMN budget_period TEXT NOT NULL DEFAULT 'daily'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE projects ADD COLUMN budget_action TEXT NOT NULL DEFAULT 'warn'",
         [],
     );
     Ok(())
@@ -406,21 +424,37 @@ pub fn count_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::R
 }
 
 pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<crate::config::Project>> {
-    let mut stmt = conn.prepare("SELECT id, name, label_key FROM projects ORDER BY id")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, label_key, budget, budget_period, budget_action FROM projects ORDER BY id",
+    )?;
     let rows = stmt.query_map([], |row| {
+        let period_str: String = row.get(4).unwrap_or_else(|_| "daily".to_string());
+        let action_str: String = row.get(5).unwrap_or_else(|_| "warn".to_string());
         Ok(crate::config::Project {
             id: row.get(0)?,
             name: row.get(1)?,
             label_key: row.get(2)?,
+            budget: row.get(3).unwrap_or(0.0),
+            budget_period: BudgetPeriod::from_db_str(&period_str),
+            budget_action: LimitAction::from_db_str(&action_str),
         })
     })?;
     rows.collect()
 }
 
-pub fn insert_project(conn: &Connection, name: &str, label_key: &str) -> rusqlite::Result<i64> {
+pub fn insert_project(
+    conn: &Connection,
+    input: &crate::config::ProjectInput,
+) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO projects (name, label_key) VALUES (?1, ?2)",
-        params![name, label_key],
+        "INSERT INTO projects (name, label_key, budget, budget_period, budget_action) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            input.name,
+            input.label_key,
+            input.budget,
+            input.budget_period.as_db_str(),
+            input.budget_action.as_db_str(),
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -477,6 +511,21 @@ pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
     conn.query_row(
         "SELECT COALESCE(SUM(cost), 0.0) FROM logs WHERE ts >= datetime('now','start of day')",
         [],
+        |row| row.get(0),
+    )
+}
+
+/// Sum cost for a project over the given budget period. `project_tag` is the
+/// project name (stored as `project_tag` in logs).
+pub fn project_period_spend(
+    conn: &Connection,
+    project_tag: &str,
+    period: BudgetPeriod,
+) -> rusqlite::Result<f64> {
+    let cutoff = chrono::Utc::now() - chrono::TimeDelta::seconds(period.seconds() as i64);
+    conn.query_row(
+        "SELECT COALESCE(SUM(cost), 0.0) FROM logs WHERE project_tag = ?1 AND ts >= ?2",
+        params![project_tag, cutoff.to_rfc3339()],
         |row| row.get(0),
     )
 }
@@ -989,11 +1038,19 @@ mod tests {
     #[test]
     fn project_round_trip() {
         let (conn, _path) = temp_db();
-        let id = insert_project(&conn, "cursor-app", "tg_abc123").unwrap();
+        let input = crate::config::ProjectInput {
+            name: "cursor-app".into(),
+            label_key: "tg_abc123".into(),
+            budget: 10.0,
+            budget_period: crate::config::BudgetPeriod::Daily,
+            budget_action: crate::config::LimitAction::Warn,
+        };
+        let id = insert_project(&conn, &input).unwrap();
         let projects = list_projects(&conn).unwrap();
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].id, id);
         assert_eq!(projects[0].name, "cursor-app");
+        assert_eq!(projects[0].budget, 10.0);
 
         delete_project(&conn, id).unwrap();
         assert!(list_projects(&conn).unwrap().is_empty());

@@ -104,6 +104,39 @@ pub struct ProviderInput {
     pub fallback_provider_id: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetPeriod {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+impl BudgetPeriod {
+    pub fn as_db_str(self) -> &'static str {
+        match self {
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "weekly" => Self::Weekly,
+            "monthly" => Self::Monthly,
+            _ => Self::Daily,
+        }
+    }
+    /// Approximate seconds for the budget window. Monthly is treated as 30 days.
+    pub fn seconds(self) -> u64 {
+        match self {
+            Self::Daily => 86_400,
+            Self::Weekly => 604_800,
+            Self::Monthly => 2_592_000,
+        }
+    }
+}
+
 /// A project workspace. `label_key` is the throwaway value the user sets as
 /// OPENAI_API_KEY (or x-api-key) in their coding agent; the proxy maps it to
 /// `name` for tagging. The real provider key stays in the keychain.
@@ -112,12 +145,32 @@ pub struct Project {
     pub id: i64,
     pub name: String,
     pub label_key: String,
+    #[serde(default)]
+    pub budget: f64,
+    #[serde(default = "default_budget_period")]
+    pub budget_period: BudgetPeriod,
+    #[serde(default = "default_budget_action")]
+    pub budget_action: LimitAction,
+}
+
+fn default_budget_period() -> BudgetPeriod {
+    BudgetPeriod::Daily
+}
+
+fn default_budget_action() -> LimitAction {
+    LimitAction::Warn
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProjectInput {
     pub name: String,
     pub label_key: String,
+    #[serde(default)]
+    pub budget: f64,
+    #[serde(default = "default_budget_period")]
+    pub budget_period: BudgetPeriod,
+    #[serde(default = "default_budget_action")]
+    pub budget_action: LimitAction,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
