@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import License from "./License";
 import { checkForUpdate, downloadUpdate, installUpdate, type UpdateInfo } from "../utils/updater";
-import { save, open } from "@tauri-apps/plugin-dialog";
 
 type Settings = {
   port: number;
@@ -43,21 +42,11 @@ export default function SettingsTab({
   const [priceStatus, setPriceStatus] = useState<"idle" | "refreshing" | "done" | "error">("idle");
   const [priceError, setPriceError] = useState<string | null>(null);
   const [priceCount, setPriceCount] = useState<number | null>(null);
-  const [backupStatus, setBackupStatus] = useState<string | null>(null);
-  const [autoExportDays, setAutoExportDays] = useState(String(settings?.auto_export_days ?? 0));
-  const [autoExportFolder, setAutoExportFolder] = useState(settings?.auto_export_folder ?? "");
-  const [autoExportStatus, setAutoExportStatus] = useState<string | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState(settings?.webhook_url ?? "");
-  const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
   const [keyRotationStatus, setKeyRotationStatus] = useState<string | null>(null);
-  const [logRetentionDays, setLogRetentionDays] = useState(String(settings?.log_retention_days ?? 0));
-  const [logRetentionStatus, setLogRetentionStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
-  const [auditExportDays, setAuditExportDays] = useState("7");
-  const [auditExportStatus, setAuditExportStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -133,40 +122,6 @@ export default function SettingsTab({
     }
   };
 
-  const handleBackup = async () => {
-    setBackupStatus(null);
-    try {
-      const path = await save({
-        defaultPath: "tokenguard-backup.db",
-        filters: [{ name: "SQLite", extensions: ["db"] }],
-      });
-      if (!path) return;
-      await invoke("backup_database", { targetPath: path });
-      setBackupStatus(t("backupSaved", { path }));
-    } catch (e) {
-      setBackupStatus(String(e));
-    }
-  };
-
-  const handleRestore = async () => {
-    setBackupStatus(null);
-    try {
-      const path = await open({
-        filters: [{ name: "SQLite", extensions: ["db"] }],
-      });
-      if (!path) return;
-      if (!confirm(t("restoreDatabase") + "?")) return;
-      await invoke("restore_database", { sourcePath: path });
-      setBackupStatus(t("restoreRestarting"));
-    } catch (e) {
-      setBackupStatus(String(e));
-    }
-  };
-
-  useEffect(() => {
-    setWebhookUrl(settings?.webhook_url ?? "");
-  }, [settings?.webhook_url]);
-
   useEffect(() => {
     setAutoStart(settings?.auto_start ?? false);
   }, [settings?.auto_start]);
@@ -174,10 +129,6 @@ export default function SettingsTab({
   useEffect(() => {
     setKeyRotationDays(String(settings?.key_rotation_days ?? 90));
   }, [settings?.key_rotation_days]);
-
-  useEffect(() => {
-    setLogRetentionDays(String(settings?.log_retention_days ?? 0));
-  }, [settings?.log_retention_days]);
 
   useEffect(() => {
     setExposeToLan(settings?.expose_to_lan ?? false);
@@ -191,27 +142,6 @@ export default function SettingsTab({
       setKeyRotationStatus(t("keyRotationSaved"));
     } catch (e) {
       setKeyRotationStatus(String(e));
-    }
-  };
-
-  const handleSaveLogRetention = async () => {
-    setLogRetentionStatus(null);
-    try {
-      const days = Number(logRetentionDays) || 0;
-      await invoke("set_log_retention_days", { days });
-      setLogRetentionStatus(t("logRetentionSaved"));
-    } catch (e) {
-      setLogRetentionStatus(String(e));
-    }
-  };
-
-  const handleCleanupLogsNow = async () => {
-    setLogRetentionStatus(null);
-    try {
-      const deleted = await invoke<number>("cleanup_logs_now");
-      setLogRetentionStatus(t("logRetentionCleaned", { count: deleted }));
-    } catch (e) {
-      setLogRetentionStatus(String(e));
     }
   };
 
@@ -232,77 +162,6 @@ export default function SettingsTab({
       setAutoStartStatus(t("autoStartSaved"));
     } catch (e) {
       setAutoStartStatus(String(e));
-    }
-  };
-
-  const handlePickAutoExportFolder = async () => {
-    const folder = await open({ directory: true });
-    if (!folder) return;
-    setAutoExportFolder(folder);
-  };
-
-  const handleSaveAutoExport = async () => {
-    setAutoExportStatus(null);
-    try {
-      const days = Number(autoExportDays) || 0;
-      await invoke("set_auto_export", {
-        input: { days, folder: autoExportFolder },
-      });
-      setAutoExportStatus(t("autoExportSaved"));
-    } catch (e) {
-      setAutoExportStatus(String(e));
-    }
-  };
-
-  const handleSaveWebhook = async () => {
-    setWebhookStatus(null);
-    try {
-      await invoke("set_webhook_url", { url: webhookUrl.trim() || null });
-      onChanged();
-      setWebhookStatus(t("webhookSaved"));
-    } catch (e) {
-      setWebhookStatus(String(e));
-    }
-  };
-
-  const handleTestWebhook = async () => {
-    setWebhookStatus(null);
-    const url = webhookUrl.trim();
-    if (!url) return;
-    try {
-      await invoke("test_webhook", { url });
-      setWebhookStatus(t("webhookTestSent"));
-    } catch (e) {
-      setWebhookStatus(String(e));
-    }
-  };
-
-  const handleRunAutoExportNow = async () => {
-    setAutoExportStatus(null);
-    try {
-      const path = await invoke<string>("run_auto_export_now_cmd");
-      setAutoExportStatus(t("autoExportSavedTo", { path }));
-    } catch (e) {
-      setAutoExportStatus(String(e));
-    }
-  };
-
-  const handleExportAuditLogs = async (format: "csv" | "json") => {
-    setAuditExportStatus(null);
-    try {
-      const days = Number(auditExportDays) || 0;
-      const content = await invoke<string>("export_audit_logs", { format, days });
-      const extension = format;
-      const defaultName = `tokenguard-audit-${new Date().toISOString().slice(0, 10)}.${extension}`;
-      const path = await save({
-        defaultPath: defaultName,
-        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-      });
-      if (!path) return;
-      await invoke("write_text_file", { path, content });
-      setAuditExportStatus(t("auditExportSaved", { path }));
-    } catch (e) {
-      setAuditExportStatus(String(e));
     }
   };
 
@@ -330,6 +189,25 @@ export default function SettingsTab({
             OPENAI_BASE_URL={settings?.proxy_url}
           </code>
         </p>
+
+        <div className="mt-4 flex items-center gap-2">
+          <input
+            type="number"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            className="w-32 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <button
+            onClick={savePort}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+        </div>
+        <p className="mt-1 text-[10px] text-neutral-500">
+          {t("portHelp")}
+        </p>
+
         <label className="mt-3 flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
           <input
             type="checkbox"
@@ -347,15 +225,8 @@ export default function SettingsTab({
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("limitsAndSubscriptions")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("limitsAndSubscriptionsHelp")}
-        </p>
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="text-sm font-semibold">{t("language")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">{t("languageHelp") || "Choose the interface language."}</p>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("languageHelp")}</p>
         <div className="mt-3">
           <select
             value={lang}
@@ -366,87 +237,6 @@ export default function SettingsTab({
             <option value="zh-CN">简体中文</option>
           </select>
         </div>
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("port")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("portHelp")}
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            value={port}
-            onChange={(e) => setPort(e.target.value)}
-            className="w-32 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <button
-            onClick={savePort}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("save")}
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("requestInspector")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("requestInspectorHelp")}
-        </p>
-        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-400">
-          <input
-            type="checkbox"
-            checked={settings?.log_bodies ?? false}
-            onChange={async (e) => {
-              try {
-                await invoke("set_log_bodies", { enabled: e.target.checked });
-                onChanged();
-              } catch (err) {
-                alert(String(err));
-              }
-            }}
-          />
-          {t("logRequestBodies")}
-        </label>
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("webhookNotifications")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">{t("webhookNotificationsHelp")}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="url"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder={t("webhookUrlPlaceholder")}
-            className="flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <button
-            onClick={handleSaveWebhook}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("save")}
-          </button>
-          <button
-            onClick={handleTestWebhook}
-            disabled={!webhookUrl.trim()}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {t("test")}
-          </button>
-        </div>
-        {webhookStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              webhookStatus.includes(t("webhookSaved")) || webhookStatus.includes(t("webhookTestSent"))
-                ? "text-emerald-600"
-                : "text-red-600"
-            }`}
-          >
-            {webhookStatus}
-          </p>
-        )}
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
@@ -517,7 +307,7 @@ export default function SettingsTab({
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="text-sm font-semibold">{t("updateCheck")}</h2>
         <p className="mt-1 text-[11px] text-neutral-500">
-          {t("updateCheckHelp") || "Check for a newer version from GitHub Releases."}
+          {t("updateCheckHelp")}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
@@ -599,172 +389,6 @@ export default function SettingsTab({
       </section>
 
       <License licensed={licensed} onChange={onLicenseChange} />
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("backupRestore")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("backupRestoreHelp")}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            onClick={handleBackup}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("backupDatabase")}
-          </button>
-          <button
-            onClick={handleRestore}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("restoreDatabase")}
-          </button>
-        </div>
-        {backupStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              backupStatus.includes("saved") || backupStatus.includes("重启")
-                ? "text-emerald-600"
-                : "text-red-600"
-            }`}
-          >
-            {backupStatus}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("logRetention")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">{t("logRetentionHelp")}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            value={logRetentionDays}
-            onChange={(e) => setLogRetentionDays(e.target.value)}
-            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <span className="text-xs text-neutral-500">{t("days")}</span>
-          <button
-            onClick={handleSaveLogRetention}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("save")}
-          </button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            onClick={handleCleanupLogsNow}
-            disabled={!Number(logRetentionDays)}
-            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-          >
-            {t("cleanupLogsNow")}
-          </button>
-        </div>
-        {logRetentionStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              logRetentionStatus.includes(t("logRetentionSaved")) ||
-              logRetentionStatus.includes(t("logRetentionCleaned"))
-                ? "text-emerald-600"
-                : "text-red-600"
-            }`}
-          >
-            {logRetentionStatus}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("autoExport")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("autoExportHelp")}
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            value={autoExportDays}
-            onChange={(e) => setAutoExportDays(e.target.value)}
-            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <span className="text-xs text-neutral-500">{t("days")}</span>
-          <button
-            onClick={handlePickAutoExportFolder}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("selectFolder")}
-          </button>
-        </div>
-        {autoExportFolder && (
-          <p className="mt-2 break-all text-xs text-neutral-600 dark:text-neutral-400">
-            {autoExportFolder}
-          </p>
-        )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            onClick={handleSaveAutoExport}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("save")}
-          </button>
-          <button
-            onClick={handleRunAutoExportNow}
-            disabled={!autoExportFolder}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {t("exportNow")}
-          </button>
-        </div>
-        {autoExportStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              autoExportStatus.includes("saved") || autoExportStatus.includes("已导出")
-                ? "text-emerald-600"
-                : "text-red-600"
-            }`}
-          >
-            {autoExportStatus}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("auditExport")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">{t("auditExportHelp")}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            value={auditExportDays}
-            onChange={(e) => setAuditExportDays(e.target.value)}
-            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <span className="text-xs text-neutral-500">{t("days")}</span>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            onClick={() => handleExportAuditLogs("csv")}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("exportCsv")}
-          </button>
-          <button
-            onClick={() => handleExportAuditLogs("json")}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("exportJson")}
-          </button>
-        </div>
-        {auditExportStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              auditExportStatus.includes(t("auditExportSaved")) ? "text-emerald-600" : "text-red-600"
-            }`}
-          >
-            {auditExportStatus}
-          </p>
-        )}
-      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">

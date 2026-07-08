@@ -53,7 +53,7 @@ type Range = "today" | "7d" | "30d" | "all";
 type DashboardTab = "global" | "project" | "provider";
 type Metric = "cost" | "tokens" | "requests";
 
-export default function Dashboard() {
+export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
   const { t } = useI18n();
   const RANGES: { id: Range; label: string }[] = [
     { id: "today", label: t("today") },
@@ -420,7 +420,9 @@ export default function Dashboard() {
                   <tr>
                     <td colSpan={7} className="px-3 py-6 text-center text-neutral-600">
                       {t("noRequestsInRange")}{" "}
-                      <code className="text-neutral-600 dark:text-neutral-400">http://localhost:3742</code>{" "}
+                      <code className="text-neutral-600 dark:text-neutral-400">
+                        {proxyUrl ?? "http://<ip>:3742"}
+                      </code>{" "}
                       {t("andSendRequest")}
                     </td>
                   </tr>

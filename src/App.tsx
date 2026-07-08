@@ -179,7 +179,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-auto p-4">
-          {tab === "dashboard" && <Dashboard />}
+          {tab === "dashboard" && <Dashboard proxyUrl={settings?.proxy_url} />}
           {tab === "limits" && <Limits onChange={() => setTick((t) => t + 1)} />}
           {tab === "providers" && (
             <Providers onChange={() => setTick((t) => t + 1)} />
