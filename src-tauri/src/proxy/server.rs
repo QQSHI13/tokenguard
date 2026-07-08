@@ -19,10 +19,12 @@ use crate::state::{input_output_cost_per_1k, remote_model_name, AppState};
 pub async fn serve(
     state: Arc<AppState>,
     port: u16,
+    expose_to_lan: bool,
     shutdown: tokio::sync::watch::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    tracing::info!("Token Guard proxy listening on http://127.0.0.1:{port}");
+    let bind_addr = if expose_to_lan { "0.0.0.0" } else { "127.0.0.1" };
+    let listener = tokio::net::TcpListener::bind((bind_addr, port)).await?;
+    tracing::info!("Token Guard proxy listening on http://{bind_addr}:{port}");
     let app = router(state);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(shutdown))
@@ -76,22 +78,7 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
         // Project tagging by the client's API key: the user sets a project's
         // label_key as OPENAI_API_KEY in their agent. We never forward this key —
         // the real provider key comes from the keychain in forward().
-        let client_key = req_headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer ").map(str::to_string))
-            .or_else(|| {
-                req_headers
-                    .get("x-api-key")
-                    .and_then(|v| v.to_str().ok())
-                    .map(str::to_string)
-            })
-            .or_else(|| {
-                req_headers
-                    .get("api-key")
-                    .and_then(|v| v.to_str().ok())
-                    .map(str::to_string)
-            });
+        let client_key = extract_client_key(&req_headers);
         let project_tag = client_key.as_ref().and_then(|k| state.project_for_key(k));
 
         // Every request must be tagged with a known project. The client's API
@@ -282,6 +269,25 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
     .await
 }
 
+fn extract_client_key(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer ").map(str::to_string))
+        .or_else(|| {
+            headers
+                .get("x-api-key")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            headers
+                .get("api-key")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        })
+}
+
 async fn handle_models(State(state): State<Arc<AppState>>) -> Response {
     let Ok(cfg) = state.config.read() else {
         return super::error_resp(
@@ -305,4 +311,54 @@ async fn handle_models(State(state): State<Arc<AppState>>) -> Response {
         body.to_string(),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_client_key_reads_bearer_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "authorization",
+            axum::http::HeaderValue::from_static("Bearer tg_project_key_123"),
+        );
+        assert_eq!(
+            extract_client_key(&headers),
+            Some("tg_project_key_123".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_client_key_reads_x_api_key_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "x-api-key",
+            axum::http::HeaderValue::from_static("anthropic_project_key"),
+        );
+        assert_eq!(
+            extract_client_key(&headers),
+            Some("anthropic_project_key".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_client_key_reads_api_key_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "api-key",
+            axum::http::HeaderValue::from_static("azure_project_key"),
+        );
+        assert_eq!(
+            extract_client_key(&headers),
+            Some("azure_project_key".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_client_key_returns_none_when_missing() {
+        let headers = axum::http::HeaderMap::new();
+        assert_eq!(extract_client_key(&headers), None);
+    }
 }

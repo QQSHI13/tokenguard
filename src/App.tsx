@@ -31,6 +31,7 @@ type Settings = {
   auto_start: boolean;
   key_rotation_days: number;
   log_retention_days: number;
+  expose_to_lan: boolean;
 };
 type Spend = { today: number; budget: number };
 

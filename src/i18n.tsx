@@ -158,6 +158,9 @@ export const translations = {
     proxyEndpoint: "Proxy endpoint",
     proxyEndpointHelp:
       "Point your LLM client's base URL here. Token Guard routes by the model field to the matching provider. Loopback-only — not reachable from the network.",
+    exposeToLan: "Expose proxy to LAN",
+    exposeToLanHelp:
+      "Bind to 0.0.0.0 so other devices on your network can reach the proxy. Requires app restart. Only enable on trusted networks.",
     example: "Example",
     limitsAndSubscriptions: "Limits & subscriptions",
     limitsAndSubscriptionsHelp:
@@ -458,6 +461,9 @@ export const translations = {
     proxyEndpoint: "代理端点",
     proxyEndpointHelp:
       "将你的 LLM 客户端基础 URL 指向这里。Token Guard 根据 model 字段路由到匹配的服务商。仅监听回环地址，无法从网络访问。",
+    exposeToLan: "向局域网暴露代理",
+    exposeToLanHelp:
+      "绑定到 0.0.0.0，让局域网内的其他设备可以访问代理。需要重启应用。只在受信任的网络中启用。",
     example: "示例",
     limitsAndSubscriptions: "限额与订阅",
     limitsAndSubscriptionsHelp:

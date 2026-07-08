@@ -369,6 +369,7 @@ pub struct Config {
     pub auto_start: bool,
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
+    pub expose_to_lan: bool,
 }
 
 impl Default for Config {
@@ -386,6 +387,7 @@ impl Default for Config {
             auto_start: false,
             key_rotation_days: 90,
             log_retention_days: 0,
+            expose_to_lan: false,
         }
     }
 }

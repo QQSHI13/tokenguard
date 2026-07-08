@@ -31,6 +31,7 @@ pub struct SettingsDto {
     pub auto_start: bool,
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
+    pub expose_to_lan: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -334,6 +335,12 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .log_retention_days,
+        expose_to_lan: state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?
+            .expose_to_lan,
     })
 }
 
@@ -623,6 +630,26 @@ pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<
         .write()
         .map_err(|e| e.to_string())?
         .log_bodies = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_expose_to_lan(
+    state: State<'_, Arc<AppState>>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "expose_to_lan", if enabled { "1" } else { "0" })
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .expose_to_lan = enabled;
     Ok(())
 }
 

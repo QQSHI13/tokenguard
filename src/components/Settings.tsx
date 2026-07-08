@@ -18,6 +18,7 @@ type Settings = {
   auto_start: boolean;
   key_rotation_days: number;
   log_retention_days: number;
+  expose_to_lan: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -54,6 +55,7 @@ export default function SettingsTab({
   const [keyRotationStatus, setKeyRotationStatus] = useState<string | null>(null);
   const [logRetentionDays, setLogRetentionDays] = useState(String(settings?.log_retention_days ?? 0));
   const [logRetentionStatus, setLogRetentionStatus] = useState<string | null>(null);
+  const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
   const [auditExportDays, setAuditExportDays] = useState("7");
   const [auditExportStatus, setAuditExportStatus] = useState<string | null>(null);
 
@@ -177,6 +179,10 @@ export default function SettingsTab({
     setLogRetentionDays(String(settings?.log_retention_days ?? 0));
   }, [settings?.log_retention_days]);
 
+  useEffect(() => {
+    setExposeToLan(settings?.expose_to_lan ?? false);
+  }, [settings?.expose_to_lan]);
+
   const handleSaveKeyRotation = async () => {
     setKeyRotationStatus(null);
     try {
@@ -206,6 +212,15 @@ export default function SettingsTab({
       setLogRetentionStatus(t("logRetentionCleaned", { count: deleted }));
     } catch (e) {
       setLogRetentionStatus(String(e));
+    }
+  };
+
+  const handleExposeToLanChange = async (enabled: boolean) => {
+    try {
+      await invoke("set_expose_to_lan", { enabled });
+      setExposeToLan(enabled);
+    } catch (e) {
+      alert(String(e));
     }
   };
 
@@ -315,6 +330,20 @@ export default function SettingsTab({
             OPENAI_BASE_URL={settings?.proxy_url}
           </code>
         </p>
+        <label className="mt-3 flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+          <input
+            type="checkbox"
+            checked={exposeToLan}
+            onChange={(e) => handleExposeToLanChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            {t("exposeToLan")}
+            <span className="block text-[10px] text-neutral-500">
+              {t("exposeToLanHelp")}
+            </span>
+          </span>
+        </label>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

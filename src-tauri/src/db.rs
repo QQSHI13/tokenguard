@@ -1078,6 +1078,9 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let log_retention_days = get_setting(conn, "log_retention_days")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let expose_to_lan = get_setting(conn, "expose_to_lan")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     Ok(Config {
         providers,
         projects,
@@ -1091,6 +1094,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         auto_start,
         key_rotation_days,
         log_retention_days,
+        expose_to_lan,
     })
 }
 

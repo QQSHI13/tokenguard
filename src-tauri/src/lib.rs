@@ -54,6 +54,7 @@ pub fn run() {
             commands::set_budget,
             commands::set_port,
             commands::set_log_bodies,
+            commands::set_expose_to_lan,
             commands::set_log_retention_days,
             commands::cleanup_logs_now,
             commands::set_webhook_url,
@@ -135,6 +136,7 @@ pub fn run() {
                 }
             }
 
+            let expose_to_lan = config.expose_to_lan;
             let state = Arc::new(state::AppState::new(pool, db_path, config, handle)?);
 
             // Native tray (left-click toggles pause; menu items below).
@@ -142,11 +144,11 @@ pub fn run() {
 
             app.manage(state.clone());
 
-            // Spawn the loopback proxy in the Tauri tokio runtime.
+            // Spawn the proxy in the Tauri tokio runtime.
             let s = state.clone();
             let shutdown_rx = state.shutdown_rx();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = proxy::server::serve(s, port, shutdown_rx).await {
+                if let Err(e) = proxy::server::serve(s, port, expose_to_lan, shutdown_rx).await {
                     tracing::error!("proxy server error: {e}");
                 }
             });
