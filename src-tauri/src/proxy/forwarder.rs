@@ -138,6 +138,11 @@ async fn attempt_forward(
             req = req.header(k, v.clone());
         }
     }
+    for (k, v) in &provider.extra_headers {
+        if let Ok(name) = HeaderName::from_bytes(k.as_bytes()) {
+            req = req.header(name, v);
+        }
+    }
 
     req.body(final_body).send().await.map_err(|_| ())
 }

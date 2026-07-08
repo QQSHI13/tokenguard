@@ -77,6 +77,8 @@ pub struct Provider {
     pub models: Vec<ModelMapping>,
     pub is_default: bool,
     pub fallback_provider_id: Option<i64>,
+    #[serde(default)]
+    pub extra_headers: Vec<(String, String)>,
 }
 
 /// Frontend-facing provider with a flag indicating whether a key is stored.
@@ -102,6 +104,8 @@ pub struct ProviderInput {
     pub clear_key: bool,
     #[serde(default)]
     pub fallback_provider_id: Option<i64>,
+    #[serde(default)]
+    pub extra_headers: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

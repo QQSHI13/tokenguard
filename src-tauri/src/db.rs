@@ -57,6 +57,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "project_budgets",
         apply: migration_008_project_budgets,
     },
+    Migration {
+        id: 9,
+        name: "provider_extra_headers",
+        apply: migration_009_provider_extra_headers,
+    },
 ];
 
 fn migration_001_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -145,6 +150,11 @@ fn migration_008_project_budgets(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE projects ADD COLUMN budget_action TEXT NOT NULL DEFAULT 'warn'",
         [],
     );
+    Ok(())
+}
+
+fn migration_009_provider_extra_headers(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE providers ADD COLUMN extra_headers TEXT", []);
     Ok(())
 }
 
@@ -484,7 +494,7 @@ pub fn update_provider(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE providers SET name = ?1, base_url = ?2, format = ?3, auth = ?4, \
-         models = ?5, is_default = ?6, fallback_provider_id = ?7 WHERE id = ?8",
+         models = ?5, is_default = ?6, fallback_provider_id = ?7, extra_headers = ?8 WHERE id = ?9",
         params![
             p.name,
             p.base_url,
@@ -493,6 +503,7 @@ pub fn update_provider(
             serde_json::to_string(&p.models).unwrap_or_default(),
             p.is_default as i64,
             p.fallback_provider_id,
+            serde_json::to_string(&p.extra_headers).unwrap_or_default(),
             id,
         ],
     )?;
@@ -628,7 +639,7 @@ pub fn monthly_usage(conn: &Connection, months: u32) -> rusqlite::Result<Vec<Mon
 
 pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, base_url, format, auth, models, is_default, fallback_provider_id FROM providers ORDER BY id",
+        "SELECT id, name, base_url, format, auth, models, is_default, fallback_provider_id, extra_headers FROM providers ORDER BY id",
     )?;
     let rows = stmt.query_map([], |row| {
         let format_str: String = row.get(3)?;
@@ -636,7 +647,11 @@ pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
         let models_str: String = row.get(5)?;
         let is_default: i64 = row.get(6)?;
         let fallback_provider_id: Option<i64> = row.get(7)?;
+        let extra_headers_str: Option<String> = row.get(8)?;
         let models = parse_models(&models_str);
+        let extra_headers = extra_headers_str
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
         Ok(Provider {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -646,6 +661,7 @@ pub fn list_providers(conn: &Connection) -> rusqlite::Result<Vec<Provider>> {
             models,
             is_default: is_default != 0,
             fallback_provider_id,
+            extra_headers,
         })
     })?;
     rows.collect()
@@ -682,8 +698,8 @@ pub fn insert_provider(
     p: &crate::config::ProviderInput,
 ) -> rusqlite::Result<i64> {
     conn.execute(
-        "INSERT INTO providers (name, base_url, format, auth, models, is_default, fallback_provider_id) \
-         VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO providers (name, base_url, format, auth, models, is_default, fallback_provider_id, extra_headers) \
+         VALUES (?,?,?,?,?,?,?,?)",
         params![
             p.name,
             p.base_url,
@@ -692,6 +708,7 @@ pub fn insert_provider(
             serde_json::to_string(&p.models).unwrap_or_default(),
             p.is_default as i64,
             p.fallback_provider_id,
+            serde_json::to_string(&p.extra_headers).unwrap_or_default(),
         ],
     )?;
     if p.is_default {
@@ -996,6 +1013,7 @@ mod tests {
             is_default: true,
             clear_key: false,
             fallback_provider_id: None,
+            extra_headers: Vec::new(),
         }
     }
 

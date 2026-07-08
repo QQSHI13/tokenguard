@@ -725,6 +725,7 @@ mod tests {
                 .collect(),
             is_default,
             fallback_provider_id: None,
+            extra_headers: Vec::new(),
         }
     }
 

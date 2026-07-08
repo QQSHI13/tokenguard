@@ -23,6 +23,7 @@ type Provider = {
   models: ModelMapping[];
   is_default: boolean;
   fallback_provider_id: number | null;
+  extra_headers: [string, string][];
 };
 type ProviderDto = { provider: Provider; api_key_set: boolean; key_error: string | null };
 
@@ -43,6 +44,7 @@ type Input = {
   is_default: boolean;
   clear_key: boolean;
   fallback_provider_id: number | null;
+  extra_headers: [string, string][];
 };
 
 const PRESETS: {
@@ -95,6 +97,7 @@ function blank(): Input {
     is_default: true,
     clear_key: false,
     fallback_provider_id: null,
+    extra_headers: [],
   };
 }
 
@@ -109,6 +112,7 @@ function fromProvider(p: Provider): Input {
     is_default: p.is_default,
     clear_key: false,
     fallback_provider_id: p.fallback_provider_id ?? null,
+    extra_headers: [...p.extra_headers],
   };
 }
 
@@ -550,6 +554,61 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               ))}
           </select>
         </Field>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="text-[11px] text-neutral-500">{t("extraHeaders")}</label>
+          </div>
+          <div className="space-y-2">
+            {form.extra_headers.map((h, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                <input
+                  value={h[0]}
+                  onChange={(e) => {
+                    const next: [string, string][] = [...form.extra_headers];
+                    next[i] = [e.target.value, h[1]];
+                    setForm({ ...form, extra_headers: next });
+                  }}
+                  placeholder={t("headerName")}
+                  className={inputCls}
+                />
+                <input
+                  value={h[1]}
+                  onChange={(e) => {
+                    const next: [string, string][] = [...form.extra_headers];
+                    next[i] = [h[0], e.target.value];
+                    setForm({ ...form, extra_headers: next });
+                  }}
+                  placeholder={t("headerValue")}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = form.extra_headers.filter((_, idx) => idx !== i);
+                    setForm({ ...form, extra_headers: next });
+                  }}
+                  className="px-2 text-neutral-500 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setForm({
+                  ...form,
+                  extra_headers: [...form.extra_headers, ["", ""]],
+                })
+              }
+              className="w-full rounded-md border border-dashed border-neutral-400 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-600 hover:text-neutral-700 dark:border-neutral-600 dark:hover:border-neutral-400 dark:hover:text-neutral-300"
+            >
+              {t("addHeader")}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-neutral-500">{t("extraHeadersHint")}</p>
+        </div>
 
         {error && <p className="text-xs text-red-400">{error}</p>}
         <button
