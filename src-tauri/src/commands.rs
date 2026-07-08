@@ -316,7 +316,15 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .inner()
             .paused
             .load(std::sync::atomic::Ordering::Relaxed),
-        proxy_url: format!("http://localhost:{}", cfg.port),
+        proxy_url: if cfg.expose_to_lan {
+            let host = hostname::get()
+                .ok()
+                .and_then(|h| h.into_string().ok())
+                .unwrap_or_else(|| "localhost".to_string());
+            format!("http://{host}:{}", cfg.port)
+        } else {
+            format!("http://localhost:{}", cfg.port)
+        },
         provider_count: cfg.providers.len(),
         log_bodies: cfg.log_bodies,
         auto_export_days: cfg.auto_export_days,
