@@ -317,10 +317,15 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .paused
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: if cfg.expose_to_lan {
-            let host = hostname::get()
+            let host = local_ip_address::local_ip()
                 .ok()
-                .and_then(|h| h.into_string().ok())
-                .unwrap_or_else(|| "localhost".to_string());
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| {
+                    hostname::get()
+                        .ok()
+                        .and_then(|h| h.into_string().ok())
+                        .unwrap_or_else(|| "localhost".to_string())
+                });
             format!("http://{host}:{}", cfg.port)
         } else {
             format!("http://localhost:{}", cfg.port)
