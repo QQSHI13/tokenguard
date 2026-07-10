@@ -748,6 +748,9 @@ pub async fn replay_request(
                 "/v1/chat/completions".to_string()
             }
         }
+        crate::config::ProviderFormat::Google => {
+            return Err("replay is not supported for Google Gemini native API".into());
+        }
     };
 
     let base = provider.base_url.trim_end_matches('/');
@@ -759,6 +762,7 @@ pub async fn replay_request(
             .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01"),
         crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
+        crate::config::AuthScheme::XGoogApiKey => req.header("x-goog-api-key", &api_key),
     };
     for (k, v) in &provider.extra_headers {
         req = req.header(k, v);
@@ -936,7 +940,10 @@ pub async fn refresh_models(
     };
     let api_key = crate::secrets::get(&provider.name)?;
     let base = provider.base_url.trim_end_matches('/');
-    let url = format!("{base}/v1/models");
+    let url = match provider.format {
+        crate::config::ProviderFormat::Google => format!("{base}/v1beta/models"),
+        _ => format!("{base}/v1/models"),
+    };
     let mut req = state.inner().client.get(&url);
     req = match provider.auth {
         crate::config::AuthScheme::Bearer => req.bearer_auth(&api_key),
@@ -944,6 +951,7 @@ pub async fn refresh_models(
             .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01"),
         crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
+        crate::config::AuthScheme::XGoogApiKey => req.header("x-goog-api-key", &api_key),
     };
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
@@ -955,15 +963,33 @@ pub async fn refresh_models(
         ));
     }
     let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-    let mut names: Vec<String> = v
-        .get("data")
-        .and_then(|d| d.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| m.get("id").and_then(|x| x.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+
+    // Google returns { "models": [{ "name": "models/gemini-..." }] };
+    // OpenAI/Anthropic return { "data": [{ "id": "..." }] }.
+    let mut names: Vec<String> = match provider.format {
+        crate::config::ProviderFormat::Google => v
+            .get("models")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        m.get("name")
+                            .and_then(|x| x.as_str())
+                            .map(|s| s.strip_prefix("models/").unwrap_or(s).to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => v
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.get("id").and_then(|x| x.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
     names.sort();
     let models: Vec<crate::config::ModelMapping> = names
         .into_iter()

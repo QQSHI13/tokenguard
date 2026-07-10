@@ -3,8 +3,8 @@ import type { FormEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 
-type ProviderFormat = "openai" | "anthropic";
-type AuthScheme = "bearer" | "x_api_key" | "api_key";
+type ProviderFormat = "openai" | "anthropic" | "google";
+type AuthScheme = "bearer" | "x_api_key" | "api_key" | "x_goog_api_key";
 
 type ModelMapping = {
   local: string;
@@ -80,6 +80,17 @@ const PRESETS: {
       { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
       { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
       { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+    ],
+  },
+  {
+    name: "Google",
+    base_url: "https://generativelanguage.googleapis.com",
+    format: "google",
+    auth: "x_goog_api_key",
+    models: [
+      { local: "gemini-1.5-pro", remote: "gemini-1.5-pro", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "gemini-1.5-flash", remote: "gemini-1.5-flash", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
+      { local: "gemini-2.0-flash", remote: "gemini-2.0-flash", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
     ],
   },
   {
@@ -364,16 +375,23 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               value={form.format}
               onChange={(e) => {
                 const format = e.target.value as ProviderFormat;
+                const defaultAuth: AuthScheme =
+                  format === "anthropic"
+                    ? "x_api_key"
+                    : format === "google"
+                    ? "x_goog_api_key"
+                    : "bearer";
                 setForm({
                   ...form,
                   format,
-                  auth: format === "anthropic" ? "x_api_key" : "bearer",
+                  auth: defaultAuth,
                 });
               }}
               className={inputCls}
             >
               <option value="openai">openai</option>
               <option value="anthropic">anthropic</option>
+              <option value="google">google</option>
             </select>
           </Field>
           <Field label={t("authHeader")}>
@@ -385,6 +403,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               <option value="bearer">Authorization: Bearer</option>
               <option value="x_api_key">x-api-key (Anthropic)</option>
               <option value="api_key">api-key (Azure)</option>
+              <option value="x_goog_api_key">x-goog-api-key (Google)</option>
             </select>
           </Field>
         </div>

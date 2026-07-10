@@ -1,7 +1,7 @@
 //! Axum proxy server: routes /v1/* to providers by model name.
 
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{header, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -47,19 +47,35 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/v1/completions", post(handle_openai))
         .route("/v1/responses", post(handle_openai))
         .route("/v1/messages", post(handle_anthropic))
+        .route("/v1beta/{*path}", get(handle_google))
+        .route("/v1beta/{*path}", post(handle_google))
         .route("/v1/models", get(handle_models))
         .with_state(state)
 }
 
 async fn handle_openai(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    handle(ProviderFormat::OpenAI, state, req).await
+    handle(ProviderFormat::OpenAI, state, req, None).await
 }
 
 async fn handle_anthropic(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
-    handle(ProviderFormat::Anthropic, state, req).await
+    handle(ProviderFormat::Anthropic, state, req, None).await
 }
 
-async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>) -> Response {
+async fn handle_google(
+    State(state): State<Arc<AppState>>,
+    Path(path): Path<String>,
+    req: Request<Body>,
+) -> Response {
+    let model = extract_model_from_path(&path);
+    handle(ProviderFormat::Google, state, req, model).await
+}
+
+async fn handle(
+    family: ProviderFormat,
+    state: Arc<AppState>,
+    req: Request<Body>,
+    model_override: Option<String>,
+) -> Response {
     let req_id = state.next_request_id();
     let span = tracing::info_span!(
         "proxy_request",
@@ -147,23 +163,32 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             Err(e) => return super::error_resp(StatusCode::BAD_REQUEST, &e.to_string()),
         };
 
-        // Parse once; provider requests on these endpoints are always JSON.
-        let body_json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                return super::error_resp(
-                    StatusCode::BAD_REQUEST,
-                    &format!("request body is not valid JSON: {e}"),
-                );
-            }
+        // OpenAI/Anthropic requests carry the model in the body. Gemini carries it
+        // in the URL path (e.g. /v1beta/models/gemini-1.5-pro:generateContent).
+        let (model, body_json) = if let Some(m) = model_override {
+            // For path-routed providers, a missing/empty body is valid (e.g. GET
+            // /v1beta/models). Default to an empty object for limit estimation.
+            let body_json = serde_json::from_slice(&body_bytes)
+                .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+            (m, body_json)
+        } else {
+            // Body-based providers require valid JSON with a model field.
+            let body_json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+                Ok(v) => v,
+                Err(e) => {
+                    return super::error_resp(
+                        StatusCode::BAD_REQUEST,
+                        &format!("request body is not valid JSON: {e}"),
+                    );
+                }
+            };
+            let model = body_json
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            (model, body_json)
         };
-
-        // Read model from the request body for routing (read-only).
-        let model = body_json
-            .get("model")
-            .and_then(|m| m.as_str())
-            .unwrap_or("")
-            .to_string();
 
         let provider = match state.route_provider(family, &model) {
             Some(p) => p,
@@ -266,11 +291,29 @@ async fn handle(family: ProviderFormat, state: Arc<AppState>, req: Request<Body>
             provider,
             api_key,
             project_tag,
+            model,
         )
         .await
     }
     .instrument(span)
     .await
+}
+
+/// Extract the model name from a Gemini-style path such as
+/// `models/gemini-1.5-pro:generateContent` or `models/gemini-2.0-flash`.
+fn extract_model_from_path(path: &str) -> Option<String> {
+    let mut parts = path.split('/');
+    while let Some(part) = parts.next() {
+        if part == "models" {
+            let model = parts.next()?;
+            let model = model.split(':').next().unwrap_or(model);
+            if model.is_empty() {
+                return None;
+            }
+            return Some(model.to_string());
+        }
+    }
+    None
 }
 
 fn extract_client_key(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -364,5 +407,26 @@ mod tests {
     fn extract_client_key_returns_none_when_missing() {
         let headers = axum::http::HeaderMap::new();
         assert_eq!(extract_client_key(&headers), None);
+    }
+
+    #[test]
+    fn extract_model_from_path_strips_method_suffix() {
+        assert_eq!(
+            extract_model_from_path("models/gemini-1.5-pro:generateContent"),
+            Some("gemini-1.5-pro".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_model_from_path_without_suffix() {
+        assert_eq!(
+            extract_model_from_path("models/gemini-2.0-flash"),
+            Some("gemini-2.0-flash".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_model_from_path_returns_none_for_list() {
+        assert_eq!(extract_model_from_path("models"), None);
     }
 }

@@ -57,12 +57,14 @@ impl SseUsageParser {
 
     fn extract(&mut self, v: &Value) {
         // Usage can live at the top level (OpenAI chat/Anthropic), nested under
-        // `response` (OpenAI Responses API streaming final event), or nested
-        // under `message` (Anthropic `message_start` event).
+        // `response` (OpenAI Responses API streaming final event), nested
+        // under `message` (Anthropic `message_start` event), or under
+        // `usageMetadata` (Google Gemini).
         let usage = v
             .get("usage")
             .or_else(|| v.get("response").and_then(|r| r.get("usage")))
-            .or_else(|| v.get("message").and_then(|m| m.get("usage")));
+            .or_else(|| v.get("message").and_then(|m| m.get("usage")))
+            .or_else(|| v.get("usageMetadata"));
         if let Some(u) = usage {
             extract_from_usage_object(u, &mut self.usage);
         }
@@ -83,10 +85,19 @@ fn extract_from_usage_object(u: &Value, into: &mut Usage) {
     if let Some(c) = u.get("output_tokens").and_then(|x| x.as_u64()) {
         into.completion = c;
     }
+    // Google Gemini naming.
+    if let Some(p) = u.get("promptTokenCount").and_then(|x| x.as_u64()) {
+        into.prompt = p;
+    }
+    if let Some(c) = u.get("candidatesTokenCount").and_then(|x| x.as_u64()) {
+        into.completion = c;
+    }
 
     // Cached input tokens.
     // OpenAI: usage.prompt_tokens_details.cached_tokens
     // Anthropic: usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+    // Google Gemini: usageMetadata.promptTokensDetails[].tokenCount where modality is not set,
+    // plus cacheTokensDetails[].tokenCount.
     let mut cached = 0u64;
     if let Some(details) = u.get("prompt_tokens_details") {
         if let Some(c) = details.get("cached_tokens").and_then(|x| x.as_u64()) {
@@ -102,6 +113,18 @@ fn extract_from_usage_object(u: &Value, into: &mut Usage) {
     {
         cached += c;
     }
+    if let Some(details) = u.get("promptTokensDetails").and_then(|x| x.as_array()) {
+        cached += details
+            .iter()
+            .filter_map(|d| d.get("tokenCount").and_then(|x| x.as_u64()))
+            .sum::<u64>();
+    }
+    if let Some(details) = u.get("cacheTokensDetails").and_then(|x| x.as_array()) {
+        cached += details
+            .iter()
+            .filter_map(|d| d.get("tokenCount").and_then(|x| x.as_u64()))
+            .sum::<u64>();
+    }
     into.cached = cached;
 }
 
@@ -113,7 +136,8 @@ pub fn extract_json(body: &[u8], _format: ProviderFormat) -> Usage {
     let mut u = Usage::default();
     let usage = v
         .get("usage")
-        .or_else(|| v.get("response").and_then(|r| r.get("usage")));
+        .or_else(|| v.get("response").and_then(|r| r.get("usage")))
+        .or_else(|| v.get("usageMetadata"));
     if let Some(usage) = usage {
         extract_from_usage_object(usage, &mut u);
     }
@@ -225,5 +249,23 @@ mod tests {
         );
         assert_eq!(parser.usage.prompt, 200);
         assert_eq!(parser.usage.cached, 175);
+    }
+
+    #[test]
+    fn sse_google_usage() {
+        let mut parser = SseUsageParser::new(ProviderFormat::Google);
+        parser.feed(
+            b"data: {\"usageMetadata\":{\"promptTokenCount\":12,\"candidatesTokenCount\":9,\"totalTokenCount\":21}}\n\n",
+        );
+        assert_eq!(parser.usage.prompt, 12);
+        assert_eq!(parser.usage.completion, 9);
+    }
+
+    #[test]
+    fn extract_json_google() {
+        let body = br#"{"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":4,"totalTokenCount":12}}"#;
+        let usage = extract_json(body, ProviderFormat::Google);
+        assert_eq!(usage.prompt, 8);
+        assert_eq!(usage.completion, 4);
     }
 }

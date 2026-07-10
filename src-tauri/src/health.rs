@@ -1,6 +1,6 @@
 //! Provider health checks.
 
-use crate::config::{AuthScheme, Provider};
+use crate::config::{AuthScheme, Provider, ProviderFormat};
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -35,8 +35,10 @@ pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHea
     let base = provider.base_url.trim_end_matches('/');
 
     let mut endpoints = vec![format!("{base}/v1/models")];
-    if provider.format == crate::config::ProviderFormat::OpenAI {
-        endpoints.push(format!("{base}/v1/health"));
+    match provider.format {
+        ProviderFormat::OpenAI => endpoints.push(format!("{base}/v1/health")),
+        ProviderFormat::Google => endpoints = vec![format!("{base}/v1beta/models")],
+        _ => {}
     }
 
     let mut last_error: Option<String> = None;
@@ -50,6 +52,7 @@ pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHea
                 .header("x-api-key", &api_key)
                 .header("anthropic-version", "2023-06-01"),
             AuthScheme::ApiKey => req.header("api-key", &api_key),
+            AuthScheme::XGoogApiKey => req.header("x-goog-api-key", &api_key),
         };
 
         match req.send().await {
