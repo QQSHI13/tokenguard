@@ -12,6 +12,7 @@ use crate::state::AppState;
 use rusqlite::params;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::net::IpAddr;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -307,8 +308,6 @@ pub fn update_provider(
 }
 
 fn preferred_lan_ip() -> Option<String> {
-    use std::net::IpAddr;
-
     let interfaces = local_ip_address::list_afinet_netifas().ok()?;
     let mut candidates: Vec<(String, IpAddr)> = interfaces
         .into_iter()
