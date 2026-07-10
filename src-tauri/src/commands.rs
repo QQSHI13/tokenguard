@@ -342,6 +342,7 @@ fn is_likely_vpn_interface(name: &str) -> bool {
         "nordlynx", "nordvpn", "expressvpn", "proton", "surfshark", "mullvad",
         "windscribe", "cyberghost", "pia", "private internet access",
         "hotspot shield", "tunnelbear", "perimeter 81", "hide.me", "torguard",
+        "cloudflarewarp", "cloudflare warp", "warp",
         // Mesh/remote access
         "tailscale", "zerotier", "headscale", "nebula", "netbird",
         // Enterprise VPN clients
