@@ -385,10 +385,10 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
                         .ok()
                         .and_then(|h| h.into_string().ok())
                 })
-                .unwrap_or_else(|| "localhost".to_string());
+                .unwrap_or_else(|| "127.0.0.1".to_string());
             format!("http://{host}:{}", cfg.port)
         } else {
-            format!("http://localhost:{}", cfg.port)
+            format!("http://127.0.0.1:{}", cfg.port)
         },
         provider_count: cfg.providers.len(),
         log_bodies: cfg.log_bodies,

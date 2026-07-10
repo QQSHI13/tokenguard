@@ -360,7 +360,7 @@ export default function Onboarding({
                 <label className={labelCls}>{t("proxyEndpoint")}</label>
                 <div className="flex gap-2">
                   <code className="flex-1 truncate rounded-md border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-emerald-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-emerald-300">
-                    {settings?.proxy_url ?? "http://localhost:3742"}
+                    {settings?.proxy_url ?? "http://127.0.0.1:3742"}
                   </code>
                   <button
                     type="button"
@@ -392,7 +392,7 @@ export default function Onboarding({
             <div>
               <label className={labelCls}>{t("exampleRequest")}</label>
               <pre className="overflow-x-auto rounded-md bg-neutral-900 p-3 text-[10px] text-neutral-100 dark:bg-neutral-950">
-                {`curl ${settings?.proxy_url ?? "http://localhost:3742"}/v1/chat/completions \\
+                {`curl ${settings?.proxy_url ?? "http://127.0.0.1:3742"}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${project.label_key}" \\
   -d '{"model":"${provider.models[0].local}","messages":[{"role":"user","content":"hello"}]}'`}

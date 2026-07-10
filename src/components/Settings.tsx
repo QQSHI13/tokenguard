@@ -193,7 +193,7 @@ export default function SettingsTab({
         </p>
         <div className="mt-3 flex items-center gap-2">
           <code className="flex-1 truncate rounded-md border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm text-emerald-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-emerald-300">
-            {settings?.proxy_url ?? "http://localhost:3742"}
+            {settings?.proxy_url ?? "http://127.0.0.1:3742"}
           </code>
           <button
             onClick={copy}
@@ -209,7 +209,10 @@ export default function SettingsTab({
           </code>
         </p>
 
-        <div className="mt-4 flex items-center gap-2">
+        <label className="mt-4 block text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+          {t("portLabel")}
+        </label>
+        <div className="mt-1 flex items-center gap-2">
           <input
             type="number"
             value={port}
