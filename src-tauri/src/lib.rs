@@ -55,7 +55,6 @@ pub fn run() {
             commands::set_port,
             commands::set_log_bodies,
             commands::set_expose_to_lan,
-            commands::set_lan_ip,
             commands::set_log_retention_days,
             commands::cleanup_logs_now,
             commands::set_webhook_url,

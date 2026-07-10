@@ -1082,7 +1082,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let expose_to_lan = get_setting(conn, "expose_to_lan")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    let lan_ip = get_setting(conn, "lan_ip").filter(|s| !s.is_empty());
     Ok(Config {
         providers,
         projects,
@@ -1097,7 +1096,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         key_rotation_days,
         log_retention_days,
         expose_to_lan,
-        lan_ip,
     })
 }
 

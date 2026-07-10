@@ -377,7 +377,6 @@ pub struct Config {
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
-    pub lan_ip: Option<String>,
 }
 
 impl Default for Config {
@@ -396,7 +395,6 @@ impl Default for Config {
             key_rotation_days: 90,
             log_retention_days: 0,
             expose_to_lan: false,
-            lan_ip: None,
         }
     }
 }

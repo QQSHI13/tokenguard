@@ -33,7 +33,6 @@ pub struct SettingsDto {
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
-    pub lan_ip: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -371,11 +370,7 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .paused
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: if cfg.expose_to_lan {
-            let host = cfg
-                .lan_ip
-                .clone()
-                .filter(|s| !s.is_empty())
-                .or_else(preferred_lan_ip)
+            let host = preferred_lan_ip()
                 .or_else(|| {
                     local_ip_address::local_ip()
                         .ok()
@@ -415,13 +410,6 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .expose_to_lan,
-        lan_ip: state
-            .inner()
-            .config
-            .read()
-            .map_err(|e| e.to_string())?
-            .lan_ip
-            .clone(),
     })
 }
 
@@ -724,23 +712,6 @@ pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Resu
         .write()
         .map_err(|e| e.to_string())?
         .expose_to_lan = enabled;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn set_lan_ip(state: State<'_, Arc<AppState>>, ip: Option<String>) -> Result<(), String> {
-    let value = ip.as_deref().unwrap_or("").trim();
-    {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "lan_ip", value).map_err(|e| e.to_string())?;
-        drop(conn);
-    }
-    state
-        .inner()
-        .config
-        .write()
-        .map_err(|e| e.to_string())?
-        .lan_ip = if value.is_empty() { None } else { Some(value.to_string()) };
     Ok(())
 }
 

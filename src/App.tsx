@@ -32,7 +32,6 @@ type Settings = {
   key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
-  lan_ip: string | null;
 };
 type Spend = { today: number; budget: number };
 
