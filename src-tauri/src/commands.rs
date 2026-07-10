@@ -6,7 +6,6 @@ use crate::config::{
 };
 use crate::db::{self, LogRow};
 use crate::health::{self, ProviderHealth};
-use crate::prices;
 use crate::secrets;
 use crate::state::AppState;
 use rusqlite::params;
@@ -1508,46 +1507,6 @@ pub fn get_device_fingerprint() -> Result<String, String> {
     hasher.update(input.as_bytes());
     let digest = hasher.finalize();
     Ok(hex::encode(digest))
-}
-
-// ---- model price database ----
-
-#[derive(Debug, serde::Serialize)]
-pub struct DefaultPriceMap {
-    pub prices: std::collections::HashMap<String, prices::ModelPrice>,
-}
-
-#[tauri::command]
-pub fn get_default_model_prices() -> DefaultPriceMap {
-    DefaultPriceMap {
-        prices: prices::get_default_prices(),
-    }
-}
-
-#[tauri::command]
-pub async fn refresh_model_prices_from_url(url: String) -> Result<usize, String> {
-    prices::refresh_prices_from_url(&url).await
-}
-
-#[tauri::command]
-pub fn fill_provider_prices_from_database(
-    input: ProviderInput,
-) -> Result<Vec<crate::config::ModelMapping>, String> {
-    let mut out = input.models;
-    for m in &mut out {
-        if let Some(p) = prices::lookup_default_price(&m.local) {
-            if m.input_cost_per_1k.is_none() {
-                m.input_cost_per_1k = Some(p.input_per_1k);
-            }
-            if m.output_cost_per_1k.is_none() {
-                m.output_cost_per_1k = Some(p.output_per_1k);
-            }
-            if m.cached_input_cost_per_1k.is_none() {
-                m.cached_input_cost_per_1k = p.cached_input_per_1k;
-            }
-        }
-    }
-    Ok(out)
 }
 
 #[tauri::command]

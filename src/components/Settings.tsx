@@ -38,10 +38,6 @@ export default function SettingsTab({
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "downloading" | "done" | "error">("idle");
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updatePath, setUpdatePath] = useState<string | null>(null);
-  const [priceUrl, setPriceUrl] = useState("");
-  const [priceStatus, setPriceStatus] = useState<"idle" | "refreshing" | "done" | "error">("idle");
-  const [priceError, setPriceError] = useState<string | null>(null);
-  const [priceCount, setPriceCount] = useState<number | null>(null);
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
@@ -102,23 +98,6 @@ export default function SettingsTab({
     } catch (e) {
       setUpdateStatus("error");
       setUpdateError(String(e));
-    }
-  };
-
-  const handleRefreshPrices = async () => {
-    if (!priceUrl.trim()) return;
-    setPriceStatus("refreshing");
-    setPriceError(null);
-    setPriceCount(null);
-    try {
-      const count = await invoke<number>("refresh_model_prices_from_url", {
-        url: priceUrl.trim(),
-      });
-      setPriceCount(count);
-      setPriceStatus("done");
-    } catch (e) {
-      setPriceStatus("error");
-      setPriceError(String(e));
     }
   };
 
@@ -354,39 +333,6 @@ export default function SettingsTab({
         {updateStatus === "error" && updateError && (
           <p className="mt-2 text-xs text-red-600">
             {t("updateCheckFailed", { error: updateError })}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("priceDatabase")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("priceDatabaseHelp")}
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="text"
-            value={priceUrl}
-            onChange={(e) => setPriceUrl(e.target.value)}
-            placeholder={t("priceDatabaseUrlPlaceholder")}
-            className="flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <button
-            onClick={handleRefreshPrices}
-            disabled={priceStatus === "refreshing"}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {priceStatus === "refreshing" ? t("working") : t("refreshPricesFromUrl")}
-          </button>
-        </div>
-        {priceStatus === "done" && priceCount !== null && (
-          <p className="mt-2 text-xs text-emerald-600">
-            {t("pricesRefreshed", { count: priceCount })}
-          </p>
-        )}
-        {priceStatus === "error" && priceError && (
-          <p className="mt-2 text-xs text-red-600">
-            {t("pricesRefreshFailed") + priceError}
           </p>
         )}
       </section>

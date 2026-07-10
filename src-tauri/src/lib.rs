@@ -7,7 +7,6 @@ mod db;
 mod health;
 mod limits;
 mod notifications;
-mod prices;
 mod proxy;
 mod secrets;
 mod state;
@@ -86,9 +85,6 @@ pub fn run() {
             commands::download_update,
             commands::install_update,
             commands::get_device_fingerprint,
-            commands::get_default_model_prices,
-            commands::refresh_model_prices_from_url,
-            commands::fill_provider_prices_from_database,
             commands::get_provider_usage,
             commands::get_project_usage,
             commands::get_monthly_usage,
