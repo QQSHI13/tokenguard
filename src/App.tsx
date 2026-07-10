@@ -1,12 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import Providers from "./components/Providers";
 import Dashboard from "./components/Dashboard";
 import SettingsTab from "./components/Settings";
-import Projects from "./components/Projects";
-import Limits from "./components/Limits";
-import Logs from "./components/Logs";
+import Config from "./components/Config";
 import Docs from "./components/Docs";
 import ThemeToggle, { initTheme } from "./components/ThemeToggle";
 import Banner from "./components/Banner";
@@ -35,7 +32,7 @@ type Settings = {
 };
 type Spend = { today: number; budget: number };
 
-type Tab = "dashboard" | "limits" | "providers" | "projects" | "settings" | "docs" | "logs";
+type Tab = "dashboard" | "config" | "settings" | "docs";
 
 export default function App() {
   const { t } = useI18n();
@@ -84,7 +81,7 @@ export default function App() {
     listen<string>("set_tab", (event) => {
       const t = event.payload as Tab;
       if (
-        ["dashboard", "limits", "providers", "projects", "settings", "docs", "logs"].includes(t)
+        ["dashboard", "config", "settings", "docs"].includes(t)
       ) {
         setTab(t);
       }
@@ -103,10 +100,7 @@ export default function App() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "dashboard", label: t("dashboard") },
-    { id: "limits", label: t("limits") },
-    { id: "providers", label: t("providers") },
-    { id: "projects", label: t("projects") },
-    { id: "logs", label: t("logs") },
+    { id: "config", label: t("config") },
     { id: "settings", label: t("settings") },
     { id: "docs", label: t("docs") },
   ];
@@ -180,14 +174,7 @@ export default function App() {
 
         <main className="flex-1 overflow-auto p-4">
           {tab === "dashboard" && <Dashboard proxyUrl={settings?.proxy_url} />}
-          {tab === "limits" && <Limits onChange={() => setTick((t) => t + 1)} />}
-          {tab === "providers" && (
-            <Providers onChange={() => setTick((t) => t + 1)} />
-          )}
-          {tab === "projects" && (
-            <Projects onChange={() => setTick((t) => t + 1)} />
-          )}
-          {tab === "logs" && <Logs />}
+          {tab === "config" && <Config onChange={() => setTick((t) => t + 1)} />}
           {tab === "settings" && (
             <SettingsTab
               settings={settings}

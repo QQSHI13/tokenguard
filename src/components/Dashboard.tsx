@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import UsageChart from "./UsageChart";
 import DailyUsageChart from "./DailyUsageChart";
 import Onboarding from "./Onboarding";
+import Logs from "./Logs";
 import { useI18n } from "../i18n";
 
 type Log = {
@@ -50,7 +51,7 @@ type SimpleProvider = { id: number; name: string };
 type SimpleProject = { id: number; name: string };
 
 type Range = "today" | "7d" | "30d" | "all";
-type DashboardTab = "global" | "project" | "provider";
+type DashboardTab = "usage" | "limits" | "logs";
 type Metric = "cost" | "tokens" | "requests";
 
 export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
@@ -68,14 +69,8 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
   const [limitStatus, setLimitStatus] = useState<LimitStatus[]>([]);
   const [providerCount, setProviderCount] = useState(-1);
   const [projectCount, setProjectCount] = useState(-1);
-  const [tab, setTab] = useState<DashboardTab>("global");
+  const [tab, setTab] = useState<DashboardTab>("usage");
 
-  const [providers, setProviders] = useState<SimpleProvider[]>([]);
-  const [projects, setProjects] = useState<SimpleProject[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<number | "">("");
-  const [selectedProject, setSelectedProject] = useState<number | "">("");
-  const [providerUsage, setProviderUsage] = useState<DailyUsage[]>([]);
-  const [projectUsage, setProjectUsage] = useState<DailyUsage[]>([]);
   const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage[]>([]);
   const [monthlyMetric, setMonthlyMetric] = useState<Metric>("cost");
 
@@ -88,16 +83,10 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
       .then(setLimitStatus)
       .catch(console.error);
     invoke<{ provider: SimpleProvider }[]>("list_providers")
-      .then((list) => {
-        setProviders(list.map((d) => d.provider));
-        setProviderCount(list.length);
-      })
+      .then((list) => setProviderCount(list.length))
       .catch(console.error);
     invoke<SimpleProject[]>("list_projects")
-      .then((list) => {
-        setProjects(list);
-        setProjectCount(list.length);
-      })
+      .then((list) => setProjectCount(list.length))
       .catch(console.error);
     invoke<MonthlyUsage[]>("get_monthly_usage", { months: 12 })
       .then(setMonthlyUsage)
@@ -122,30 +111,6 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
         return 0;
     }
   }, [range]);
-
-  useEffect(() => {
-    if (selectedProvider === "") {
-      setProviderUsage([]);
-      return;
-    }
-    invoke<DailyUsage[]>("get_provider_usage", {
-      providerId: selectedProvider,
-      days: rangeDays,
-    })
-      .then(setProviderUsage)
-      .catch(console.error);
-  }, [selectedProvider, rangeDays]);
-
-  useEffect(() => {
-    if (selectedProject === "") {
-      setProjectUsage([]);
-      return;
-    }
-    const tag = projects.find((p) => p.id === selectedProject)?.name ?? "";
-    invoke<DailyUsage[]>("get_project_usage", { projectTag: tag, days: rangeDays })
-      .then(setProjectUsage)
-      .catch(console.error);
-  }, [selectedProject, rangeDays, projects]);
 
   const shown = useMemo(() => {
     const now = Date.now();
@@ -210,9 +175,9 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
   }
 
   const tabs: { id: DashboardTab; label: string }[] = [
-    { id: "global", label: t("global") },
-    { id: "project", label: t("byProject") },
-    { id: "provider", label: t("byProvider") },
+    { id: "usage", label: t("usage") },
+    { id: "limits", label: t("limits") },
+    { id: "logs", label: t("logs") },
   ];
 
   return (
@@ -233,7 +198,7 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
         ))}
       </div>
 
-      {tab === "global" && (
+      {tab === "usage" && (
         <>
           <div className="grid grid-cols-3 gap-3">
             <Stat label={t("today")} value={`$${spend.today.toFixed(4)}`} accent="emerald" />
@@ -346,62 +311,6 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
             />
           </div>
 
-          {limitStatus.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("activeLimits")}</h3>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {limitStatus.map((s) => {
-                  const ratio = Math.min(s.ratio, 1);
-                  const accent =
-                    ratio >= 1
-                      ? "red"
-                      : ratio >= s.limit.warning_threshold
-                      ? "amber"
-                      : "emerald";
-                  return (
-                    <div
-                      key={s.limit.id}
-                      className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900/40"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">
-                          {s.limit.name}
-                        </span>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] ${
-                            s.limit.action === "block"
-                              ? "bg-red-500/20 text-red-700 dark:text-red-300"
-                              : s.limit.action === "pause"
-                              ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                              : "bg-sky-500/20 text-sky-700 dark:text-sky-300"
-                          }`}
-                        >
-                          {s.limit.action}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-200">
-                        {formatLimitValue(s.limit.metric, s.used)} /{" "}
-                        {formatLimitValue(s.limit.metric, s.limit.cap)}
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-800">
-                        <div
-                          className={`h-full ${
-                            accent === "red"
-                              ? "bg-red-500"
-                              : accent === "amber"
-                              ? "bg-amber-500"
-                              : "bg-emerald-500"
-                          }`}
-                          style={{ width: `${ratio * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
             <table className="w-full text-left text-xs">
               <thead className="bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
@@ -456,139 +365,67 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
         </>
       )}
 
-      {tab === "provider" && (
-        <UsageBreakdown
-          label={t("selectProvider")}
-          options={providers.map((p) => ({ id: p.id, label: p.name }))}
-          selected={selectedProvider}
-          onSelect={setSelectedProvider}
-          usage={providerUsage}
-          metric={chartMetric}
-          setMetric={setChartMetric}
-          t={t}
-        />
-      )}
-
-      {tab === "project" && (
-        <UsageBreakdown
-          label={t("selectProject")}
-          options={projects.map((p) => ({ id: p.id, label: p.name }))}
-          selected={selectedProject}
-          onSelect={setSelectedProject}
-          usage={projectUsage}
-          metric={chartMetric}
-          setMetric={setChartMetric}
-          t={t}
-        />
-      )}
-    </div>
-  );
-}
-
-function UsageBreakdown({
-  label,
-  options,
-  selected,
-  onSelect,
-  usage,
-  metric,
-  setMetric,
-  t,
-}: {
-  label: string;
-  options: { id: number; label: string }[];
-  selected: number | "";
-  onSelect: (id: number | "") => void;
-  usage: DailyUsage[];
-  metric: Metric;
-  setMetric: (m: Metric) => void;
-  t: (key: keyof typeof import("../i18n").translations.en) => string;
-}) {
-  const totalCost = usage.reduce((a, d) => a + d.cost, 0);
-  const totalTokens = usage.reduce((a, d) => a + d.tokens, 0);
-  const totalRequests = usage.reduce((a, d) => a + d.requests, 0);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={selected}
-          onChange={(e) => onSelect(Number(e.target.value) || "")}
-          className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-        >
-          <option value="">{label}</option>
-          {options.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <div className="flex gap-1">
-          {(["cost", "tokens", "requests"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMetric(m)}
-              className={`rounded px-2 py-0.5 text-[10px] font-medium ${
-                metric === m
-                  ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                  : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
-              }`}
-            >
-              {t(m)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {selected !== "" && (
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label={t("cost")} value={`$${totalCost.toFixed(4)}`} accent="violet" />
-          <Stat label={t("tokens")} value={totalTokens.toLocaleString()} accent="sky" />
-          <Stat label={t("requests")} value={String(totalRequests)} accent="neutral" />
+      {tab === "limits" && (
+        <div className="space-y-4">
+          {limitStatus.length === 0 && (
+            <p className="text-xs text-neutral-500">{t("noActiveLimits")}</p>
+          )}
+          {limitStatus.length > 0 && (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {limitStatus.map((s) => {
+                const ratio = Math.min(s.ratio, 1);
+                const accent =
+                  ratio >= 1
+                    ? "red"
+                    : ratio >= s.limit.warning_threshold
+                    ? "amber"
+                    : "emerald";
+                return (
+                  <div
+                    key={s.limit.id}
+                    className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900/40"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                        {s.limit.name}
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] ${
+                          s.limit.action === "block"
+                            ? "bg-red-500/20 text-red-700 dark:text-red-300"
+                            : s.limit.action === "pause"
+                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                            : "bg-sky-500/20 text-sky-700 dark:text-sky-300"
+                        }`}
+                      >
+                        {s.limit.action}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-200">
+                      {formatLimitValue(s.limit.metric, s.used)} /{" "}
+                      {formatLimitValue(s.limit.metric, s.limit.cap)}
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-800">
+                      <div
+                        className={`h-full ${
+                          accent === "red"
+                            ? "bg-red-500"
+                            : accent === "amber"
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${ratio * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-        <h3 className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-          {t("dailyUsage")}
-        </h3>
-        <DailyUsageChart data={usage} metric={metric} t={t} />
-      </div>
-
-      {usage.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
-              <tr>
-                <th className="px-3 py-2 font-medium">{t("time")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("requests")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("tokens")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("cost")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {usage.map((d) => (
-                <tr key={d.day} className="hover:bg-neutral-100 dark:hover:bg-neutral-900/60">
-                  <td className="px-3 py-1.5 text-neutral-500 dark:text-neutral-400">{d.day}</td>
-                  <td className="px-3 py-1.5 text-right text-neutral-500 dark:text-neutral-400">
-                    {d.requests.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-neutral-500 dark:text-neutral-400">
-                    {d.tokens.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                    ${d.cost.toFixed(6)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {selected !== "" && usage.length === 0 && (
-        <p className="text-xs text-neutral-500">{t("noUsageData")}</p>
-      )}
+      {tab === "logs" && <Logs />}
     </div>
   );
 }
