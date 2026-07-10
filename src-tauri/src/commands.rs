@@ -306,6 +306,39 @@ pub fn update_provider(
     })
 }
 
+fn preferred_lan_ip() -> Option<String> {
+    use std::net::IpAddr;
+
+    let interfaces = local_ip_address::list_afinet_netifas().ok()?;
+    let mut candidates: Vec<(String, IpAddr)> = interfaces
+        .into_iter()
+        .filter_map(|(name, ip)| {
+            if ip.is_loopback() || !matches!(ip, IpAddr::V4(_)) || is_likely_vpn_interface(&name) {
+                return None;
+            }
+            Some((name, ip))
+        })
+        .collect();
+
+    // Prefer RFC1918 private addresses when multiple non-VPN interfaces exist.
+    candidates.sort_by_key(|(_, ip)| !is_private_lan(*ip));
+    candidates.into_iter().next().map(|(_, ip)| ip.to_string())
+}
+
+fn is_likely_vpn_interface(name: &str) -> bool {
+    let name = name.to_lowercase();
+    [
+        "tun", "tap", "wg", "vpn", "ppp", "ipsec", "utun", "wireguard", "openvpn",
+        "nordlynx", "expressvpn", "proton", "surfshark", "tailscale", "zerotier",
+    ]
+    .iter()
+    .any(|p| name.contains(p))
+}
+
+fn is_private_lan(ip: IpAddr) -> bool {
+    matches!(ip, IpAddr::V4(v4) if v4.is_private())
+}
+
 #[tauri::command]
 pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, String> {
     let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
@@ -317,15 +350,18 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .paused
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: if cfg.expose_to_lan {
-            let host = local_ip_address::local_ip()
-                .ok()
-                .map(|ip| ip.to_string())
-                .unwrap_or_else(|| {
+            let host = preferred_lan_ip()
+                .or_else(|| {
+                    local_ip_address::local_ip()
+                        .ok()
+                        .map(|ip| ip.to_string())
+                })
+                .or_else(|| {
                     hostname::get()
                         .ok()
                         .and_then(|h| h.into_string().ok())
-                        .unwrap_or_else(|| "localhost".to_string())
-                });
+                })
+                .unwrap_or_else(|| "localhost".to_string());
             format!("http://{host}:{}", cfg.port)
         } else {
             format!("http://localhost:{}", cfg.port)
