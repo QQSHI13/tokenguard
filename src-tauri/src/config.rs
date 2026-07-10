@@ -8,6 +8,8 @@ pub enum ProviderFormat {
     OpenAI,
     #[serde(rename = "anthropic")]
     Anthropic,
+    #[serde(rename = "google")]
+    Google,
 }
 
 impl ProviderFormat {
@@ -15,11 +17,13 @@ impl ProviderFormat {
         match self {
             Self::OpenAI => "openai",
             Self::Anthropic => "anthropic",
+            Self::Google => "google",
         }
     }
     pub fn from_db_str(s: &str) -> Self {
         match s {
             "anthropic" => Self::Anthropic,
+            "google" => Self::Google,
             _ => Self::OpenAI,
         }
     }
@@ -31,6 +35,7 @@ pub enum AuthScheme {
     Bearer,
     XApiKey,
     ApiKey,
+    XGoogApiKey,
 }
 
 impl AuthScheme {
@@ -39,12 +44,14 @@ impl AuthScheme {
             Self::Bearer => "bearer",
             Self::XApiKey => "x_api_key",
             Self::ApiKey => "api_key",
+            Self::XGoogApiKey => "x_goog_api_key",
         }
     }
     pub fn from_db_str(s: &str) -> Self {
         match s {
             "x_api_key" => Self::XApiKey,
             "api_key" => Self::ApiKey,
+            "x_goog_api_key" => Self::XGoogApiKey,
             _ => Self::Bearer,
         }
     }

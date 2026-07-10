@@ -29,8 +29,8 @@ pub async fn forward(
     provider: Provider,
     api_key: String,
     project_tag: Option<String>,
+    model: String,
 ) -> Response {
-    let model = extract_model(&body, provider.format);
     let log_bodies = state
         .config
         .read()
@@ -321,20 +321,14 @@ fn maybe_string_body(body: &Bytes) -> Option<String> {
     }
 }
 
-fn extract_model(body: &Bytes, _format: ProviderFormat) -> String {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return String::new();
-    };
-    v.get("model")
-        .and_then(|m| m.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
 /// Rewrite the request body for the target provider: remap the model field to
 /// the provider's remote model name, and inject OpenAI stream_options when
-/// appropriate.
+/// appropriate. For Google (Gemini) we leave the native body untouched.
 fn rewrite_body_for_provider(body: &Bytes, provider: &Provider, local_model: &str) -> Bytes {
+    if provider.format == ProviderFormat::Google {
+        return body.clone();
+    }
+
     let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(body) else {
         return body.clone();
     };
@@ -371,6 +365,7 @@ fn apply_auth(
             .header("x-api-key", key)
             .header("anthropic-version", "2023-06-01"),
         AuthScheme::ApiKey => req.header("api-key", key),
+        AuthScheme::XGoogApiKey => req.header("x-goog-api-key", key),
     }
 }
 
@@ -388,6 +383,7 @@ fn is_passthrough_header(name: &HeaderName) -> bool {
             | "authorization"
             | "x-api-key"
             | "api-key"
+            | "x-goog-api-key"
             | "anthropic-version"
             | "content-encoding"
             | "accept-encoding"
