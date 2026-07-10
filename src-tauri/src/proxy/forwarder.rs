@@ -321,16 +321,6 @@ fn maybe_string_body(body: &Bytes) -> Option<String> {
     }
 }
 
-fn extract_model(body: &Bytes, _format: ProviderFormat) -> String {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return String::new();
-    };
-    v.get("model")
-        .and_then(|m| m.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
 /// Rewrite the request body for the target provider: remap the model field to
 /// the provider's remote model name, and inject OpenAI stream_options when
 /// appropriate. For Google (Gemini) we leave the native body untouched.
