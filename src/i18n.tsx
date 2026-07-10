@@ -621,6 +621,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useI18n() {
   const ctx = useContext(I18nContext);
-  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
+  if (!ctx) {
+    // Fallback for environments where the provider may not be mounted
+    // (e.g. editor previews, isolated component renders).
+    return {
+      lang: DEFAULT_LANGUAGE,
+      setLang: () => {},
+      t: (key: keyof typeof translations.en) => translations.en[key],
+    };
+  }
   return ctx;
 }

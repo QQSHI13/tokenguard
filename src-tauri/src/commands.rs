@@ -322,12 +322,7 @@ fn preferred_lan_ip() -> Option<String> {
     // Prefer RFC1918 private addresses when multiple non-VPN interfaces exist.
     candidates.sort_by_key(|(_, ip)| !is_private_lan(*ip));
 
-    if let Some((name, ip)) = candidates.first() {
-        tracing::info!("preferred LAN IP selected: {ip} on interface {name}");
-        return Some(ip.to_string());
-    }
-
-    None
+    candidates.first().map(|(_, ip)| ip.to_string())
 }
 
 fn is_likely_vpn_interface(name: &str) -> bool {
