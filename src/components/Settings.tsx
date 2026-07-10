@@ -18,6 +18,7 @@ type Settings = {
   key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
+  lan_ip: string | null;
 } | null;
 
 export default function SettingsTab({
@@ -47,6 +48,8 @@ export default function SettingsTab({
   const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
   const [keyRotationStatus, setKeyRotationStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
+  const [lanIp, setLanIp] = useState(settings?.lan_ip ?? "");
+  const [lanIpStatus, setLanIpStatus] = useState<string | null>(null);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -134,6 +137,10 @@ export default function SettingsTab({
     setExposeToLan(settings?.expose_to_lan ?? false);
   }, [settings?.expose_to_lan]);
 
+  useEffect(() => {
+    setLanIp(settings?.lan_ip ?? "");
+  }, [settings?.lan_ip]);
+
   const handleSaveKeyRotation = async () => {
     setKeyRotationStatus(null);
     try {
@@ -151,6 +158,18 @@ export default function SettingsTab({
       setExposeToLan(enabled);
     } catch (e) {
       alert(String(e));
+    }
+  };
+
+  const handleSaveLanIp = async () => {
+    setLanIpStatus(null);
+    try {
+      const value = lanIp.trim() || null;
+      await invoke("set_lan_ip", { ip: value });
+      setLanIpStatus(t("lanIpSaved"));
+      onChanged();
+    } catch (e) {
+      setLanIpStatus(String(e));
     }
   };
 
@@ -222,6 +241,38 @@ export default function SettingsTab({
             </span>
           </span>
         </label>
+
+        {exposeToLan && (
+          <div className="mt-3">
+            <label className="block text-[11px] text-neutral-600 dark:text-neutral-400">
+              {t("lanIpOverride")}
+            </label>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                type="text"
+                value={lanIp}
+                onChange={(e) => setLanIp(e.target.value)}
+                placeholder={t("lanIpOverridePlaceholder")}
+                className="flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+              />
+              <button
+                onClick={handleSaveLanIp}
+                className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              >
+                {t("save")}
+              </button>
+            </div>
+            {lanIpStatus && (
+              <p
+                className={`mt-1 text-xs ${
+                  lanIpStatus.includes(t("lanIpSaved")) ? "text-emerald-600" : "text-red-600"
+                }`}
+              >
+                {lanIpStatus}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

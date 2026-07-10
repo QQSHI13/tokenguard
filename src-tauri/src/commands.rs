@@ -33,6 +33,7 @@ pub struct SettingsDto {
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
+    pub lan_ip: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -321,14 +322,34 @@ fn preferred_lan_ip() -> Option<String> {
 
     // Prefer RFC1918 private addresses when multiple non-VPN interfaces exist.
     candidates.sort_by_key(|(_, ip)| !is_private_lan(*ip));
-    candidates.into_iter().next().map(|(_, ip)| ip.to_string())
+
+    if let Some((name, ip)) = candidates.first() {
+        tracing::info!("preferred LAN IP selected: {ip} on interface {name}");
+        return Some(ip.to_string());
+    }
+
+    None
 }
 
 fn is_likely_vpn_interface(name: &str) -> bool {
     let name = name.to_lowercase();
     [
-        "tun", "tap", "wg", "vpn", "ppp", "ipsec", "utun", "wireguard", "openvpn",
-        "nordlynx", "expressvpn", "proton", "surfshark", "tailscale", "zerotier",
+        // Generic tunnels
+        "tun", "tap", "wg", "vpn", "ppp", "ipsec", "utun",
+        // Common VPN protocols / products
+        "wireguard", "openvpn", "sslvpn", "pptp", "l2tp", "sstp", "ikev2",
+        // Commercial VPNs
+        "nordlynx", "nordvpn", "expressvpn", "proton", "surfshark", "mullvad",
+        "windscribe", "cyberghost", "pia", "private internet access",
+        "hotspot shield", "tunnelbear", "perimeter 81", "hide.me", "torguard",
+        // Mesh/remote access
+        "tailscale", "zerotier", "headscale", "nebula", "netbird",
+        // Enterprise VPN clients
+        "anyconnect", "cisco anyconnect", "fortissl", "forticlient", "globalprotect",
+        "palo alto", "sonicwall", "netextender", "checkpoint", "f5 vpn", "big-ip",
+        "juniper", "pulse secure", "citrix", "sophos", "openconnect",
+        // Windows adapter names
+        "tap-windows", "tap-win32", "wintun", "ndis", "virtual adapter",
     ]
     .iter()
     .any(|p| name.contains(p))
@@ -349,7 +370,11 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .paused
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: if cfg.expose_to_lan {
-            let host = preferred_lan_ip()
+            let host = cfg
+                .lan_ip
+                .clone()
+                .filter(|s| !s.is_empty())
+                .or_else(preferred_lan_ip)
                 .or_else(|| {
                     local_ip_address::local_ip()
                         .ok()
@@ -389,6 +414,13 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .expose_to_lan,
+        lan_ip: state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?
+            .lan_ip
+            .clone(),
     })
 }
 
@@ -691,6 +723,23 @@ pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Resu
         .write()
         .map_err(|e| e.to_string())?
         .expose_to_lan = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_lan_ip(state: State<'_, Arc<AppState>>, ip: Option<String>) -> Result<(), String> {
+    let value = ip.as_deref().unwrap_or("").trim();
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "lan_ip", value).map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .lan_ip = if value.is_empty() { None } else { Some(value.to_string()) };
     Ok(())
 }
 

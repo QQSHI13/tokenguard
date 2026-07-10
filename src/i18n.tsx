@@ -161,6 +161,9 @@ export const translations = {
     exposeToLan: "Expose proxy to LAN",
     exposeToLanHelp:
       "Bind to 0.0.0.0 so other devices on your network can reach the proxy. The URL above switches to this machine's local IP. Requires app restart. Only enable on trusted networks.",
+    lanIpOverride: "LAN IP override",
+    lanIpOverridePlaceholder: "Auto-detect",
+    lanIpSaved: "LAN IP override saved.",
     example: "Example",
     portHelp: "Applied on next launch — the listener is bound at startup.",
     keychain: "Keychain",
@@ -427,6 +430,9 @@ export const translations = {
     exposeToLan: "向局域网暴露代理",
     exposeToLanHelp:
       "绑定到 0.0.0.0，让局域网内的其他设备可以访问代理。上方 URL 会切换为本机本地 IP。需要重启应用。只在受信任的网络中启用。",
+    lanIpOverride: "局域网 IP 覆盖",
+    lanIpOverridePlaceholder: "自动检测",
+    lanIpSaved: "局域网 IP 覆盖已保存。",
     example: "示例",
     portHelp: "下次启动时生效 — 监听器在启动时绑定。",
     keychain: "钥匙串",
