@@ -47,8 +47,8 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/v1/completions", post(handle_openai))
         .route("/v1/responses", post(handle_openai))
         .route("/v1/messages", post(handle_anthropic))
-        .route("/v1beta/*path", get(handle_google))
-        .route("/v1beta/*path", post(handle_google))
+        .route("/v1beta/{*path}", get(handle_google))
+        .route("/v1beta/{*path}", post(handle_google))
         .route("/v1/models", get(handle_models))
         .with_state(state)
 }
