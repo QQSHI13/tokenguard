@@ -15,7 +15,6 @@ type Settings = {
   auto_export_folder: string | null;
   webhook_url: string | null;
   auto_start: boolean;
-  key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
   auto_update_interval_minutes: number;
@@ -37,8 +36,6 @@ export default function SettingsTab({
   const [copied, setCopied] = useState(false);
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
-  const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
-  const [keyRotationStatus, setKeyRotationStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
 
   const savePort = async () => {
@@ -61,23 +58,8 @@ export default function SettingsTab({
   }, [settings?.auto_start]);
 
   useEffect(() => {
-    setKeyRotationDays(String(settings?.key_rotation_days ?? 90));
-  }, [settings?.key_rotation_days]);
-
-  useEffect(() => {
     setExposeToLan(settings?.expose_to_lan ?? false);
   }, [settings?.expose_to_lan]);
-
-  const handleSaveKeyRotation = async () => {
-    setKeyRotationStatus(null);
-    try {
-      const days = Number(keyRotationDays) || 90;
-      await invoke("set_key_rotation_days", { days });
-      setKeyRotationStatus(t("keyRotationSaved"));
-    } catch (e) {
-      setKeyRotationStatus(String(e));
-    }
-  };
 
   const handleExposeToLanChange = async (enabled: boolean) => {
     try {
@@ -194,36 +176,6 @@ export default function SettingsTab({
             }`}
           >
             {autoStartStatus}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("keyRotation")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">{t("keyRotationHelp")}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min={1}
-            value={keyRotationDays}
-            onChange={(e) => setKeyRotationDays(e.target.value)}
-            className="w-24 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-          />
-          <span className="text-xs text-neutral-500">{t("days")}</span>
-          <button
-            onClick={handleSaveKeyRotation}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {t("save")}
-          </button>
-        </div>
-        {keyRotationStatus && (
-          <p
-            className={`mt-2 text-xs ${
-              keyRotationStatus.includes(t("keyRotationSaved")) ? "text-emerald-600" : "text-red-600"
-            }`}
-          >
-            {keyRotationStatus}
           </p>
         )}
       </section>

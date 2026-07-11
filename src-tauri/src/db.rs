@@ -1073,9 +1073,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let auto_start = get_setting(conn, "auto_start")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    let key_rotation_days = get_setting(conn, "key_rotation_days")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(90);
     let log_retention_days = get_setting(conn, "log_retention_days")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -1106,7 +1103,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         auto_export_folder,
         webhook_url,
         auto_start,
-        key_rotation_days,
         log_retention_days,
         expose_to_lan,
         auto_update_interval_minutes,

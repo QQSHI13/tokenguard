@@ -24,7 +24,6 @@ type Settings = {
   auto_export_folder: string | null;
   webhook_url: string | null;
   auto_start: boolean;
-  key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
   auto_update_interval_minutes: number;

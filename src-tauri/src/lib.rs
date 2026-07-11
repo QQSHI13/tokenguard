@@ -58,7 +58,6 @@ pub fn run() {
             commands::cleanup_logs_now,
             commands::set_webhook_url,
             commands::test_webhook,
-            commands::set_key_rotation_days,
             commands::pause_resume,
             commands::get_today_spend,
             commands::get_logs,

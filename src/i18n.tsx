@@ -171,11 +171,6 @@ export const translations = {
     keychainHelp:
       "Diagnose API-key storage. Runs a write→read→new-entry-read probe against the OS keychain and reports which step fails.",
     testKeychain: "Test keychain",
-    keyRotation: "Key rotation",
-    keyRotationHelp: "Warn when an API key has not been rotated in this many days.",
-    keyRotationSaved: "Key rotation setting saved.",
-    keyRotationWarning: "This API key is older than the rotation threshold. Consider rotating it.",
-    rotateKey: "Rotate key",
     privacySecurity: "Privacy & security",
     privacy1: "No cloud, no account, no telemetry. Only your provider calls leave the machine.",
     privacy2: "API keys live in the OS keychain — never on disk, never in your code.",
@@ -438,11 +433,6 @@ export const translations = {
     keychainHelp:
       "诊断 API 密钥存储。对系统钥匙串执行写入→读取→新条目读取探测，并报告哪一步失败。",
     testKeychain: "测试钥匙串",
-    keyRotation: "密钥轮换",
-    keyRotationHelp: "当 API 密钥超过此天数未轮换时发出警告。",
-    keyRotationSaved: "密钥轮换设置已保存。",
-    keyRotationWarning: "此 API 密钥已超过轮换阈值，建议轮换。",
-    rotateKey: "轮换密钥",
     privacySecurity: "隐私与安全",
     privacy1: "无云端、无账号、无遥测。只有你的服务商调用会离开本机。",
     privacy2: "API 密钥存储在系统钥匙串中 — 从不上盘，从不出现在你的代码里。",

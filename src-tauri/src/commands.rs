@@ -29,7 +29,6 @@ pub struct SettingsDto {
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
     pub auto_start: bool,
-    pub key_rotation_days: u32,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
     pub auto_update_interval_minutes: u32,
@@ -426,12 +425,6 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
         auto_export_folder: cfg.auto_export_folder.clone(),
         webhook_url: cfg.webhook_url.clone(),
         auto_start: cfg.auto_start,
-        key_rotation_days: state
-            .inner()
-            .config
-            .read()
-            .map_err(|e| e.to_string())?
-            .key_rotation_days,
         log_retention_days: state
             .inner()
             .config
@@ -659,23 +652,6 @@ pub fn cleanup_logs_now(state: State<'_, Arc<AppState>>) -> Result<usize, String
     }
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     db::cleanup_old_logs(&conn, days).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn set_key_rotation_days(state: State<'_, Arc<AppState>>, days: u32) -> Result<u32, String> {
-    {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "key_rotation_days", &days.to_string())
-            .map_err(|e| e.to_string())?;
-        drop(conn);
-    }
-    state
-        .inner()
-        .config
-        .write()
-        .map_err(|e| e.to_string())?
-        .key_rotation_days = days;
-    Ok(days)
 }
 
 #[tauri::command]
