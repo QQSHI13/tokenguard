@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  issue_comment:
+    types: [created]
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,9 +13,24 @@ env:
 jobs:
   frontend:
     name: Frontend type-check
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@CI rerun') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association)
+      )
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'issue_comment'
+                && format('refs/pull/{0}/merge', github.event.issue.number)
+                || ''
+            }}
 
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
@@ -31,9 +48,24 @@ jobs:
   rust-check:
     name: Rust checks
     needs: frontend
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@CI rerun') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association)
+      )
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'issue_comment'
+                && format('refs/pull/{0}/merge', github.event.issue.number)
+                || ''
+            }}
 
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
