@@ -27,7 +27,7 @@
   <header class="border-b border-slate-100 dark:border-slate-800">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
       <a href="/" class="flex items-center gap-2 text-lg font-bold">
-        <span>🛡️</span>
+        <img src="/logo.svg" alt="" class="h-8 w-8">
         <span>Token Guard</span>
       </a>
       <nav class="hidden items-center gap-6 text-sm font-medium md:flex">
@@ -75,30 +75,57 @@
     </section>
 
     <section id="features" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
-      <div class="mx-auto grid max-w-6xl gap-12 md:grid-cols-3">
-        <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-          <div class="mb-4 text-3xl">🔒</div>
-          <h3 class="text-xl font-bold">Cannot see your prompts</h3>
-          <p class="mt-3 text-slate-600 dark:text-slate-300">
-            The proxy runs on your machine. Your prompts stream straight to the provider —
-            never through a third-party server.
-          </p>
-        </div>
-        <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-          <div class="mb-4 text-3xl">⚡</div>
-          <h3 class="text-xl font-bold">Zero added latency</h3>
-          <p class="mt-3 text-slate-600 dark:text-slate-300">
-            No extra network hop. The request path is identical to calling the provider directly,
-            so SSE streams arrive byte-for-byte as sent.
-          </p>
-        </div>
-        <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-          <div class="mb-4 text-3xl">🗝️</div>
-          <h3 class="text-xl font-bold">Keys in the OS keychain</h3>
-          <p class="mt-3 text-slate-600 dark:text-slate-300">
-            API keys live in Windows Credential Manager, macOS Keychain, or Linux Secret Service.
-            Your code never touches them.
-          </p>
+      <div class="mx-auto max-w-6xl">
+        <h2 class="text-center text-3xl font-bold">Features</h2>
+        <div class="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔌</div>
+            <h3 class="text-xl font-bold">One proxy, three API shapes</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Use the OpenAI, Anthropic, or Google Gemini SDK against any configured provider.
+              Token Guard converts requests, responses, and streaming chunks automatically.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔒</div>
+            <h3 class="text-xl font-bold">Cannot see your prompts</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              The proxy runs on your machine. Your prompts stream straight to the provider —
+              never through a third-party server.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">💰</div>
+            <h3 class="text-xl font-bold">Real-time cost tracking</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              See spend per project, provider, and model. Set money, token, request, or time
+              limits and get warned or blocked before a bill surprises you.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🗝️</div>
+            <h3 class="text-xl font-bold">Keys in the OS keychain</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              API keys live in Windows Credential Manager, macOS Keychain, or Linux Secret Service.
+              Your code never touches them.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">⚡</div>
+            <h3 class="text-xl font-bold">Zero added latency</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              No extra network hop. The request path is identical to calling the provider directly,
+              so SSE streams arrive as fast as the provider sends them.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🖥️</div>
+            <h3 class="text-xl font-bold">Native tray app</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Pause, resume, open the dashboard, or see today’s spend from the system tray.
+              macOS, Windows, and Linux.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -158,6 +185,12 @@
               <td class="px-6 py-4 text-slate-600 dark:text-slate-300">No</td>
               <td class="px-6 py-4 text-slate-600 dark:text-slate-300">No</td>
             </tr>
+            <tr>
+              <td class="px-6 py-4 font-medium">Multi-format SDK support</td>
+              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">OpenAI / Anthropic / Google</td>
+              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Varies</td>
+              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Usually OpenAI only</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -170,11 +203,17 @@
           Token Guard License — $4.99 USD
         </p>
         <p class="mt-4 text-slate-600 dark:text-slate-400">
-          One-time payment. No subscription.
+          One-time payment. No subscription. Covers 2 devices.
         </p>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-500">
           Taxes may apply and will be calculated at checkout.
         </p>
+        <ul class="mt-6 inline-block text-left text-slate-600 dark:text-slate-400">
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Remove the support banner</li>
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Automatic updates</li>
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Lifetime v1.x updates</li>
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> 2 devices per license</li>
+        </ul>
         <div class="mt-8">
           <a href="/buy.html" class="rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">
             Buy now
@@ -186,8 +225,8 @@
     <section class="px-6 py-20 text-center">
       <h2 class="text-3xl font-bold">Ready to stop surprise bills?</h2>
       <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-        Download the free edition from GitHub, or buy the paid edition for direct downloads
-        and automatic updates.
+        Download the free edition from GitHub, or buy a license to remove the banner
+        and enable automatic updates.
       </p>
       <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
         <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg bg-slate-900 px-6 py-3 text-base font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">

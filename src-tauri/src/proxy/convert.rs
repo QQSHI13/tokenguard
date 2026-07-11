@@ -182,10 +182,267 @@ fn text_content_to_string(content: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(parts) => parts
             .iter()
-            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+            .filter_map(|p| {
+                if p.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    p.get("text").and_then(|t| t.as_str())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>()
             .join(""),
         _ => String::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-format message content (text + images)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+enum ContentPart {
+    Text(String),
+    Image {
+        mime: Option<String>,
+        data: ImageData,
+    },
+}
+
+#[derive(Debug, Clone)]
+enum ImageData {
+    Base64(String),
+    Url(String),
+}
+
+fn parse_data_url(url: &str) -> Option<(String, String)> {
+    let rest = url.strip_prefix("data:")?;
+    let (mime, b64) = rest.split_once(";base64,")?;
+    Some((mime.to_string(), b64.to_string()))
+}
+
+fn to_data_url(mime: &str, data: &str) -> String {
+    format!("data:{};base64,{}", mime, data)
+}
+
+fn openai_content_to_parts(content: &Value) -> Vec<ContentPart> {
+    match content {
+        Value::String(s) => vec![ContentPart::Text(s.clone())],
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|p| {
+                let t = p.get("type").and_then(|v| v.as_str())?;
+                match t {
+                    "text" => p
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| ContentPart::Text(s.to_string())),
+                    "image_url" => {
+                        let url = p
+                            .get("image_url")
+                            .and_then(|u| u.get("url"))
+                            .and_then(|v| v.as_str())?;
+                        if let Some((mime, data)) = parse_data_url(url) {
+                            Some(ContentPart::Image {
+                                mime: Some(mime),
+                                data: ImageData::Base64(data),
+                            })
+                        } else {
+                            Some(ContentPart::Image {
+                                mime: None,
+                                data: ImageData::Url(url.to_string()),
+                            })
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn anthropic_content_to_parts(content: &Value) -> Vec<ContentPart> {
+    match content {
+        Value::String(s) => vec![ContentPart::Text(s.clone())],
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|p| {
+                let t = p.get("type").and_then(|v| v.as_str())?;
+                match t {
+                    "text" => p
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| ContentPart::Text(s.to_string())),
+                    "image" => {
+                        let source = p.get("source")?;
+                        let source_type = source.get("type").and_then(|v| v.as_str())?;
+                        match source_type {
+                            "base64" => {
+                                let data = source.get("data").and_then(|v| v.as_str())?;
+                                let mime = source
+                                    .get("media_type")
+                                    .and_then(|v| v.as_str())
+                                    .map(str::to_string);
+                                Some(ContentPart::Image {
+                                    mime,
+                                    data: ImageData::Base64(data.to_string()),
+                                })
+                            }
+                            "url" => {
+                                let url = source.get("url").and_then(|v| v.as_str())?;
+                                Some(ContentPart::Image {
+                                    mime: None,
+                                    data: ImageData::Url(url.to_string()),
+                                })
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn google_content_to_parts(content: &Value) -> Vec<ContentPart> {
+    match content {
+        Value::String(s) => vec![ContentPart::Text(s.clone())],
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|p| {
+                if let Some(text) = p.get("text").and_then(|v| v.as_str()) {
+                    return Some(ContentPart::Text(text.to_string()));
+                }
+                if let Some(inline) = p.get("inlineData") {
+                    let mime = inline
+                        .get("mimeType")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    let data = inline.get("data").and_then(|v| v.as_str())?;
+                    return Some(ContentPart::Image {
+                        mime,
+                        data: ImageData::Base64(data.to_string()),
+                    });
+                }
+                if let Some(file) = p.get("fileData") {
+                    let mime = file
+                        .get("mimeType")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    let url = file.get("fileUri").and_then(|v| v.as_str())?;
+                    return Some(ContentPart::Image {
+                        mime,
+                        data: ImageData::Url(url.to_string()),
+                    });
+                }
+                None
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn parts_to_openai(parts: &[ContentPart]) -> Value {
+    if parts.len() == 1 {
+        if let ContentPart::Text(s) = &parts[0] {
+            return Value::String(s.clone());
+        }
+    }
+    Value::Array(
+        parts
+            .iter()
+            .map(|p| match p {
+                ContentPart::Text(s) => serde_json::json!({"type": "text", "text": s}),
+                ContentPart::Image { mime, data } => match data {
+                    ImageData::Base64(d) => {
+                        let url = mime
+                            .as_ref()
+                            .map(|m| to_data_url(m, d))
+                            .unwrap_or_else(|| d.clone());
+                        serde_json::json!({"type": "image_url", "image_url": {"url": url}})
+                    }
+                    ImageData::Url(u) => {
+                        serde_json::json!({"type": "image_url", "image_url": {"url": u}})
+                    }
+                },
+            })
+            .collect(),
+    )
+}
+
+fn parts_to_anthropic(parts: &[ContentPart]) -> Value {
+    if parts.len() == 1 {
+        if let ContentPart::Text(s) = &parts[0] {
+            return Value::String(s.clone());
+        }
+    }
+    Value::Array(
+        parts
+            .iter()
+            .map(|p| match p {
+                ContentPart::Text(s) => serde_json::json!({"type": "text", "text": s}),
+                ContentPart::Image { mime, data } => match data {
+                    ImageData::Base64(d) => {
+                        let mut source = serde_json::Map::new();
+                        source.insert("type".to_string(), Value::String("base64".to_string()));
+                        source.insert("data".to_string(), Value::String(d.clone()));
+                        if let Some(m) = mime {
+                            source.insert("media_type".to_string(), Value::String(m.clone()));
+                        }
+                        serde_json::json!({"type": "image", "source": source})
+                    }
+                    ImageData::Url(u) => serde_json::json!({
+                        "type": "image",
+                        "source": {"type": "url", "url": u}
+                    }),
+                },
+            })
+            .collect(),
+    )
+}
+
+fn parts_to_google(parts: &[ContentPart]) -> Vec<Value> {
+    parts
+        .iter()
+        .map(|p| match p {
+            ContentPart::Text(s) => serde_json::json!({"text": s}),
+            ContentPart::Image { mime, data } => match data {
+                ImageData::Base64(d) => {
+                    let mut inline = serde_json::Map::new();
+                    inline.insert("data".to_string(), Value::String(d.clone()));
+                    if let Some(m) = mime {
+                        inline.insert("mimeType".to_string(), Value::String(m.clone()));
+                    }
+                    serde_json::json!({"inlineData": inline})
+                }
+                ImageData::Url(u) => {
+                    let mut file = serde_json::Map::new();
+                    file.insert("fileUri".to_string(), Value::String(u.clone()));
+                    if let Some(m) = mime {
+                        file.insert("mimeType".to_string(), Value::String(m.clone()));
+                    }
+                    serde_json::json!({"fileData": file})
+                }
+            },
+        })
+        .collect()
+}
+
+fn convert_message_content(content: &Value, from: ProviderFormat, to: ProviderFormat) -> Value {
+    if from == to {
+        return content.clone();
+    }
+    let parts = match from {
+        ProviderFormat::OpenAI => openai_content_to_parts(content),
+        ProviderFormat::Anthropic => anthropic_content_to_parts(content),
+        ProviderFormat::Google => google_content_to_parts(content),
+    };
+    match to {
+        ProviderFormat::OpenAI => parts_to_openai(&parts),
+        ProviderFormat::Anthropic => parts_to_anthropic(&parts),
+        ProviderFormat::Google => Value::Array(parts_to_google(&parts)),
     }
 }
 
@@ -341,7 +598,26 @@ fn openai_to_anthropic_request(body: &Value, remote_model: &str) -> Value {
     if let Some(system) = system {
         out.insert("system".to_string(), Value::String(system));
     }
-    out.insert("messages".to_string(), messages);
+
+    let mut anthropic_messages = Vec::new();
+    for m in messages.as_array().unwrap_or(&Vec::new()).iter() {
+        if let Some(role) = m.get("role").and_then(|v| v.as_str()) {
+            let anthropic_role = match role {
+                "assistant" => "assistant",
+                _ => "user",
+            };
+            let content = m
+                .get("content")
+                .map(|c| {
+                    convert_message_content(c, ProviderFormat::OpenAI, ProviderFormat::Anthropic)
+                })
+                .unwrap_or_else(|| Value::String(String::new()));
+            anthropic_messages
+                .push(serde_json::json!({"role": anthropic_role, "content": content}));
+        }
+    }
+    out.insert("messages".to_string(), Value::Array(anthropic_messages));
+
     copy_u64(&mut out, &obj, "max_tokens");
     copy_f64(&mut out, &obj, "temperature");
     copy_f64(&mut out, &obj, "top_p");
@@ -446,20 +722,32 @@ fn translate_finish_reason_o2a(reason: &str) -> String {
 
 fn anthropic_to_openai_request(body: &Value, remote_model: &str) -> Value {
     let obj = body.as_object().cloned().unwrap_or_default();
-    let mut messages = obj
+    let messages = obj
         .get("messages")
         .cloned()
         .unwrap_or_else(|| Value::Array(vec![]));
+
+    let mut openai_messages = Vec::new();
     if let Some(system) = obj.get("system") {
-        let system_msg = serde_json::json!({"role": "system", "content": system});
-        if let Some(arr) = messages.as_array_mut() {
-            arr.insert(0, system_msg);
+        let system_content =
+            convert_message_content(system, ProviderFormat::Anthropic, ProviderFormat::OpenAI);
+        openai_messages.push(serde_json::json!({"role": "system", "content": system_content}));
+    }
+    for m in messages.as_array().unwrap_or(&Vec::new()).iter() {
+        if let Some(role) = m.get("role").and_then(|v| v.as_str()) {
+            let content = m
+                .get("content")
+                .map(|c| {
+                    convert_message_content(c, ProviderFormat::Anthropic, ProviderFormat::OpenAI)
+                })
+                .unwrap_or_else(|| Value::String(String::new()));
+            openai_messages.push(serde_json::json!({"role": role, "content": content}));
         }
     }
 
     let mut out = serde_json::Map::new();
     out.insert("model".to_string(), Value::String(remote_model.to_string()));
-    out.insert("messages".to_string(), messages);
+    out.insert("messages".to_string(), Value::Array(openai_messages));
     copy_u64(&mut out, &obj, "max_tokens");
     copy_f64(&mut out, &obj, "temperature");
     copy_f64(&mut out, &obj, "top_p");
@@ -574,13 +862,14 @@ fn openai_to_google_request(body: &Value) -> Value {
                 "assistant" => "model",
                 _ => "user",
             };
-            let text = m
+            let parts = m
                 .get("content")
-                .map(text_content_to_string)
-                .unwrap_or_default();
+                .map(|c| convert_message_content(c, ProviderFormat::OpenAI, ProviderFormat::Google))
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_else(|| vec![serde_json::json!({"text": ""})]);
             contents.push(serde_json::json!({
                 "role": google_role,
-                "parts": [{"text": text}],
+                "parts": parts,
             }));
         }
     }
@@ -752,18 +1041,13 @@ fn google_to_openai_request(body: &Value, remote_model: &str) -> Value {
                 .and_then(|v| v.as_str())
                 .map(|r| if r == "model" { "assistant" } else { "user" })
                 .unwrap_or("user");
-            let text = c
+            let parts = c
                 .get("parts")
-                .and_then(|p| p.as_array())
-                .map(|parts| {
-                    parts
-                        .iter()
-                        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                        .collect::<Vec<_>>()
-                        .join("")
-                })
-                .unwrap_or_default();
-            messages.push(serde_json::json!({"role": role, "content": text}));
+                .cloned()
+                .unwrap_or_else(|| Value::Array(vec![]));
+            let content =
+                convert_message_content(&parts, ProviderFormat::Google, ProviderFormat::OpenAI);
+            messages.push(serde_json::json!({"role": role, "content": content}));
         }
     }
 
@@ -1255,6 +1539,56 @@ mod tests {
         let out = convert_response(ProviderFormat::Google, ProviderFormat::OpenAI, &body);
         assert_eq!(out["choices"][0]["message"]["content"], "Hi");
         assert_eq!(out["usage"]["prompt_tokens"], 10);
+    }
+
+    #[test]
+    fn openai_image_to_anthropic() {
+        let body = serde_json::json!({
+            "model": "claude-3-5-sonnet",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is this?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,ABC"}},
+                ],
+            }],
+        });
+        let out = convert_request(
+            ProviderFormat::OpenAI,
+            ProviderFormat::Anthropic,
+            &body,
+            "claude-3-5-sonnet",
+        );
+        let content = out["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["source"]["type"], "base64");
+        assert_eq!(content[1]["source"]["data"], "ABC");
+        assert_eq!(content[1]["source"]["media_type"], "image/png");
+    }
+
+    #[test]
+    fn anthropic_image_to_openai() {
+        let body = serde_json::json!({
+            "model": "gpt-4o",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is this?"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "XYZ"}},
+                ],
+            }],
+        });
+        let out = convert_request(
+            ProviderFormat::Anthropic,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let content = out["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[1]["type"], "image_url");
+        assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,XYZ");
     }
 
     #[test]

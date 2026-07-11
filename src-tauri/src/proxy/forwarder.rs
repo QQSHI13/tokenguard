@@ -424,12 +424,21 @@ fn is_passthrough_header(name: &HeaderName) -> bool {
 // SSE chunk converter
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
+struct StreamingToolCall {
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
+}
+
 struct SseConverter {
     from: ProviderFormat,
     to: ProviderFormat,
     buf: Vec<u8>,
     usage: sse::Usage,
     pending_event: Option<String>,
+    streaming_tools: std::collections::HashMap<usize, StreamingToolCall>,
+    last_tool_index: Option<usize>,
 }
 
 impl SseConverter {
@@ -440,6 +449,8 @@ impl SseConverter {
             buf: Vec::new(),
             usage: sse::Usage::default(),
             pending_event: None,
+            streaming_tools: std::collections::HashMap::new(),
+            last_tool_index: None,
         }
     }
 
@@ -477,9 +488,22 @@ impl SseConverter {
         };
 
         let payload = rest.trim();
-        if payload.is_empty() || payload == "[DONE]" {
+        if payload.is_empty() {
             self.pending_event = None;
             out.extend_from_slice(line);
+            return;
+        }
+        if payload == "[DONE]" {
+            self.pending_event = None;
+            if self.from == ProviderFormat::OpenAI && self.to == ProviderFormat::Anthropic {
+                self.emit_anthropic_event(
+                    out,
+                    "message_stop",
+                    serde_json::json!({"type": "message_stop"}),
+                );
+            } else {
+                out.extend_from_slice(line);
+            }
             return;
         }
 
@@ -499,12 +523,24 @@ impl SseConverter {
         }
 
         if self.from == self.to {
-            if self.pending_event.is_some() {
-                // The event line was already emitted above for same-format passthrough.
-                out.extend_from_slice(line);
-            } else {
-                out.extend_from_slice(line);
-            }
+            out.extend_from_slice(line);
+            self.pending_event = None;
+            return;
+        }
+
+        // Tool-call streaming needs stateful accumulation, so handle it before
+        // the generic chunk converter.
+        if self.from == ProviderFormat::OpenAI
+            && self.to == ProviderFormat::Anthropic
+            && self.handle_openai_tool_chunk(&value, out)
+        {
+            self.pending_event = None;
+            return;
+        }
+        if self.from == ProviderFormat::Anthropic
+            && self.to == ProviderFormat::OpenAI
+            && self.handle_anthropic_tool_chunk(&value, out)
+        {
             self.pending_event = None;
             return;
         }
@@ -524,5 +560,165 @@ impl SseConverter {
             }
         }
         self.pending_event = None;
+    }
+
+    fn emit_anthropic_event(&self, out: &mut Vec<u8>, event: &str, data: Value) {
+        out.extend_from_slice(format!("event: {}\n", event).as_bytes());
+        if let Ok(json) = serde_json::to_string(&data) {
+            out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+        }
+    }
+
+    fn handle_openai_tool_chunk(&mut self, value: &Value, out: &mut Vec<u8>) -> bool {
+        let delta = value
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|c| c.get("delta"));
+        let tool_calls = match delta
+            .and_then(|d| d.get("tool_calls"))
+            .and_then(|v| v.as_array())
+        {
+            Some(tcs) => tcs,
+            None => return false,
+        };
+
+        for tc in tool_calls {
+            let idx = match tc.get("index").and_then(|v| v.as_u64()).map(|u| u as usize) {
+                Some(i) => i,
+                None => continue,
+            };
+            {
+                let entry = self.streaming_tools.entry(idx).or_default();
+                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                    entry.id = Some(id.to_string());
+                }
+                if let Some(name) = tc
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+                {
+                    entry.name = Some(name.to_string());
+                }
+            }
+
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+            {
+                let id = self
+                    .streaming_tools
+                    .get(&idx)
+                    .and_then(|e| e.id.clone())
+                    .unwrap_or_else(|| format!("call_{}", idx));
+                self.emit_anthropic_event(
+                    out,
+                    "content_block_start",
+                    serde_json::json!({
+                        "type": "content_block_start",
+                        "index": idx,
+                        "content_block": {
+                            "type": "tool_use",
+                            "id": id,
+                            "name": name,
+                            "input": {},
+                        },
+                    }),
+                );
+            }
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+            {
+                {
+                    let entry = self.streaming_tools.get_mut(&idx).unwrap();
+                    entry.arguments.push_str(args);
+                }
+                self.emit_anthropic_event(
+                    out,
+                    "content_block_delta",
+                    serde_json::json!({
+                        "type": "content_block_delta",
+                        "index": idx,
+                        "delta": {
+                            "type": "input_json_delta",
+                            "partial_json": args,
+                        },
+                    }),
+                );
+            }
+        }
+        true
+    }
+
+    fn handle_anthropic_tool_chunk(&mut self, value: &Value, out: &mut Vec<u8>) -> bool {
+        let event = match self.pending_event.as_deref() {
+            Some(e) => e,
+            None => return false,
+        };
+        match event {
+            "content_block_start" => {
+                if value
+                    .get("content_block")
+                    .and_then(|b| b.get("type"))
+                    .and_then(|t| t.as_str())
+                    != Some("tool_use")
+                {
+                    return false;
+                }
+                let idx = value.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                self.last_tool_index = Some(idx);
+                let block = &value["content_block"];
+                let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let openai = serde_json::json!({
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "tool_calls": [{
+                                "index": idx,
+                                "id": id,
+                                "type": "function",
+                                "function": {"name": name},
+                            }],
+                        },
+                    }],
+                });
+                if let Ok(json) = serde_json::to_string(&openai) {
+                    out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+                }
+                true
+            }
+            "content_block_delta" => {
+                let partial = value
+                    .get("delta")
+                    .and_then(|d| d.get("partial_json"))
+                    .and_then(|v| v.as_str());
+                let partial = match partial {
+                    Some(p) => p,
+                    None => return false,
+                };
+                let idx = self.last_tool_index.unwrap_or(0);
+                let openai = serde_json::json!({
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [{
+                                "index": idx,
+                                "function": {"arguments": partial},
+                            }],
+                        },
+                    }],
+                });
+                if let Ok(json) = serde_json::to_string(&openai) {
+                    out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+                }
+                true
+            }
+            _ => false,
+        }
     }
 }
