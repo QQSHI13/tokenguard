@@ -9,9 +9,9 @@ use crate::health::{self, ProviderHealth};
 use crate::secrets;
 use crate::state::AppState;
 use rusqlite::params;
+use std::net::IpAddr;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::net::IpAddr;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -329,22 +329,69 @@ fn is_likely_vpn_interface(name: &str) -> bool {
     let name = name.to_lowercase();
     [
         // Generic tunnels
-        "tun", "tap", "wg", "vpn", "ppp", "ipsec", "utun",
+        "tun",
+        "tap",
+        "wg",
+        "vpn",
+        "ppp",
+        "ipsec",
+        "utun",
         // Common VPN protocols / products
-        "wireguard", "openvpn", "sslvpn", "pptp", "l2tp", "sstp", "ikev2",
+        "wireguard",
+        "openvpn",
+        "sslvpn",
+        "pptp",
+        "l2tp",
+        "sstp",
+        "ikev2",
         // Commercial VPNs
-        "nordlynx", "nordvpn", "expressvpn", "proton", "surfshark", "mullvad",
-        "windscribe", "cyberghost", "pia", "private internet access",
-        "hotspot shield", "tunnelbear", "perimeter 81", "hide.me", "torguard",
-        "cloudflarewarp", "cloudflare warp", "warp",
+        "nordlynx",
+        "nordvpn",
+        "expressvpn",
+        "proton",
+        "surfshark",
+        "mullvad",
+        "windscribe",
+        "cyberghost",
+        "pia",
+        "private internet access",
+        "hotspot shield",
+        "tunnelbear",
+        "perimeter 81",
+        "hide.me",
+        "torguard",
+        "cloudflarewarp",
+        "cloudflare warp",
+        "warp",
         // Mesh/remote access
-        "tailscale", "zerotier", "headscale", "nebula", "netbird",
+        "tailscale",
+        "zerotier",
+        "headscale",
+        "nebula",
+        "netbird",
         // Enterprise VPN clients
-        "anyconnect", "cisco anyconnect", "fortissl", "forticlient", "globalprotect",
-        "palo alto", "sonicwall", "netextender", "checkpoint", "f5 vpn", "big-ip",
-        "juniper", "pulse secure", "citrix", "sophos", "openconnect",
+        "anyconnect",
+        "cisco anyconnect",
+        "fortissl",
+        "forticlient",
+        "globalprotect",
+        "palo alto",
+        "sonicwall",
+        "netextender",
+        "checkpoint",
+        "f5 vpn",
+        "big-ip",
+        "juniper",
+        "pulse secure",
+        "citrix",
+        "sophos",
+        "openconnect",
         // Windows adapter names
-        "tap-windows", "tap-win32", "wintun", "ndis", "virtual adapter",
+        "tap-windows",
+        "tap-win32",
+        "wintun",
+        "ndis",
+        "virtual adapter",
     ]
     .iter()
     .any(|p| name.contains(p))
@@ -366,16 +413,8 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .load(std::sync::atomic::Ordering::Relaxed),
         proxy_url: if cfg.expose_to_lan {
             let host = preferred_lan_ip()
-                .or_else(|| {
-                    local_ip_address::local_ip()
-                        .ok()
-                        .map(|ip| ip.to_string())
-                })
-                .or_else(|| {
-                    hostname::get()
-                        .ok()
-                        .and_then(|h| h.into_string().ok())
-                })
+                .or_else(|| local_ip_address::local_ip().ok().map(|ip| ip.to_string()))
+                .or_else(|| hostname::get().ok().and_then(|h| h.into_string().ok()))
                 .unwrap_or_else(|| "127.0.0.1".to_string());
             format!("http://{host}:{}", cfg.port)
         } else {

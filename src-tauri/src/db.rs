@@ -1086,14 +1086,13 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         .and_then(|v| v.parse().ok())
         .or_else(|| {
             // Migrate from the old boolean setting.
-            get_setting(conn, "auto_update_check")
-                .map(|v| {
-                    if v == "0" || v.eq_ignore_ascii_case("false") {
-                        0
-                    } else {
-                        240
-                    }
-                })
+            get_setting(conn, "auto_update_check").map(|v| {
+                if v == "0" || v.eq_ignore_ascii_case("false") {
+                    0
+                } else {
+                    240
+                }
+            })
         })
         .unwrap_or(240);
     Ok(Config {
