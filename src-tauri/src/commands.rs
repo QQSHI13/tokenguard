@@ -1564,7 +1564,7 @@ pub fn get_device_fingerprint() -> Result<String, String> {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())?;
-    let username = whoami::username();
+    let username = whoami::username().map_err(|e| e.to_string())?;
     let os = std::env::consts::OS;
     let input = format!("{hostname}|{username}|{os}");
 
