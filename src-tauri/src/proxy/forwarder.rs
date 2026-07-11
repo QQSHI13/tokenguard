@@ -1,17 +1,19 @@
 //! Forward requests to the real provider with per-format auth and
-//! transparent SSE streaming. Logs usage + cost after the response completes.
-//! Supports one fallback-provider retry for 5xx / 429 / network failures.
+//! bidirectional request/response conversion. Logs usage + cost after the
+//! response completes. Supports one fallback-provider retry for 5xx / 429 /
+//! network failures.
 
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, StatusCode};
 use axum::response::Response;
 use bytes::Bytes;
+use serde_json::Value;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
-use crate::proxy::sse;
+use crate::proxy::{convert, sse};
 use crate::state::{
     cached_input_cost_per_1k, input_output_cost_per_1k, remote_model_name, AppState,
 };
@@ -23,9 +25,10 @@ use crate::state::{
 pub async fn forward(
     state: Arc<AppState>,
     start: std::time::Instant,
-    path: String,
+    client_path: String,
     body: Bytes,
     req_headers: HeaderMap,
+    client_format: ProviderFormat,
     provider: Provider,
     api_key: String,
     project_tag: Option<String>,
@@ -54,9 +57,10 @@ pub async fn forward(
         }
         match attempt_forward(
             &state,
-            &path,
+            &client_path,
             &body,
             &req_headers,
+            client_format,
             &provider,
             &api_key,
             &model,
@@ -85,9 +89,17 @@ pub async fn forward(
     if should_fallback {
         if let Some(fallback) = find_fallback_provider(&state, &provider, &model) {
             if let Ok(key) = crate::secrets::get(&fallback.name) {
-                if let Ok(resp) =
-                    attempt_forward(&state, &path, &body, &req_headers, &fallback, &key, &model)
-                        .await
+                if let Ok(resp) = attempt_forward(
+                    &state,
+                    &client_path,
+                    &body,
+                    &req_headers,
+                    client_format,
+                    &fallback,
+                    &key,
+                    &model,
+                )
+                .await
                 {
                     used_provider = fallback;
                     used_key = key;
@@ -104,6 +116,7 @@ pub async fn forward(
                 state,
                 start,
                 resp,
+                client_format,
                 used_provider,
                 used_key,
                 &model,
@@ -120,18 +133,60 @@ pub async fn forward(
 }
 
 /// Send one attempt to a provider and return the raw upstream response.
+#[allow(clippy::too_many_arguments)]
 async fn attempt_forward(
     state: &Arc<AppState>,
-    path: &str,
+    client_path: &str,
     body: &Bytes,
     req_headers: &HeaderMap,
+    client_format: ProviderFormat,
     provider: &Provider,
     api_key: &str,
     model: &str,
 ) -> Result<reqwest::Response, ()> {
+    let remote_model = remote_model_name(provider, model);
+
+    // Google path-routed providers may have an empty body (e.g. GET /v1beta/models).
+    let body_json: Value = if body.is_empty() {
+        Value::Object(serde_json::Map::new())
+    } else {
+        serde_json::from_slice(body).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
+    };
+
+    let upstream_body =
+        convert::convert_request(client_format, provider.format, &body_json, &remote_model);
+    let is_stream = body_json
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let upstream_path = convert::target_path(
+        client_format,
+        provider.format,
+        &remote_model,
+        client_path,
+        is_stream,
+    );
+
+    // Ensure OpenAI streaming responses include usage so we can log it.
+    let mut final_body_json = upstream_body;
+    if provider.format == ProviderFormat::OpenAI
+        && is_stream
+        && is_chat_or_completions(&final_body_json)
+    {
+        let mut opts = final_body_json
+            .get("stream_options")
+            .and_then(|o| o.as_object().cloned())
+            .unwrap_or_default();
+        opts.insert("include_usage".to_string(), serde_json::json!(true));
+        final_body_json["stream_options"] = Value::Object(opts);
+    }
+
+    let final_body = serde_json::to_vec(&final_body_json)
+        .map(Bytes::from)
+        .unwrap_or_else(|_| body.clone());
+
     let base = provider.base_url.trim_end_matches('/');
-    let url = format!("{base}{path}");
-    let final_body = rewrite_body_for_provider(body, provider, model);
+    let url = format!("{base}{upstream_path}");
 
     let mut req = state.client.post(&url);
     req = apply_auth(req, provider.auth, api_key);
@@ -155,6 +210,7 @@ async fn finalize_forward(
     state: Arc<AppState>,
     start: std::time::Instant,
     resp: reqwest::Response,
+    client_format: ProviderFormat,
     provider: Provider,
     _api_key: String,
     model: &str,
@@ -172,6 +228,7 @@ async fn finalize_forward(
     if is_sse {
         let st = state.clone();
         let prov = provider.clone();
+        let client_fmt = client_format;
         let model_owned = model.to_string();
         let remote_model_owned = remote_model.clone();
         let (tx, rx) = tokio::sync::mpsc::channel::<
@@ -179,12 +236,12 @@ async fn finalize_forward(
         >(32);
         tauri::async_runtime::spawn(async move {
             let mut s = resp.bytes_stream();
-            let mut parser = sse::SseUsageParser::new(prov.format);
+            let mut converter = SseConverter::new(prov.format, client_fmt);
             while let Some(chunk) = s.next().await {
                 match chunk {
                     Ok(bytes) => {
-                        parser.feed(&bytes);
-                        if tx.send(Ok(bytes)).await.is_err() {
+                        let out = converter.feed(&bytes);
+                        if tx.send(Ok(out)).await.is_err() {
                             break;
                         }
                     }
@@ -196,7 +253,7 @@ async fn finalize_forward(
                     }
                 }
             }
-            let usage = parser.usage.clone();
+            let usage = converter.usage;
             let (input_cost, output_cost) = input_output_cost_per_1k(&prov, &model_owned);
             let cached_cost = cached_input_cost_per_1k(&prov, &model_owned);
             let c = cost::estimate(
@@ -237,8 +294,15 @@ async fn finalize_forward(
                 )
             }
         };
-        let response_body = maybe_string_body(&bytes);
-        let usage = sse::extract_json(&bytes, provider.format);
+        let upstream_json = serde_json::from_slice::<Value>(&bytes)
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+        let client_json = convert::convert_response(provider.format, client_format, &upstream_json);
+        let client_bytes = serde_json::to_vec(&client_json)
+            .map(Bytes::from)
+            .unwrap_or(bytes);
+
+        let response_body = maybe_string_body(&client_bytes);
+        let usage = sse::extract_json(&client_bytes, client_format);
         let (input_cost, output_cost) = input_output_cost_per_1k(&provider, model);
         let cached_cost = cached_input_cost_per_1k(&provider, model);
         let c = cost::estimate(
@@ -266,7 +330,7 @@ async fn finalize_forward(
                 response_body,
             )
             .await;
-        build_response(status, headers, Body::from(bytes))
+        build_response(status, headers, Body::from(client_bytes))
     }
 }
 
@@ -286,23 +350,18 @@ fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -
     }
 }
 
-/// Find a fallback provider that has the same format and supports the requested
-/// model (by local name).
+/// Find a fallback provider that supports the requested model. Format is not a
+/// constraint because conversion is handled downstream.
 fn find_fallback_provider(
     state: &Arc<AppState>,
-    primary: &Provider,
+    _primary: &Provider,
     model: &str,
 ) -> Option<Provider> {
-    let fallback_id = primary.fallback_provider_id?;
     let cfg = state.config.read().ok()?;
-    let fallback = cfg.providers.iter().find(|p| p.id == fallback_id)?;
-    if fallback.format != primary.format {
-        return None;
-    }
-    if !fallback.models.iter().any(|m| m.local == model) {
-        return None;
-    }
-    Some(fallback.clone())
+    cfg.providers
+        .iter()
+        .find(|p| p.models.iter().any(|m| m.local == model))
+        .cloned()
 }
 
 fn is_retryable_status(status: reqwest::StatusCode) -> bool {
@@ -321,37 +380,8 @@ fn maybe_string_body(body: &Bytes) -> Option<String> {
     }
 }
 
-/// Rewrite the request body for the target provider: remap the model field to
-/// the provider's remote model name, and inject OpenAI stream_options when
-/// appropriate. For Google (Gemini) we leave the native body untouched.
-fn rewrite_body_for_provider(body: &Bytes, provider: &Provider, local_model: &str) -> Bytes {
-    if provider.format == ProviderFormat::Google {
-        return body.clone();
-    }
-
-    let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return body.clone();
-    };
-
-    let remote_model = remote_model_name(provider, local_model);
-    if let Some(obj) = v.as_object_mut() {
-        obj.insert("model".to_string(), serde_json::Value::String(remote_model));
-    }
-
-    let is_stream = v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-    let is_chat_or_completions = v.get("messages").is_some() || v.get("prompt").is_some();
-    if provider.format == ProviderFormat::OpenAI && is_stream && is_chat_or_completions {
-        let mut opts = v
-            .get("stream_options")
-            .and_then(|o| o.as_object().cloned())
-            .unwrap_or_default();
-        opts.insert("include_usage".to_string(), serde_json::json!(true));
-        v["stream_options"] = serde_json::Value::Object(opts);
-    }
-
-    serde_json::to_vec(&v)
-        .map(Bytes::from)
-        .unwrap_or_else(|_| body.clone())
+fn is_chat_or_completions(body: &Value) -> bool {
+    body.get("messages").is_some() || body.get("prompt").is_some()
 }
 
 fn apply_auth(
@@ -388,4 +418,111 @@ fn is_passthrough_header(name: &HeaderName) -> bool {
             | "content-encoding"
             | "accept-encoding"
     )
+}
+
+// ---------------------------------------------------------------------------
+// SSE chunk converter
+// ---------------------------------------------------------------------------
+
+struct SseConverter {
+    from: ProviderFormat,
+    to: ProviderFormat,
+    buf: Vec<u8>,
+    usage: sse::Usage,
+    pending_event: Option<String>,
+}
+
+impl SseConverter {
+    fn new(from: ProviderFormat, to: ProviderFormat) -> Self {
+        Self {
+            from,
+            to,
+            buf: Vec::new(),
+            usage: sse::Usage::default(),
+            pending_event: None,
+        }
+    }
+
+    fn feed(&mut self, data: &[u8]) -> Bytes {
+        self.buf.extend_from_slice(data);
+        let mut out = Vec::new();
+        while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = self.buf.drain(..=nl).collect();
+            self.handle_line(&line, &mut out);
+        }
+        Bytes::from(out)
+    }
+
+    fn handle_line(&mut self, line: &[u8], out: &mut Vec<u8>) {
+        let s = std::str::from_utf8(line).unwrap_or("").trim_end();
+
+        if s.is_empty() {
+            self.pending_event = None;
+            out.extend_from_slice(b"\n");
+            return;
+        }
+
+        if let Some(event) = s.strip_prefix("event:") {
+            let name = event.trim().to_string();
+            self.pending_event = Some(name);
+            if self.from == self.to {
+                out.extend_from_slice(line);
+            }
+            return;
+        }
+
+        let Some(rest) = s.strip_prefix("data:") else {
+            out.extend_from_slice(line);
+            return;
+        };
+
+        let payload = rest.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            self.pending_event = None;
+            out.extend_from_slice(line);
+            return;
+        }
+
+        let Ok(value) = serde_json::from_str::<Value>(payload) else {
+            out.extend_from_slice(line);
+            return;
+        };
+
+        // Extract usage from the original upstream chunk before converting it.
+        let usage_obj = value
+            .get("usage")
+            .or_else(|| value.get("response").and_then(|r| r.get("usage")))
+            .or_else(|| value.get("message").and_then(|m| m.get("usage")))
+            .or_else(|| value.get("usageMetadata"));
+        if let Some(u) = usage_obj {
+            sse::extract_from_usage_object(u, &mut self.usage);
+        }
+
+        if self.from == self.to {
+            if self.pending_event.is_some() {
+                // The event line was already emitted above for same-format passthrough.
+                out.extend_from_slice(line);
+            } else {
+                out.extend_from_slice(line);
+            }
+            self.pending_event = None;
+            return;
+        }
+
+        match convert::convert_sse_data(self.from, self.to, self.pending_event.as_deref(), &value) {
+            Some((event_name, converted)) => {
+                if let Some(name) = event_name {
+                    out.extend_from_slice(format!("event: {}\n", name).as_bytes());
+                }
+                if let Ok(json) = serde_json::to_string(&converted) {
+                    out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+                }
+            }
+            None => {
+                // Unrecognized chunk shape: pass through the original line.
+                out.extend_from_slice(line);
+            }
+        }
+        self.pending_event = None;
+    }
 }

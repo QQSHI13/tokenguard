@@ -10,15 +10,18 @@ use crate::notifications;
 use crate::webhook;
 
 /// Pure routing logic, extracted for unit testing.
+/// Routing is model-only: any provider that supports the requested model can
+/// serve the request, regardless of the client API format. Conversion happens
+/// downstream between the client format and the provider format.
 pub fn route_in_list(
     providers: &[Provider],
-    family: ProviderFormat,
+    _family: ProviderFormat,
     model: &str,
 ) -> Option<Provider> {
     if !model.is_empty() {
         if let Some(p) = providers
             .iter()
-            .find(|p| p.format == family && p.models.iter().any(|m| m.local == model))
+            .find(|p| p.models.iter().any(|m| m.local == model))
             .cloned()
         {
             return Some(p);
@@ -26,9 +29,9 @@ pub fn route_in_list(
     }
     providers
         .iter()
-        .find(|p| p.format == family && p.is_default)
+        .find(|p| p.is_default)
         .cloned()
-        .or_else(|| providers.iter().find(|p| p.format == family).cloned())
+        .or_else(|| providers.first().cloned())
 }
 
 /// Find the remote model name for a given local model name on a provider.
@@ -811,26 +814,39 @@ mod tests {
     }
 
     #[test]
-    fn route_falls_back_to_any_same_format() {
+    fn route_falls_back_to_any_provider() {
         let providers = vec![provider(
             "OpenAI",
             ProviderFormat::OpenAI,
             &["gpt-4o"],
             false,
         )];
-        let chosen = route_in_list(&providers, ProviderFormat::OpenAI, "other");
+        let chosen = route_in_list(&providers, ProviderFormat::Anthropic, "other");
         assert_eq!(chosen.unwrap().name, "OpenAI");
     }
 
     #[test]
-    fn route_no_match_for_wrong_format() {
+    fn route_matches_across_formats() {
+        let providers = vec![provider(
+            "OpenAI",
+            ProviderFormat::OpenAI,
+            &["gpt-4o"],
+            false,
+        )];
+        let chosen = route_in_list(&providers, ProviderFormat::Anthropic, "gpt-4o");
+        assert_eq!(chosen.unwrap().name, "OpenAI");
+    }
+
+    #[test]
+    fn route_falls_back_to_default_when_model_missing() {
         let providers = vec![provider(
             "OpenAI",
             ProviderFormat::OpenAI,
             &["gpt-4o"],
             true,
         )];
-        assert!(route_in_list(&providers, ProviderFormat::Anthropic, "claude-3").is_none());
+        let chosen = route_in_list(&providers, ProviderFormat::Anthropic, "claude-3");
+        assert_eq!(chosen.unwrap().name, "OpenAI");
     }
 
     fn mk_limit(scope: LimitScope, scope_id: Option<i64>) -> Limit {

@@ -288,6 +288,7 @@ async fn handle(
             path,
             body_bytes,
             req_headers,
+            family,
             provider,
             api_key,
             project_tag,
