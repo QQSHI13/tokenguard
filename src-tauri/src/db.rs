@@ -1082,6 +1082,20 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let expose_to_lan = get_setting(conn, "expose_to_lan")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    let auto_update_interval_minutes = get_setting(conn, "auto_update_interval_minutes")
+        .and_then(|v| v.parse().ok())
+        .or_else(|| {
+            // Migrate from the old boolean setting.
+            get_setting(conn, "auto_update_check")
+                .map(|v| {
+                    if v == "0" || v.eq_ignore_ascii_case("false") {
+                        0
+                    } else {
+                        240
+                    }
+                })
+        })
+        .unwrap_or(240);
     Ok(Config {
         providers,
         projects,
@@ -1096,6 +1110,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         key_rotation_days,
         log_retention_days,
         expose_to_lan,
+        auto_update_interval_minutes,
     })
 }
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
 import License from "./License";
-import { checkForUpdate, downloadUpdate, installUpdate, type UpdateInfo } from "../utils/updater";
+
 
 type Settings = {
   port: number;
@@ -18,6 +18,7 @@ type Settings = {
   key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
+  auto_update_interval_minutes: number;
 } | null;
 
 export default function SettingsTab({
@@ -34,10 +35,6 @@ export default function SettingsTab({
   const { t, lang, setLang } = useI18n();
   const [port, setPort] = useState(String(settings?.port ?? 3742));
   const [copied, setCopied] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "downloading" | "done" | "error">("idle");
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [updatePath, setUpdatePath] = useState<string | null>(null);
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [keyRotationDays, setKeyRotationDays] = useState(String(settings?.key_rotation_days ?? 90));
@@ -57,48 +54,6 @@ export default function SettingsTab({
     await navigator.clipboard.writeText(settings.proxy_url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-
-  const handleCheckUpdate = async () => {
-    setUpdateStatus("checking");
-    setUpdateError(null);
-    setUpdateInfo(null);
-    setUpdatePath(null);
-    try {
-      const info = await checkForUpdate();
-      if (info) {
-        setUpdateInfo(info);
-        setUpdateStatus("idle");
-      } else {
-        setUpdateStatus("done");
-      }
-    } catch (e) {
-      setUpdateStatus("error");
-      setUpdateError(String(e));
-    }
-  };
-
-  const handleDownloadUpdate = async () => {
-    if (!updateInfo) return;
-    setUpdateStatus("downloading");
-    try {
-      const path = await downloadUpdate(updateInfo.asset_url);
-      setUpdatePath(path);
-      setUpdateStatus("done");
-    } catch (e) {
-      setUpdateStatus("error");
-      setUpdateError(String(e));
-    }
-  };
-
-  const handleInstallUpdate = async () => {
-    if (!updatePath) return;
-    try {
-      await installUpdate(updatePath);
-    } catch (e) {
-      setUpdateStatus("error");
-      setUpdateError(String(e));
-    }
   };
 
   useEffect(() => {
@@ -286,58 +241,12 @@ export default function SettingsTab({
         </button>
       </section>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
-        <h2 className="text-sm font-semibold">{t("updateCheck")}</h2>
-        <p className="mt-1 text-[11px] text-neutral-500">
-          {t("updateCheckHelp")}
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleCheckUpdate}
-            disabled={updateStatus === "checking" || updateStatus === "downloading"}
-            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            {updateStatus === "checking" ? t("updateChecking") : t("checkForUpdates")}
-          </button>
-          {updateInfo && (
-            <button
-              onClick={handleDownloadUpdate}
-              disabled={updateStatus === "downloading"}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {updateStatus === "downloading" ? t("working") : t("downloadUpdate")}
-            </button>
-          )}
-          {updatePath && (
-            <button
-              onClick={handleInstallUpdate}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              {t("installUpdate")}
-            </button>
-          )}
-        </div>
-        {updateInfo && updateStatus !== "downloading" && updateStatus !== "done" && (
-          <p className="mt-2 text-xs text-emerald-600">
-            {t("updateAvailable", { version: updateInfo.version })}
-          </p>
-        )}
-        {updateStatus === "done" && !updatePath && (
-          <p className="mt-2 text-xs text-emerald-600">{t("updateUpToDate")}</p>
-        )}
-        {updatePath && (
-          <p className="mt-2 text-xs text-emerald-600">
-            {t("updateDownloaded", { path: updatePath })}
-          </p>
-        )}
-        {updateStatus === "error" && updateError && (
-          <p className="mt-2 text-xs text-red-600">
-            {t("updateCheckFailed", { error: updateError })}
-          </p>
-        )}
-      </section>
-
-      <License licensed={licensed} onChange={onLicenseChange} />
+      <License
+        licensed={licensed}
+        onChange={onLicenseChange}
+        settings={settings}
+        onSettingsChanged={onChanged}
+      />
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">

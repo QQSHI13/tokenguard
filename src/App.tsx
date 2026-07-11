@@ -10,8 +10,6 @@ import Banner from "./components/Banner";
 import { useI18n } from "./i18n";
 import {
   isLicensed,
-  validateStoredKey,
-  getLicenseKey,
 } from "./utils/license";
 import { runAutoUpdate } from "./utils/updater";
 
@@ -29,6 +27,7 @@ type Settings = {
   key_rotation_days: number;
   log_retention_days: number;
   expose_to_lan: boolean;
+  auto_update_interval_minutes: number;
 };
 type Spend = { today: number; budget: number };
 
@@ -62,19 +61,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    getLicenseKey().then((key) => {
-      if (!key) return;
-      validateStoredKey().then((valid) => {
-        if (!valid) setLicensed(false);
-      });
-    });
-  }, []);
-
-  useEffect(() => {
+    const minutes = settings?.auto_update_interval_minutes ?? 240;
+    if (!licensed || minutes === 0) return;
     runAutoUpdate();
-    const i = setInterval(runAutoUpdate, 1000 * 60 * 60 * 4); // every 4 hours
+    const i = setInterval(runAutoUpdate, minutes * 60 * 1000);
     return () => clearInterval(i);
-  }, []);
+  }, [licensed, settings?.auto_update_interval_minutes]);
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
@@ -138,10 +130,7 @@ export default function App() {
           ))}
         </nav>
 
-        <Banner
-          licensed={licensed}
-          onLicenseChange={setLicensed}
-        />
+        <Banner licensed={licensed} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

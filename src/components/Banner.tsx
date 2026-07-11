@@ -1,51 +1,20 @@
-import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { clearLicenseKey, validateStoredKey } from "../utils/license";
 import { useI18n } from "../i18n";
 
 const CTA_URL = "https://tokenguard.pages.dev/buy.html";
 
 export default function Banner({
   licensed,
-  onLicenseChange,
 }: {
   licensed: boolean;
-  onLicenseChange: (licensed: boolean) => void;
 }) {
   const { t } = useI18n();
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const check = async () => {
-      if (licensed) {
-        const valid = await validateStoredKey();
-        if (cancelled) return;
-        if (!valid) {
-          await clearLicenseKey();
-          onLicenseChange(false);
-        }
-        setVisible(!valid);
-      } else {
-        setVisible(true);
-      }
-    };
-
-    check();
-    const i = setInterval(check, 1000 * 60 * 60); // revalidate hourly
-    return () => {
-      cancelled = true;
-      clearInterval(i);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [licensed]);
 
   const handleCta = () => {
     openUrl(CTA_URL).catch(console.error);
   };
 
-  if (!visible) return null;
+  if (licensed) return null;
 
   return (
     <div className="border-t border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/60">

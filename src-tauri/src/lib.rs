@@ -99,6 +99,7 @@ pub fn run() {
             commands::run_auto_export_now_cmd,
             commands::get_auto_start,
             commands::set_auto_start,
+            commands::set_auto_update_interval_minutes,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

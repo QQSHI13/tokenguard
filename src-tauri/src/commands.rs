@@ -32,6 +32,7 @@ pub struct SettingsDto {
     pub key_rotation_days: u32,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
+    pub auto_update_interval_minutes: u32,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -404,6 +405,12 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .expose_to_lan,
+        auto_update_interval_minutes: state
+            .inner()
+            .config
+            .read()
+            .map_err(|e| e.to_string())?
+            .auto_update_interval_minutes,
     })
 }
 
@@ -673,6 +680,26 @@ pub fn set_log_retention_days(state: State<'_, Arc<AppState>>, days: u32) -> Res
         .map_err(|e| e.to_string())?
         .log_retention_days = days;
     Ok(days)
+}
+
+#[tauri::command]
+pub fn set_auto_update_interval_minutes(
+    state: State<'_, Arc<AppState>>,
+    minutes: u32,
+) -> Result<u32, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "auto_update_interval_minutes", &minutes.to_string())
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .auto_update_interval_minutes = minutes;
+    Ok(minutes)
 }
 
 #[tauri::command]
