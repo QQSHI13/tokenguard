@@ -446,6 +446,105 @@ fn convert_message_content(content: &Value, from: ProviderFormat, to: ProviderFo
     }
 }
 
+/// Look backwards through the message history to find the function/tool name
+/// associated with a tool_use_id. Used when converting tool-result messages to
+/// formats that require a name (e.g. Google `functionResponse`).
+fn find_tool_name_by_id(messages: &[Value], tool_use_id: &str) -> Option<String> {
+    for m in messages.iter().rev() {
+        if m.get("role").and_then(|r| r.as_str()) != Some("assistant") {
+            continue;
+        }
+        // OpenAI-style assistant tool_calls.
+        if let Some(tcs) = m.get("tool_calls").and_then(|v| v.as_array()) {
+            for tc in tcs {
+                if tc.get("id").and_then(|v| v.as_str()) == Some(tool_use_id) {
+                    return tc
+                        .get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                }
+            }
+        }
+        // Anthropic-style assistant tool_use blocks.
+        if let Some(blocks) = m.get("content").and_then(|v| v.as_array()) {
+            for b in blocks {
+                if b.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                    && b.get("id").and_then(|v| v.as_str()) == Some(tool_use_id)
+                {
+                    return b.get("name").and_then(|v| v.as_str()).map(str::to_string);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Split an Anthropic user message content into plain text and tool-result pairs.
+/// Returns `None` when the content contains anything other than text and
+/// tool_result blocks (e.g. images), so the normal content converter can handle it.
+fn split_anthropic_user_content(
+    content: Option<&Value>,
+) -> Option<(String, Vec<(String, String)>)> {
+    let arr = content?.as_array()?;
+    let mut text_parts = Vec::new();
+    let mut tool_results = Vec::new();
+    for block in arr {
+        match block.get("type").and_then(|v| v.as_str()) {
+            Some("text") => {
+                if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
+                    text_parts.push(t);
+                }
+            }
+            Some("tool_result") => {
+                let id = block.get("tool_use_id").and_then(|v| v.as_str())?;
+                let content = match block.get("content") {
+                    Some(Value::String(s)) => s.clone(),
+                    Some(Value::Array(parts)) => parts
+                        .iter()
+                        .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    _ => String::new(),
+                };
+                tool_results.push((id.to_string(), content));
+            }
+            _ => return None,
+        }
+    }
+    if text_parts.is_empty() && tool_results.is_empty() {
+        return None;
+    }
+    Some((text_parts.join(""), tool_results))
+}
+
+/// Split an Anthropic assistant message content into plain text and OpenAI-style tool_calls.
+/// Returns `None` for non-text/non-tool_use content so images are preserved.
+fn split_anthropic_assistant_content(content: Option<&Value>) -> Option<(String, Vec<Value>)> {
+    let arr = content?.as_array()?;
+    let mut text_parts = Vec::new();
+    let mut tool_calls = Vec::new();
+    for block in arr {
+        match block.get("type").and_then(|v| v.as_str()) {
+            Some("text") => {
+                if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
+                    text_parts.push(t);
+                }
+            }
+            Some("tool_use") => {
+                if let Some(tc) = anthropic_tool_use_to_openai(block) {
+                    tool_calls.push(tc);
+                }
+            }
+            _ => return None,
+        }
+    }
+    if text_parts.is_empty() && tool_calls.is_empty() {
+        return None;
+    }
+    Some((text_parts.join(""), tool_calls))
+}
+
 fn openai_stop_to_array(stop: Option<&Value>) -> Option<Vec<Value>> {
     stop.map(|v| match v {
         Value::String(s) => vec![Value::String(s.clone())],
@@ -599,19 +698,51 @@ fn openai_to_anthropic_request(body: &Value, remote_model: &str) -> Value {
         out.insert("system".to_string(), Value::String(system));
     }
 
+    let openai_messages = messages.as_array().cloned().unwrap_or_default();
     let mut anthropic_messages = Vec::new();
-    for m in messages.as_array().unwrap_or(&Vec::new()).iter() {
+    for m in &openai_messages {
         if let Some(role) = m.get("role").and_then(|v| v.as_str()) {
+            if role == "tool" {
+                if let Some(id) = m.get("tool_call_id").and_then(|v| v.as_str()) {
+                    let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    anthropic_messages.push(serde_json::json!({
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": id,
+                            "content": content,
+                        }],
+                    }));
+                }
+                continue;
+            }
             let anthropic_role = match role {
                 "assistant" => "assistant",
                 _ => "user",
             };
-            let content = m
+            let mut content = m
                 .get("content")
                 .map(|c| {
                     convert_message_content(c, ProviderFormat::OpenAI, ProviderFormat::Anthropic)
                 })
                 .unwrap_or_else(|| Value::String(String::new()));
+            if role == "assistant" {
+                if let Some(tcs) = m.get("tool_calls").and_then(|v| v.as_array()) {
+                    let mut blocks = match content {
+                        Value::String(s) if !s.is_empty() => {
+                            vec![serde_json::json!({"type": "text", "text": s})]
+                        }
+                        Value::Array(arr) => arr,
+                        _ => Vec::new(),
+                    };
+                    for tc in tcs {
+                        if let Some(tool) = openai_tool_call_to_anthropic(tc) {
+                            blocks.push(tool);
+                        }
+                    }
+                    content = Value::Array(blocks);
+                }
+            }
             anthropic_messages
                 .push(serde_json::json!({"role": anthropic_role, "content": content}));
         }
@@ -735,6 +866,35 @@ fn anthropic_to_openai_request(body: &Value, remote_model: &str) -> Value {
     }
     for m in messages.as_array().unwrap_or(&Vec::new()).iter() {
         if let Some(role) = m.get("role").and_then(|v| v.as_str()) {
+            if role == "user" {
+                if let Some((text, tool_results)) = split_anthropic_user_content(m.get("content")) {
+                    if !text.is_empty() {
+                        openai_messages.push(serde_json::json!({"role": "user", "content": text}));
+                    }
+                    for (id, content) in tool_results {
+                        openai_messages.push(serde_json::json!({
+                            "role": "tool",
+                            "tool_call_id": id,
+                            "content": content,
+                        }));
+                    }
+                    continue;
+                }
+            }
+            if role == "assistant" {
+                if let Some((text, tool_calls)) =
+                    split_anthropic_assistant_content(m.get("content"))
+                {
+                    let mut msg = serde_json::Map::new();
+                    msg.insert("role".to_string(), Value::String("assistant".to_string()));
+                    msg.insert("content".to_string(), Value::String(text));
+                    if !tool_calls.is_empty() {
+                        msg.insert("tool_calls".to_string(), Value::Array(tool_calls));
+                    }
+                    openai_messages.push(Value::Object(msg));
+                    continue;
+                }
+            }
             let content = m
                 .get("content")
                 .map(|c| {
@@ -855,18 +1015,48 @@ fn openai_to_google_request(body: &Value) -> Value {
     let obj = body.as_object().cloned().unwrap_or_default();
     let (system, messages) = split_openai_messages(obj.get("messages"));
 
+    let openai_messages = messages.as_array().cloned().unwrap_or_default();
     let mut contents = Vec::new();
-    for m in messages.as_array().unwrap_or(&Vec::new()).iter() {
+    for m in &openai_messages {
         if let Some(role) = m.get("role").and_then(|v| v.as_str()) {
+            if role == "tool" {
+                if let Some(id) = m.get("tool_call_id").and_then(|v| v.as_str()) {
+                    let name = find_tool_name_by_id(&openai_messages, id)
+                        .unwrap_or_else(|| id.to_string());
+                    let response = m
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or_else(|| {
+                            m.get("content")
+                                .cloned()
+                                .unwrap_or_else(|| Value::String(String::new()))
+                        });
+                    contents.push(serde_json::json!({
+                        "role": "user",
+                        "parts": [{"functionResponse": {"name": name, "response": response}}],
+                    }));
+                }
+                continue;
+            }
             let google_role = match role {
                 "assistant" => "model",
                 _ => "user",
             };
-            let parts = m
+            let mut parts = m
                 .get("content")
                 .map(|c| convert_message_content(c, ProviderFormat::OpenAI, ProviderFormat::Google))
                 .and_then(|v| v.as_array().cloned())
                 .unwrap_or_else(|| vec![serde_json::json!({"text": ""})]);
+            if role == "assistant" {
+                if let Some(tcs) = m.get("tool_calls").and_then(|v| v.as_array()) {
+                    for tc in tcs {
+                        if let Some(call) = openai_tool_call_to_google(tc) {
+                            parts.push(call);
+                        }
+                    }
+                }
+            }
             contents.push(serde_json::json!({
                 "role": google_role,
                 "parts": parts,
@@ -1045,9 +1235,65 @@ fn google_to_openai_request(body: &Value, remote_model: &str) -> Value {
                 .get("parts")
                 .cloned()
                 .unwrap_or_else(|| Value::Array(vec![]));
-            let content =
-                convert_message_content(&parts, ProviderFormat::Google, ProviderFormat::OpenAI);
-            messages.push(serde_json::json!({"role": role, "content": content}));
+
+            if role == "user" {
+                let mut user_parts = Vec::new();
+                let mut tool_results = Vec::new();
+                for part in parts.as_array().unwrap_or(&Vec::new()).iter() {
+                    if part.get("functionResponse").is_some() {
+                        if let Some(fr) = part.get("functionResponse") {
+                            let name = fr.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            let id = format!("call_{}", name);
+                            let response = fr.get("response").cloned().unwrap_or(Value::Null);
+                            tool_results.push(serde_json::json!({
+                                "role": "tool",
+                                "tool_call_id": id,
+                                "content": response.to_string(),
+                            }));
+                        }
+                    } else {
+                        user_parts.push(part.clone());
+                    }
+                }
+                if !user_parts.is_empty() {
+                    let content = convert_message_content(
+                        &Value::Array(user_parts),
+                        ProviderFormat::Google,
+                        ProviderFormat::OpenAI,
+                    );
+                    messages.push(serde_json::json!({"role": "user", "content": content}));
+                }
+                messages.extend(tool_results);
+            } else {
+                let mut assistant_parts = Vec::new();
+                let mut tool_calls = Vec::new();
+                for part in parts.as_array().unwrap_or(&Vec::new()).iter() {
+                    if let Some(fc) = part.get("functionCall") {
+                        let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let args = fc.get("args").cloned().unwrap_or(Value::Null);
+                        let id = format!("call_{}", name);
+                        tool_calls.push(serde_json::json!({
+                            "id": id,
+                            "type": "function",
+                            "function": {"name": name, "arguments": args.to_string()},
+                        }));
+                    } else {
+                        assistant_parts.push(part.clone());
+                    }
+                }
+                let mut msg = serde_json::Map::new();
+                msg.insert("role".to_string(), Value::String("assistant".to_string()));
+                let content = convert_message_content(
+                    &Value::Array(assistant_parts),
+                    ProviderFormat::Google,
+                    ProviderFormat::OpenAI,
+                );
+                msg.insert("content".to_string(), content);
+                if !tool_calls.is_empty() {
+                    msg.insert("tool_calls".to_string(), Value::Array(tool_calls));
+                }
+                messages.push(Value::Object(msg));
+            }
         }
     }
 
@@ -1589,6 +1835,48 @@ mod tests {
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[1]["type"], "image_url");
         assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,XYZ");
+    }
+
+    #[test]
+    fn openai_tool_result_to_anthropic() {
+        let body = serde_json::json!({
+            "model": "claude-3-5-sonnet",
+            "messages": [
+                {"role": "assistant", "content": "ok", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "call_1", "content": "{\"temperature\": 72}"},
+            ],
+        });
+        let out = convert_request(
+            ProviderFormat::OpenAI,
+            ProviderFormat::Anthropic,
+            &body,
+            "claude-3-5-sonnet",
+        );
+        let tool_result = &out["messages"][1]["content"].as_array().unwrap()[0];
+        assert_eq!(tool_result["type"], "tool_result");
+        assert_eq!(tool_result["tool_use_id"], "call_1");
+        assert_eq!(tool_result["content"], "{\"temperature\": 72}");
+    }
+
+    #[test]
+    fn anthropic_tool_result_to_openai() {
+        let body = serde_json::json!({
+            "model": "gpt-4o",
+            "messages": [
+                {"role": "assistant", "content": [{"type": "text", "text": "ok"}, {"type": "tool_use", "id": "tu_1", "name": "get_weather", "input": {}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tu_1", "content": "sunny"}]},
+            ],
+        });
+        let out = convert_request(
+            ProviderFormat::Anthropic,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let tool_msg = &out["messages"][1];
+        assert_eq!(tool_msg["role"], "tool");
+        assert_eq!(tool_msg["tool_call_id"], "tu_1");
+        assert_eq!(tool_msg["content"], "sunny");
     }
 
     #[test]
