@@ -1495,6 +1495,15 @@ pub fn get_project_usage(
 }
 
 #[tauri::command]
+pub fn get_project_totals(
+    state: State<'_, Arc<AppState>>,
+    days: u64,
+) -> Result<Vec<db::ProjectTotal>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    db::project_totals(&conn, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_monthly_usage(
     state: State<'_, Arc<AppState>>,
     months: Option<u32>,

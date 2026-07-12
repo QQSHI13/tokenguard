@@ -202,6 +202,15 @@ export default function Providers({ onChange }: { onChange: () => void }) {
     }
   };
 
+  const checkHealth = async (id: number) => {
+    try {
+      await invoke<ProviderHealth>("check_provider_health", { id });
+      refresh();
+    } catch (err) {
+      console.error("health check failed", err);
+    }
+  };
+
   const applyPreset = (p: (typeof PRESETS)[number]) => {
     setForm((f) => ({
       ...f,
@@ -225,77 +234,107 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           {providers.length === 0 && (
             <p className="text-xs text-neutral-600">{t("noProvidersYet")}</p>
           )}
-          {providers.map(({ provider: p, api_key_set, key_error, key_created_at }) => (
-            <div
-              key={p.id}
-              className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-                editingId === p.id
-                  ? "border-emerald-600 bg-neutral-900/60"
-                  : "border-neutral-800 bg-neutral-900/40"
-              }`}
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-200">
-                    {p.name}
-                  </span>
-                  <HealthDot health={health[p.id]} t={t} />
-                  {p.is_default && (
-                    <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                      {t("default")}
-                    </span>
-                  )}
-                  {key_error ? (
-                    <span
-                      title={key_error}
-                      className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300"
-                    >
-                      {t("keyError")}
-                    </span>
-                  ) : api_key_set ? (
-                    <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
-                      {t("keySet")}
-                    </span>
-                  ) : (
-                    <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
-                      {t("noKey")}
-                    </span>
-                  )}
-                </div>
-                <div className="truncate font-mono text-[11px] text-neutral-500">
-                  {p.base_url} · {p.format} · {p.auth}
-                </div>
-                {p.models.length > 0 && (
-                  <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-600">
-                    {p.models.map((m) => m.local).join(", ")}
+          {providers.map(({ provider: p, api_key_set, key_error, key_created_at }) => {
+            const h = health[p.id];
+            const fallback = providers.find(({ provider: fp }) => fp.id === p.fallback_provider_id)?.provider;
+            return (
+              <div
+                key={p.id}
+                className={`rounded-lg border px-3 py-2 ${
+                  editingId === p.id
+                    ? "border-emerald-600 bg-neutral-900/60"
+                    : "border-neutral-800 bg-neutral-900/40"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-neutral-200">
+                        {p.name}
+                      </span>
+                      {p.is_default && (
+                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                          {t("default")}
+                        </span>
+                      )}
+                      {key_error ? (
+                        <span
+                          title={key_error}
+                          className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300"
+                        >
+                          {t("keyError")}
+                        </span>
+                      ) : api_key_set ? (
+                        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
+                          {t("keySet")}
+                        </span>
+                      ) : (
+                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
+                          {t("noKey")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="flex items-center gap-1.5">
+                        <HealthDot health={h} t={t} />
+                        <HealthText health={h} t={t} />
+                      </span>
+                      {fallback ? (
+                        <span className="text-neutral-500">
+                          {t("fallbackTo", { name: fallback.name })}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-600">{t("noFallback")}</span>
+                      )}
+                    </div>
+                    <div className="truncate font-mono text-[11px] text-neutral-500">
+                      {p.base_url} · {p.format} · {p.auth}
+                    </div>
+                    {p.models.length > 0 && (
+                      <div className="mt-0.5 truncate font-mono text-[11px] text-neutral-600">
+                        {p.models.map((m) => m.local).join(", ")}
+                      </div>
+                    )}
+                    {h?.checked_at && (
+                      <div className="mt-1 text-[10px] text-neutral-600">
+                        {t("lastChecked")}: {new Date(h.checked_at).toLocaleString()}
+                      </div>
+                    )}
                   </div>
-                )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => checkHealth(p.id)}
+                      title={t("checkHealth")}
+                      className="rounded bg-neutral-800 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-700"
+                    >
+                      {t("checkHealth")}
+                    </button>
+                    <button
+                      onClick={() => startEdit(p)}
+                      title="Edit"
+                      className="text-neutral-500 hover:text-emerald-400"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => refreshModels(p.id)}
+                      disabled={refreshing === p.id}
+                      title="Fetch /v1/models"
+                      className="text-neutral-500 hover:text-sky-400 disabled:opacity-40"
+                    >
+                      {refreshing === p.id ? "⋯" : "↻"}
+                    </button>
+                    <button
+                      onClick={() => remove(p.id, p.name)}
+                      className="text-neutral-500 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => startEdit(p)}
-                  title="Edit"
-                  className="text-neutral-500 hover:text-emerald-400"
-                >
-                  ✎
-                </button>
-                <button
-                  onClick={() => refreshModels(p.id)}
-                  disabled={refreshing === p.id}
-                  title="Fetch /v1/models"
-                  className="text-neutral-500 hover:text-sky-400 disabled:opacity-40"
-                >
-                  {refreshing === p.id ? "⋯" : "↻"}
-                </button>
-                <button
-                  onClick={() => remove(p.id, p.name)}
-                  className="text-neutral-500 hover:text-red-400"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -656,6 +695,33 @@ function HealthDot({
       title={health.error ?? t("unhealthy")}
       className="h-2 w-2 rounded-full bg-red-500"
     />
+  );
+}
+
+function HealthText({
+  health,
+  t,
+}: {
+  health: ProviderHealth | undefined;
+  t: (
+    key: keyof typeof import("../i18n").translations.en,
+    vars?: Record<string, string | number>,
+  ) => string;
+}) {
+  if (!health) {
+    return <span className="text-neutral-500">{t("healthUnknown")}</span>;
+  }
+  if (health.ok) {
+    return (
+      <span className="text-emerald-400">
+        {t("healthy", { ms: health.latency_ms })}
+      </span>
+    );
+  }
+  return (
+    <span className="text-red-400" title={health.error ?? undefined}>
+      {health.error ?? t("unhealthy")}
+    </span>
   );
 }
 

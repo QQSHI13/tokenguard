@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Pricing — Token Guard</title>
-  <meta name="description" content="Token Guard license pricing. One-time payment to remove the banner.">
+  <title>Get a license — Token Guard</title>
+  <meta name="description" content="Token Guard is free. Buy a one-time license to remove the banner and enable automatic updates.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css?v=3">
   <meta name="color-scheme" content="light dark">
   <script>
     if ('serviceWorker' in navigator) {
@@ -39,83 +39,88 @@
     </div>
   </header>
 
-  <main class="px-6 py-20">
-    <section id="pricing" class="px-6 py-20">
-      <div class="mx-auto max-w-4xl">
-        <h2 class="text-center text-3xl font-bold">Pricing</h2>
+  <main class="px-6 py-12">
+    <section class="mx-auto max-w-4xl">
+      <div class="text-center">
+        <h1 class="text-4xl font-bold">Get your Token Guard license</h1>
+        <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
+          The app is free. A license removes the support banner and enables automatic updates.
+        </p>
+      </div>
 
-        <div class="mt-10 grid gap-6 md:grid-cols-2">
-          <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h3 class="text-xl font-bold">Token Guard</h3>
-            <div class="mt-4 flex items-baseline gap-2">
-              <p class="text-4xl font-bold">$4.99</p>
-              <span class="text-sm text-slate-500 dark:text-slate-400">one-time purchase</span>
-            </div>
-            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Taxes may apply and will be calculated at checkout.</p>
-
-            <ul class="mt-6 space-y-3 text-slate-700 dark:text-slate-300">
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>OpenAI, Anthropic, and Gemini SDK support</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Real-time LLM API cost tracking</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Per-project budgets &amp; limits</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>System tray counter</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Unlimited history</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Auto-updates</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>2 devices per license</span>
-              </li>
-            </ul>
-
-            <p class="mt-6 text-sm text-slate-500 dark:text-slate-400">One-time purchase. Lifetime license for v1.x updates.</p>
-
-            <button id="buy-button" class="mt-6 w-full rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">Buy Now — $4.99</button>
-            <p id="buy-error" class="mt-2 text-sm text-red-500" style="display: none;"></p>
+      <div class="mt-10 grid gap-6 md:grid-cols-2">
+        <div class="rounded-2xl border border-emerald-200 bg-white p-8 shadow-sm dark:border-emerald-900 dark:bg-slate-800">
+          <h3 class="text-xl font-bold">Licensed</h3>
+          <div class="mt-4 flex items-baseline gap-2">
+            <p class="text-4xl font-bold">$4.99</p>
+            <span class="text-sm text-slate-500 dark:text-slate-400">one-time purchase</span>
           </div>
+          <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Taxes may apply and will be calculated at checkout.</p>
 
-          <div class="rounded-2xl border border-slate-200 bg-slate-50 p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <h3 class="text-xl font-bold">Free Edition</h3>
-            <p class="mt-4 text-4xl font-bold">Free</p>
+          <ul class="mt-6 space-y-3 text-slate-700 dark:text-slate-300">
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>All core features (same as free)</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>No support banner</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Automatic updates from GitHub Releases</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Lifetime v1.x updates</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Use on up to 2 devices</span>
+            </li>
+          </ul>
 
-            <ul class="mt-6 space-y-3 text-slate-700 dark:text-slate-300">
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Same core features</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>7-day history</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Manual updates</span>
-              </li>
-              <li class="flex items-start gap-3">
-                <span class="text-emerald-600">✓</span>
-                <span>Support banner</span>
-              </li>
-            </ul>
-
-            <a href="https://github.com/QQSHI13/tokenguard/releases" class="mt-6 inline-flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700">Download from GitHub</a>
-          </div>
+          <button id="buy-button" class="mt-6 w-full rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">Buy Now — $4.99</button>
+          <p id="buy-error" class="mt-2 text-sm text-red-500" style="display: none;"></p>
         </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <h3 class="text-xl font-bold">Free</h3>
+          <p class="mt-4 text-4xl font-bold">$0</p>
+          <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Download from GitHub Releases.</p>
+
+          <ul class="mt-6 space-y-3 text-slate-700 dark:text-slate-300">
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>All core gateway features</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Unlimited providers and projects</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Unlimited history</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Manual updates</span>
+            </li>
+            <li class="flex items-start gap-3">
+              <span class="text-emerald-600">✓</span>
+              <span>Support banner shown</span>
+            </li>
+          </ul>
+
+          <a href="https://github.com/QQSHI13/tokenguard/releases" class="mt-6 inline-flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700">Download from GitHub</a>
+        </div>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-2xl rounded-xl bg-slate-50 p-6 text-center dark:bg-slate-900">
+        <h3 class="font-semibold">What happens after purchase?</h3>
+        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          You'll receive a license key by email. Paste it into the License section in Token Guard Settings to activate the device. One license covers 2 devices; you can unregister old devices at any time.
+        </p>
       </div>
     </section>
 

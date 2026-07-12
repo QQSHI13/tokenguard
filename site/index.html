@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Token Guard — The local LLM gateway</title>
-  <meta name="description" content="Track every token. Stop surprise bills. Nothing leaves your computer.">
+  <title>Token Guard — Local LLM cost tracker &amp; gateway</title>
+  <meta name="description" content="Track every token, stop surprise bills, and keep your prompts on your machine. Token Guard is a free local gateway for OpenAI, Anthropic, and Google Gemini.">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css?v=3">
   <meta name="color-scheme" content="light dark">
   <script>
     if ('serviceWorker' in navigator) {
@@ -31,8 +31,9 @@
         <span>Token Guard</span>
       </a>
       <nav class="hidden items-center gap-6 text-sm font-medium md:flex">
+        <a href="#how-it-works" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">How it works</a>
         <a href="#features" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Features</a>
-        <a href="#compare" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Compare</a>
+        <a href="#pricing" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Pricing</a>
         <a href="/privacy.html" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Privacy</a>
       </nav>
       <div class="flex items-center gap-3">
@@ -40,32 +41,34 @@
           🌙
         </button>
         <a href="/buy.html" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-          Buy
+          Buy license
         </a>
       </div>
     </div>
   </header>
 
   <main>
-    <section class="px-6 pt-24 pb-20 text-center">
+    <section class="px-6 pt-20 pb-16 text-center">
       <div class="mx-auto max-w-4xl">
-        <h1 class="text-5xl font-extrabold tracking-tight sm:text-6xl">
-          The local LLM gateway.
+        <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          Free, open-source, runs locally
+        </div>
+        <h1 class="mt-6 text-5xl font-extrabold tracking-tight sm:text-6xl">
+          Stop surprise LLM bills.
         </h1>
         <p class="mt-6 text-2xl font-medium text-slate-600 dark:text-slate-400">
-          Your keys. Your machine. Your tokens.
+          Track every token. Set hard limits. Keep your prompts on your machine.
         </p>
         <p class="mx-auto mt-6 max-w-2xl text-lg text-slate-500 dark:text-slate-400">
-          Token Guard is the only LLM cost monitor that <strong>cannot</strong> see your prompts.
-          No cloud, no SDK, no extra hop. Track every token and stop surprise bills —
-          nothing leaves your computer.
+          Token Guard is a local gateway that sits between your coding agents and OpenAI, Anthropic, or Gemini. It counts cost per project, enforces budgets, and fails over to backup providers — without ever seeing your prompts.
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
           <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg bg-slate-900 px-6 py-3 text-base font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
             Download for free
           </a>
           <a href="/buy.html" class="rounded-lg border border-slate-200 px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-900">
-            Get the paid edition
+            Get a license — $4.99
           </a>
         </div>
         <p class="mt-4 text-sm text-slate-400 dark:text-slate-500">
@@ -74,76 +77,102 @@
       </div>
     </section>
 
-    <section id="features" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
+    <section id="how-it-works" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
+      <div class="mx-auto max-w-5xl">
+        <h2 class="text-center text-3xl font-bold">How it works</h2>
+        <p class="mx-auto mt-4 max-w-2xl text-center text-lg text-slate-600 dark:text-slate-400">
+          One environment variable. No SDK changes. No extra network hop.
+        </p>
+        <div class="mt-12 grid gap-8 md:grid-cols-3">
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">1</div>
+            <h3 class="mt-4 text-xl font-bold">Point your client</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Set <code class="rounded bg-slate-100 px-1 py-0.5 font-mono text-sm dark:bg-slate-700">OPENAI_BASE_URL=http://localhost:3742/v1</code>. Token Guard speaks the OpenAI, Anthropic, and Gemini SDK shapes natively.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">2</div>
+            <h3 class="mt-4 text-xl font-bold">Add your real key</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Store your provider API key in Token Guard once. It lives in the OS keychain and is never written to your agent's config.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">3</div>
+            <h3 class="mt-4 text-xl font-bold">Tag projects</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Give each project a label key and use it as <code class="rounded bg-slate-100 px-1 py-0.5 font-mono text-sm dark:bg-slate-700">OPENAI_API_KEY</code> in that agent. Token Guard tags the request and forwards with your real key.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="px-6 py-20">
       <div class="mx-auto max-w-6xl">
-        <h2 class="text-center text-3xl font-bold">Features</h2>
+        <h2 class="text-center text-3xl font-bold">Everything you need to control spend</h2>
         <div class="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔌</div>
-            <h3 class="text-xl font-bold">One proxy, three API shapes</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Use the OpenAI, Anthropic, or Google Gemini SDK against any configured provider.
-              Token Guard converts requests, responses, and streaming chunks automatically.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔒</div>
-            <h3 class="text-xl font-bold">Cannot see your prompts</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              The proxy runs on your machine. Your prompts stream straight to the provider —
-              never through a third-party server.
-            </p>
-          </div>
           <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
             <div class="mb-4 text-3xl">💰</div>
             <h3 class="text-xl font-bold">Real-time cost tracking</h3>
             <p class="mt-3 text-slate-600 dark:text-slate-300">
-              See spend per project, provider, and model. Set money, token, request, or time
-              limits and get warned or blocked before a bill surprises you.
+              See spend per project, provider, model, and day. Catch runaway agents before they rack up a bill.
             </p>
           </div>
           <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🗝️</div>
+            <div class="mb-4 text-3xl">🚦</div>
+            <h3 class="text-xl font-bold">Budgets &amp; limits</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Set money, token, request, or time caps by project or globally. Choose warn, block, or pause when a limit is hit.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔌</div>
+            <h3 class="text-xl font-bold">One proxy, three API shapes</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Use OpenAI, Anthropic, or Google Gemini SDKs against any configured provider. Requests, responses, and streams are converted automatically.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔄</div>
+            <h3 class="text-xl font-bold">Provider fallback</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Link a backup provider to each primary. If the main provider returns a 5xx or 429, Token Guard retries and falls back automatically.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔒</div>
             <h3 class="text-xl font-bold">Keys in the OS keychain</h3>
             <p class="mt-3 text-slate-600 dark:text-slate-300">
-              API keys live in Windows Credential Manager, macOS Keychain, or Linux Secret Service.
-              Your code never touches them.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
-            <div class="mb-4 text-3xl">⚡</div>
-            <h3 class="text-xl font-bold">Zero added latency</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              No extra network hop. The request path is identical to calling the provider directly,
-              so SSE streams arrive as fast as the provider sends them.
+              API keys live in Windows Credential Manager, macOS Keychain, or Linux Secret Service. Your code and config files never touch them.
             </p>
           </div>
           <div class="rounded-2xl bg-white p-8 shadow-sm dark:bg-slate-800">
             <div class="mb-4 text-3xl">🖥️</div>
             <h3 class="text-xl font-bold">Native tray app</h3>
             <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Pause, resume, open the dashboard, or see today’s spend from the system tray.
-              macOS, Windows, and Linux.
+              Pause, resume, open the dashboard, or check today's spend from the system tray on macOS, Windows, and Linux.
             </p>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="px-6 py-20">
+    <section class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
       <div class="mx-auto max-w-4xl text-center">
         <h2 class="text-3xl font-bold">One env var. Done.</h2>
         <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-          Point any OpenAI-compatible client at Token Guard and keep using the models you already pay for.
+          Your existing OpenAI-compatible client keeps working. Token Guard only intercepts the base URL.
         </p>
         <div class="mt-8 overflow-hidden rounded-xl bg-slate-900 p-6 text-left font-mono text-sm text-emerald-300 shadow-lg">
           OPENAI_BASE_URL=http://localhost:3742/v1<br>
-          OPENAI_API_KEY=dummy
+          OPENAI_API_KEY=tg_your-project-label-key
         </div>
       </div>
     </section>
 
-    <section id="compare" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
+    <section id="compare" class="px-6 py-20">
       <div class="mx-auto max-w-5xl overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-800">
         <table class="w-full text-left text-sm">
           <thead class="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
@@ -198,25 +227,31 @@
 
     <section id="pricing" class="px-6 py-20 text-center">
       <div class="mx-auto max-w-2xl rounded-2xl bg-slate-50 p-10 dark:bg-slate-900">
-        <h2 class="text-3xl font-bold">Simple pricing</h2>
-        <p class="mt-6 text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Token Guard License — $4.99 USD
+        <h2 class="text-3xl font-bold">Simple, honest pricing</h2>
+        <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
+          The app is free and fully functional. Buy a license to remove the support banner and enable automatic updates.
         </p>
-        <p class="mt-4 text-slate-600 dark:text-slate-400">
-          One-time payment. No subscription. Covers 2 devices.
+        <p class="mt-6 text-4xl font-bold text-slate-900 dark:text-slate-100">
+          $4.99 USD
         </p>
-        <p class="mt-2 text-sm text-slate-500 dark:text-slate-500">
+        <p class="mt-2 text-slate-600 dark:text-slate-400">
+          One-time payment. No subscription.
+        </p>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-500">
           Taxes may apply and will be calculated at checkout.
         </p>
         <ul class="mt-6 inline-block text-left text-slate-600 dark:text-slate-400">
           <li class="flex gap-2"><span class="text-emerald-600">✓</span> Remove the support banner</li>
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Automatic updates</li>
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Automatic updates from GitHub Releases</li>
           <li class="flex gap-2"><span class="text-emerald-600">✓</span> Lifetime v1.x updates</li>
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> 2 devices per license</li>
+          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Use on up to 2 devices</li>
         </ul>
-        <div class="mt-8">
+        <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href="/buy.html" class="rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">
-            Buy now
+            Buy now — $4.99
+          </a>
+          <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg border border-slate-200 px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
+            Download free
           </a>
         </div>
       </div>
@@ -225,15 +260,14 @@
     <section class="px-6 py-20 text-center">
       <h2 class="text-3xl font-bold">Ready to stop surprise bills?</h2>
       <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-        Download the free edition from GitHub, or buy a license to remove the banner
-        and enable automatic updates.
+        Download the free app and route your first request in under a minute.
       </p>
       <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
         <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg bg-slate-900 px-6 py-3 text-base font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
           Download for free
         </a>
         <a href="/buy.html" class="rounded-lg border border-slate-200 px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-900">
-          Get the paid edition
+          Get a license — $4.99
         </a>
       </div>
     </section>

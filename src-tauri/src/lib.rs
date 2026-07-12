@@ -85,6 +85,7 @@ pub fn run() {
             commands::get_device_fingerprint,
             commands::get_provider_usage,
             commands::get_project_usage,
+            commands::get_project_totals,
             commands::get_monthly_usage,
             commands::check_provider_health,
             commands::get_provider_healths,

@@ -706,6 +706,40 @@ pub fn project_daily_usage(
     rows.collect()
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProjectTotal {
+    pub project_tag: Option<String>,
+    pub cost: f64,
+    pub tokens: u64,
+    pub requests: u64,
+}
+
+/// Total usage per project over the last `days`. `days = 0` means all history.
+/// Untagged requests are reported under project_tag = null.
+pub fn project_totals(conn: &Connection, days: u64) -> rusqlite::Result<Vec<ProjectTotal>> {
+    let mut sql = String::from(
+        "SELECT project_tag, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+         FROM logs WHERE 1=1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if days > 0 {
+        sql.push_str(" AND ts >= datetime('now', ?1)");
+        params.push(Box::new(format!("-{days} days")));
+    }
+    sql.push_str(" GROUP BY project_tag ORDER BY SUM(cost) DESC");
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(ProjectTotal {
+            project_tag: row.get(0)?,
+            cost: row.get(1)?,
+            tokens: row.get(2)?,
+            requests: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
 /// Aggregate usage per month for the last `months` months (including the current month).
 pub fn monthly_usage(conn: &Connection, months: u32) -> rusqlite::Result<Vec<MonthlyUsage>> {
     let sql = "SELECT strftime('%Y-%m', ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \

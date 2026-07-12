@@ -47,6 +47,13 @@ type MonthlyUsage = {
   requests: number;
 };
 
+type ProjectTotal = {
+  project_tag: string | null;
+  cost: number;
+  tokens: number;
+  requests: number;
+};
+
 type SimpleProvider = { id: number; name: string };
 type SimpleProject = { id: number; name: string };
 
@@ -73,6 +80,21 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
 
   const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage[]>([]);
   const [monthlyMetric, setMonthlyMetric] = useState<Metric>("cost");
+  const [projectTotals, setProjectTotals] = useState<ProjectTotal[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>("");
+
+  const rangeDays = useMemo(() => {
+    switch (range) {
+      case "today":
+        return 1;
+      case "7d":
+        return 7;
+      case "30d":
+        return 30;
+      case "all":
+        return 0;
+    }
+  }, [range]);
 
   const refresh = useCallback(() => {
     invoke<Log[]>("get_logs", { limit: 5000 }).then(setLogs).catch(console.error);
@@ -91,7 +113,10 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
     invoke<MonthlyUsage[]>("get_monthly_usage", { months: 12 })
       .then(setMonthlyUsage)
       .catch(console.error);
-  }, []);
+    invoke<ProjectTotal[]>("get_project_totals", { days: rangeDays })
+      .then(setProjectTotals)
+      .catch(console.error);
+  }, [rangeDays]);
 
   useEffect(() => {
     refresh();
@@ -99,22 +124,10 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
     return () => clearInterval(i);
   }, [refresh]);
 
-  const rangeDays = useMemo(() => {
-    switch (range) {
-      case "today":
-        return 1;
-      case "7d":
-        return 7;
-      case "30d":
-        return 30;
-      case "all":
-        return 0;
-    }
-  }, [range]);
-
   const shown = useMemo(() => {
     const now = Date.now();
     return logs.filter((l) => {
+      if (selectedProject && l.project_tag !== selectedProject) return false;
       const t = new Date(l.ts).getTime();
       if (range === "all") return true;
       if (range === "today") {
@@ -125,7 +138,7 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
       const days = range === "7d" ? 7 : 30;
       return t >= now - days * 86_400_000;
     });
-  }, [logs, range]);
+  }, [logs, range, selectedProject]);
 
   const totalCost = shown.reduce((a, l) => a + l.cost, 0);
   const totalTokens = shown.reduce(
@@ -217,20 +230,34 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
           <Forecast spend={spend} t={t} />
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-1">
-              {RANGES.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => setRange(r.id)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                    range === r.id
-                      ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                      : "bg-neutral-200 text-neutral-600 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-1">
+                {RANGES.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setRange(r.id)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                      range === r.id
+                        ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                        : "bg-neutral-200 text-neutral-600 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+                className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+              >
+                <option value="">{t("allProjects")}</option>
+                {projectTotals.map((pt) => (
+                  <option key={pt.project_tag ?? "__untagged"} value={pt.project_tag ?? ""}>
+                    {pt.project_tag ?? "(untagged)"} — ${pt.cost.toFixed(4)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex gap-2">
               <button
@@ -253,6 +280,8 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
             <Stat label={`${t("tokens")} (${range})`} value={totalTokens.toLocaleString()} accent="sky" />
             <Stat label={`${t("requests")} (${range})`} value={String(shown.length)} accent="neutral" />
           </div>
+
+          <ProjectSpend totals={projectTotals} t={t} />
 
           <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
             <div className="mb-2 flex items-center justify-between">
@@ -479,6 +508,45 @@ function Forecast({
   return (
     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
       <span className="font-semibold">{t("forecast")}:</span> {text}
+    </div>
+  );
+}
+
+function ProjectSpend({
+  totals,
+  t,
+}: {
+  totals: ProjectTotal[];
+  t: (
+    key: keyof typeof import("../i18n").translations.en,
+    vars?: Record<string, string | number>
+  ) => string;
+}) {
+  if (totals.length === 0) return null;
+  const max = Math.max(...totals.map((p) => p.cost), 0.0001);
+  return (
+    <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+      <h3 className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+        {t("topProjects")}
+      </h3>
+      <div className="space-y-2">
+        {totals.slice(0, 8).map((pt) => (
+          <div key={pt.project_tag ?? "__untagged"} className="flex items-center gap-3">
+            <div className="w-24 truncate text-xs text-neutral-700 dark:text-neutral-300">
+              {pt.project_tag ?? "(untagged)"}
+            </div>
+            <div className="flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+              <div
+                className="h-2 rounded-full bg-emerald-500"
+                style={{ width: `${Math.min((pt.cost / max) * 100, 100)}%` }}
+              />
+            </div>
+            <div className="w-20 text-right text-xs text-neutral-500">
+              ${pt.cost.toFixed(4)}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
