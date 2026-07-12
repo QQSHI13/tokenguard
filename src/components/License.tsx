@@ -92,34 +92,6 @@ export default function License({
     setError(null);
   };
 
-  const validate = async () => {
-    if (!key.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const device = await getDeviceId();
-      const normalized = normalizeLicenseKey(key);
-      const res = await fetch(
-        `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(normalized)}&device=${encodeURIComponent(device)}`
-      );
-      const data = await res.json();
-      if (data.valid) {
-        showMessage(
-          t("keyIsValid", {
-            devices: data.devices ?? 0,
-            maxDevices: data.maxDevices ?? 2,
-          }),
-        );
-      } else {
-        showError(t("keyIsInvalid"));
-      }
-    } catch (e) {
-      showError(t("couldNotReachLicenseServer"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const register = async () => {
     if (!key.trim()) return;
     setLoading(true);
@@ -419,13 +391,6 @@ export default function License({
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={validate}
-              disabled={loading || !key.trim()}
-              className="rounded-md bg-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-            >
-              {t("validate")}
-            </button>
             <button
               onClick={register}
               disabled={loading || !key.trim()}
