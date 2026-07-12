@@ -461,8 +461,6 @@ impl AppState {
         duration_ms: u64,
         project_tag: Option<String>,
         status: Option<u16>,
-        request_body: Option<String>,
-        response_body: Option<String>,
     ) {
         let this = self.clone();
         tokio::task::spawn_blocking(move || {
@@ -481,8 +479,6 @@ impl AppState {
                 duration_ms,
                 project_tag.as_deref(),
                 status,
-                request_body.as_deref(),
-                response_body.as_deref(),
             ) {
                 tracing::error!("insert_log failed: {e}");
             }

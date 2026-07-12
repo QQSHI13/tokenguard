@@ -34,17 +34,6 @@ pub async fn forward(
     project_tag: Option<String>,
     model: String,
 ) -> Response {
-    let log_bodies = state
-        .config
-        .read()
-        .map(|cfg| cfg.log_bodies)
-        .unwrap_or(false);
-    let request_body = if log_bodies {
-        maybe_string_body(&body)
-    } else {
-        None
-    };
-
     // Retry the primary provider up to 2 extra times with exponential backoff.
     const BACKOFFS: [u64; 3] = [0, 200, 500];
     let mut used_provider = provider.clone();
@@ -121,7 +110,6 @@ pub async fn forward(
                 used_key,
                 &model,
                 project_tag,
-                request_body,
             )
             .await
         }
@@ -215,7 +203,6 @@ async fn finalize_forward(
     _api_key: String,
     model: &str,
     project_tag: Option<String>,
-    request_body: Option<String>,
 ) -> Response {
     let status = resp.status();
     let headers = resp.headers().clone();
@@ -276,8 +263,6 @@ async fn finalize_forward(
                 duration_ms,
                 project_tag.clone(),
                 Some(status.as_u16()),
-                request_body.clone(),
-                None,
             )
             .await;
         });
@@ -301,7 +286,6 @@ async fn finalize_forward(
             .map(Bytes::from)
             .unwrap_or(bytes);
 
-        let response_body = maybe_string_body(&client_bytes);
         let usage = sse::extract_json(&client_bytes, client_format);
         let (input_cost, output_cost) = input_output_cost_per_1k(&provider, model);
         let cached_cost = cached_input_cost_per_1k(&provider, model);
@@ -326,8 +310,6 @@ async fn finalize_forward(
                 duration_ms,
                 project_tag.clone(),
                 Some(status.as_u16()),
-                request_body,
-                response_body,
             )
             .await;
         build_response(status, headers, Body::from(client_bytes))
@@ -366,18 +348,6 @@ fn find_fallback_provider(
 
 fn is_retryable_status(status: reqwest::StatusCode) -> bool {
     status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
-}
-
-/// Convert a raw body to a UTF-8 string for logging, capping size so the DB
-/// does not grow unbounded on large binary responses.
-fn maybe_string_body(body: &Bytes) -> Option<String> {
-    const MAX_LOG_BODY_BYTES: usize = 256 * 1024;
-    if body.len() > MAX_LOG_BODY_BYTES {
-        let truncated = &body[..MAX_LOG_BODY_BYTES];
-        String::from_utf8(truncated.to_vec()).ok()
-    } else {
-        String::from_utf8(body.to_vec()).ok()
-    }
 }
 
 fn is_chat_or_completions(body: &Value) -> bool {

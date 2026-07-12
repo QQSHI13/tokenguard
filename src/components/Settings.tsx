@@ -10,7 +10,6 @@ type Settings = {
   paused: boolean;
   proxy_url: string;
   provider_count: number;
-  log_bodies: boolean;
   auto_export_days: number;
   auto_export_folder: string | null;
   webhook_url: string | null;

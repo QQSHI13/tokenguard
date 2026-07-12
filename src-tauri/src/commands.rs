@@ -24,7 +24,6 @@ pub struct SettingsDto {
     pub paused: bool,
     pub proxy_url: String,
     pub provider_count: usize,
-    pub log_bodies: bool,
     pub auto_export_days: u32,
     pub auto_export_folder: Option<String>,
     pub webhook_url: Option<String>,
@@ -420,7 +419,6 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             format!("http://127.0.0.1:{}", cfg.port)
         },
         provider_count: cfg.providers.len(),
-        log_bodies: cfg.log_bodies,
         auto_export_days: cfg.auto_export_days,
         auto_export_folder: cfg.auto_export_folder.clone(),
         webhook_url: cfg.webhook_url.clone(),
@@ -718,23 +716,6 @@ pub fn set_auto_update_interval_minutes(
 }
 
 #[tauri::command]
-pub fn set_log_bodies(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
-    {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(&conn, "log_bodies", if enabled { "1" } else { "0" })
-            .map_err(|e| e.to_string())?;
-        drop(conn);
-    }
-    state
-        .inner()
-        .config
-        .write()
-        .map_err(|e| e.to_string())?
-        .log_bodies = enabled;
-    Ok(())
-}
-
-#[tauri::command]
 pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
@@ -798,76 +779,6 @@ pub fn get_today_spend(state: State<'_, Arc<AppState>>) -> Result<SpendDto, Stri
             .map_err(|e| e.to_string())?
             .budget,
     })
-}
-
-#[tauri::command]
-pub async fn replay_request(
-    state: State<'_, Arc<AppState>>,
-    log_id: i64,
-) -> Result<String, String> {
-    let log = {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::get_log(&conn, log_id)
-            .map_err(|e| e.to_string())?
-            .ok_or("log not found")?
-    };
-    let request_body = log.request_body.ok_or("request body was not logged")?;
-    if request_body.is_empty() {
-        return Err("request body was not logged".into());
-    }
-
-    let provider = {
-        let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
-        cfg.providers
-            .iter()
-            .find(|p| p.name == log.provider)
-            .cloned()
-            .ok_or("provider no longer exists")?
-    };
-    let api_key = crate::secrets::get(&provider.name)?;
-
-    // Infer the original endpoint from the provider format and logged body.
-    let path = match provider.format {
-        crate::config::ProviderFormat::Anthropic => "/v1/messages".to_string(),
-        crate::config::ProviderFormat::OpenAI => {
-            let body_json: serde_json::Value =
-                serde_json::from_str(&request_body).unwrap_or(serde_json::Value::Null);
-            if body_json.get("messages").is_some() {
-                "/v1/chat/completions".to_string()
-            } else if body_json.get("prompt").is_some() {
-                "/v1/completions".to_string()
-            } else {
-                "/v1/chat/completions".to_string()
-            }
-        }
-        crate::config::ProviderFormat::Google => {
-            return Err("replay is not supported for Google Gemini native API".into());
-        }
-    };
-
-    let base = provider.base_url.trim_end_matches('/');
-    let url = format!("{base}{path}");
-    let mut req = state.inner().client.post(&url);
-    req = match provider.auth {
-        crate::config::AuthScheme::Bearer => req.bearer_auth(&api_key),
-        crate::config::AuthScheme::XApiKey => req
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", "2023-06-01"),
-        crate::config::AuthScheme::ApiKey => req.header("api-key", &api_key),
-        crate::config::AuthScheme::XGoogApiKey => req.header("x-goog-api-key", &api_key),
-    };
-    for (k, v) in &provider.extra_headers {
-        req = req.header(k, v);
-    }
-
-    let resp = req
-        .body(request_body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-    Ok(format!("HTTP {status}\n{body}"))
 }
 
 #[tauri::command]

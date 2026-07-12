@@ -315,13 +315,11 @@ pub fn insert_log(
     duration_ms: u64,
     project_tag: Option<&str>,
     status: Option<u16>,
-    request_body: Option<&str>,
-    response_body: Option<&str>,
 ) -> rusqlite::Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body],
+        "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status) VALUES (?,?,?,?,?,?,?,?,?)",
+        params![now, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status],
     )?;
     Ok(())
 }
@@ -338,8 +336,6 @@ pub struct LogRow {
     pub duration_ms: u64,
     pub project_tag: Option<String>,
     pub status: Option<u16>,
-    pub request_body: Option<String>,
-    pub response_body: Option<String>,
 }
 
 fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
@@ -354,8 +350,6 @@ fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
         duration_ms: row.get(7)?,
         project_tag: row.get(8)?,
         status: row.get(9)?,
-        request_body: row.get(10)?,
-        response_body: row.get(11)?,
     })
 }
 
@@ -388,7 +382,7 @@ pub fn list_logs(
 /// ordered by id descending.
 pub fn list_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::Result<Vec<LogRow>> {
     let mut sql = String::from(
-        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body \
+        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status \
          FROM logs WHERE 1=1",
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -486,16 +480,6 @@ pub fn cleanup_old_logs(conn: &Connection, days: u32) -> rusqlite::Result<usize>
         "DELETE FROM logs WHERE ts < datetime('now', ?1)",
         params![format!("-{days} days")],
     )
-}
-
-/// Fetch a single log row by id.
-pub fn get_log(conn: &Connection, id: i64) -> rusqlite::Result<Option<LogRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms, project_tag, status, request_body, response_body \
-         FROM logs WHERE id = ?1",
-    )?;
-    let mut rows = stmt.query_map(params![id], row_to_log)?;
-    rows.next().transpose()
 }
 
 /// Count logs matching the same filters (without pagination).
@@ -1062,9 +1046,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let budget = get_setting(conn, "budget")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
-    let log_bodies = get_setting(conn, "log_bodies")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
     let auto_export_days = get_setting(conn, "auto_export_days")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -1098,7 +1079,6 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         limits,
         port,
         budget,
-        log_bodies,
         auto_export_days,
         auto_export_folder,
         webhook_url,
@@ -1212,8 +1192,6 @@ mod tests {
             1200,
             Some("cursor-app"),
             Some(200),
-            None,
-            None,
         )
         .unwrap();
         insert_log(
@@ -1226,8 +1204,6 @@ mod tests {
             800,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
 
@@ -1301,8 +1277,6 @@ mod tests {
             100,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
         let used = usage_for_limit(&conn, &limits[0]).unwrap();
@@ -1352,8 +1326,6 @@ mod tests {
             100,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
         insert_log(
@@ -1366,8 +1338,6 @@ mod tests {
             100,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
 
@@ -1409,8 +1379,6 @@ mod tests {
             100,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
         insert_log(
@@ -1423,8 +1391,6 @@ mod tests {
             100,
             None,
             Some(200),
-            None,
-            None,
         )
         .unwrap();
 
