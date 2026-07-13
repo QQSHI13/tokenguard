@@ -1362,18 +1362,7 @@ mod tests {
             Some(200),
         )
         .unwrap();
-        insert_log(
-            &conn,
-            "Other",
-            "m",
-            100,
-            100,
-            0.0,
-            100,
-            None,
-            Some(200),
-        )
-        .unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 20.0);
@@ -1415,18 +1404,7 @@ mod tests {
             Some(200),
         )
         .unwrap();
-        insert_log(
-            &conn,
-            "Other",
-            "m",
-            100,
-            100,
-            0.0,
-            100,
-            None,
-            Some(200),
-        )
-        .unwrap();
+        insert_log(&conn, "Other", "m", 100, 100, 0.0, 100, None, Some(200)).unwrap();
 
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 10.0);
