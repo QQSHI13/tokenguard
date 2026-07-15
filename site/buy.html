@@ -130,10 +130,19 @@
       function handlePaddleEvent(event) {
         const name = event?.name || event?.event;
         const data = event?.data || {};
-        if (name === 'checkout.completed' && data.id) {
-          window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(data.id);
-        } else if (name === 'transaction.completed' && data.id) {
-          window.location.href = 'https://tokenguard.pages.dev/thanks?transaction=' + encodeURIComponent(data.id);
+        const checkoutId = data.checkout?.id || data.id;
+        const transactionId = data.transaction_id || data.id;
+
+        if (name === 'checkout.completed' && checkoutId) {
+          const qs = new URLSearchParams();
+          qs.set('checkout', checkoutId);
+          if (transactionId && transactionId !== checkoutId) qs.set('transaction', transactionId);
+          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
+        } else if (name === 'transaction.completed' && transactionId) {
+          const qs = new URLSearchParams();
+          qs.set('transaction', transactionId);
+          if (checkoutId && checkoutId !== transactionId) qs.set('checkout', checkoutId);
+          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
         }
       }
 
