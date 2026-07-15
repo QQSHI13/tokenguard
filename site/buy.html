@@ -128,21 +128,28 @@
     <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
       function handlePaddleEvent(event) {
+        console.log('[Paddle event]', event);
         const name = event?.name || event?.event;
         const data = event?.data || {};
         const checkoutId = data.checkout?.id || data.id;
-        const transactionId = data.transaction_id || data.id;
+        const transactionId = data.transaction_id || data.transaction?.id || data.id;
+
+        console.log('[Paddle event parsed]', { name, checkoutId, transactionId, data });
 
         if (name === 'checkout.completed' && checkoutId) {
           const qs = new URLSearchParams();
           qs.set('checkout', checkoutId);
           if (transactionId && transactionId !== checkoutId) qs.set('transaction', transactionId);
-          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
+          const url = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
+          console.log('[Paddle redirect]', url);
+          window.location.href = url;
         } else if (name === 'transaction.completed' && transactionId) {
           const qs = new URLSearchParams();
           qs.set('transaction', transactionId);
           if (checkoutId && checkoutId !== transactionId) qs.set('checkout', checkoutId);
-          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
+          const url = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
+          console.log('[Paddle redirect]', url);
+          window.location.href = url;
         }
       }
 
