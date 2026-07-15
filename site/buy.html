@@ -127,10 +127,13 @@
 
     <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
-      function handleCheckoutCompleted(event) {
-        const checkoutId = event?.data?.id || event?.checkout?.id;
-        if (checkoutId) {
-          window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(checkoutId);
+      function handlePaddleEvent(event) {
+        const name = event?.name || event?.event;
+        const data = event?.data || {};
+        if (name === 'checkout.completed' && data.id) {
+          window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(data.id);
+        } else if (name === 'transaction.completed' && data.id) {
+          window.location.href = 'https://tokenguard.pages.dev/thanks?transaction=' + encodeURIComponent(data.id);
         }
       }
 
@@ -138,14 +141,13 @@
         Paddle.Initialize({
           token: 'live_c106d73f7e146918f4846c6023e',
           eventCallback: function(event) {
-            if (event && (event.name === 'checkout.completed' || event.event === 'checkout.completed')) {
-              handleCheckoutCompleted(event);
-            }
+            handlePaddleEvent(event);
           }
         });
 
         if (Paddle.Events && typeof Paddle.Events.on === 'function') {
-          Paddle.Events.on('checkout.completed', handleCheckoutCompleted);
+          Paddle.Events.on('checkout.completed', handlePaddleEvent);
+          Paddle.Events.on('transaction.completed', handlePaddleEvent);
         }
 
         document.getElementById('buy-button').addEventListener('click', function() {
