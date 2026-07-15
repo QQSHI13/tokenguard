@@ -61,7 +61,18 @@
 
       <div id="error-panel" class="mt-8 hidden">
         <p class="text-lg text-red-600 dark:text-red-400">We couldn't fetch your license key yet.</p>
-        <p class="mt-2 text-slate-600 dark:text-slate-400">If you don't see it shortly, contact support with your Paddle receipt.</p>
+        <p class="mt-2 text-slate-600 dark:text-slate-400">Paddle may still be processing the payment. You can retry or have the key emailed to you.</p>
+        <div class="mt-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <button id="retry-btn" class="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600">Retry now</button>
+        </div>
+        <form id="email-form" class="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-left dark:border-slate-700 dark:bg-slate-800">
+          <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="email">Email me the key</label>
+          <div class="mt-2 flex gap-2">
+            <input id="email" type="email" required placeholder="you@example.com" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+            <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Send</button>
+          </div>
+          <p id="email-status" class="mt-2 hidden text-sm"></p>
+        </form>
       </div>
 
       <div class="mt-10">
@@ -96,15 +107,26 @@
     const errorPanel = document.getElementById('error-panel');
     const licenseKeyEl = document.getElementById('license-key');
     const copyBtn = document.getElementById('copy-key');
+    const retryBtn = document.getElementById('retry-btn');
+    const emailForm = document.getElementById('email-form');
+    const emailInput = document.getElementById('email');
+    const emailStatus = document.getElementById('email-status');
 
     let attempts = 0;
     const maxAttempts = 15;
+    let currentKey = null;
 
-    async function fetchKey() {
+    async function fetchKey(isRetry = false) {
       if (!checkoutId && !transactionId) {
         loadingPanel.classList.add('hidden');
         errorPanel.classList.remove('hidden');
         return;
+      }
+
+      if (isRetry) {
+        attempts = 0;
+        errorPanel.classList.add('hidden');
+        loadingPanel.classList.remove('hidden');
       }
 
       const qs = new URLSearchParams();
@@ -116,8 +138,10 @@
         if (res.ok) {
           const data = await res.json();
           if (data.found && data.key) {
+            currentKey = data.key;
             licenseKeyEl.textContent = data.key;
             loadingPanel.classList.add('hidden');
+            errorPanel.classList.add('hidden');
             keyPanel.classList.remove('hidden');
             return;
           }
@@ -133,7 +157,7 @@
         return;
       }
 
-      setTimeout(fetchKey, 2000);
+      setTimeout(() => fetchKey(false), 2000);
     }
 
     copyBtn.addEventListener('click', async () => {
@@ -143,6 +167,41 @@
         setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
       } catch {
         copyBtn.textContent = 'Error';
+      }
+    });
+
+    retryBtn.addEventListener('click', () => fetchKey(true));
+
+    emailForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      if (!email || (!checkoutId && !transactionId)) return;
+
+      emailStatus.classList.remove('hidden');
+      emailStatus.textContent = 'Sending…';
+      emailStatus.className = 'mt-2 text-sm text-slate-600 dark:text-slate-400';
+
+      const body = { email };
+      if (checkoutId) body.checkoutId = checkoutId;
+      if (transactionId) body.transactionId = transactionId;
+
+      try {
+        const res = await fetch(`${WORKER_URL}/api/license/email-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          emailStatus.textContent = 'If a license key exists for this order, it has been emailed to you.';
+          emailStatus.className = 'mt-2 text-sm text-emerald-600 dark:text-emerald-400';
+        } else {
+          emailStatus.textContent = data.error || 'Failed to send. Please try again later.';
+          emailStatus.className = 'mt-2 text-sm text-red-600 dark:text-red-400';
+        }
+      } catch (err) {
+        emailStatus.textContent = 'Network error. Please try again later.';
+        emailStatus.className = 'mt-2 text-sm text-red-600 dark:text-red-400';
       }
     });
 
