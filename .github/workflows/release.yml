@@ -93,9 +93,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
           git commit -m "chore(release): bump version to ${{ github.event.inputs.tag }}" || true
-          git tag "${{ github.event.inputs.tag }}"
+          # Rebase onto any commits that landed while this job was starting.
+          git pull --rebase origin HEAD
           git push origin HEAD
-          git push origin "${{ github.event.inputs.tag }}"
+          # Create the tag if it doesn't exist yet (idempotent re-runs).
+          git tag "${{ github.event.inputs.tag }}" 2>/dev/null || echo "Tag ${{ github.event.inputs.tag }} already exists"
+          git push origin "${{ github.event.inputs.tag }}" 2>/dev/null || echo "Tag ${{ github.event.inputs.tag }} already pushed"
 
   publish-tauri:
     needs: bump-version
