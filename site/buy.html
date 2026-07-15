@@ -117,39 +117,75 @@
         </div>
       </div>
 
-      <div class="mx-auto mt-10 max-w-2xl rounded-xl bg-slate-50 p-6 text-center dark:bg-slate-900">
+      <div class="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-3">
+        <div class="rounded-xl bg-slate-50 p-6 text-center dark:bg-slate-900">
+          <div class="text-2xl">🔒</div>
+          <h3 class="mt-2 font-semibold">Secure checkout</h3>
+          <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Powered by Paddle. Tax calculated automatically.</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-6 text-center dark:bg-slate-900">
+          <div class="text-2xl">↩️</div>
+          <h3 class="mt-2 font-semibold">14-day refund</h3>
+          <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Not satisfied? Email us for a full refund, no questions asked.</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-6 text-center dark:bg-slate-900">
+          <div class="text-2xl">💌</div>
+          <h3 class="mt-2 font-semibold">Instant delivery</h3>
+          <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Your license key is emailed and shown on the next page.</p>
+        </div>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-2xl rounded-xl bg-slate-50 p-6 dark:bg-slate-900">
         <h3 class="font-semibold">What happens after purchase?</h3>
-        <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          You'll receive a license key by email. Paste it into the License section in Token Guard Settings to activate the device. One license covers 2 devices; you can unregister old devices at any time.
-        </p>
+        <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-400">
+          <li>Complete checkout on the next screen.</li>
+          <li>Your license key appears on the confirmation page and is emailed to you.</li>
+          <li>Open Token Guard Settings → License, paste the key, and click Activate.</li>
+          <li>The support banner disappears and automatic updates are enabled.</li>
+        </ol>
+      </div>
+
+      <div class="mx-auto mt-10 max-w-2xl">
+        <h3 class="text-center text-xl font-bold">Questions</h3>
+        <dl class="mt-6 space-y-4">
+          <div class="rounded-xl border border-slate-200 p-5 dark:border-slate-700">
+            <dt class="font-semibold">Do I need a license to use the app?</dt>
+            <dd class="mt-2 text-sm text-slate-600 dark:text-slate-400">No. The app is fully functional without a license. The license only removes the support banner and enables auto-updates.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 p-5 dark:border-slate-700">
+            <dt class="font-semibold">Can I use one license on multiple computers?</dt>
+            <dd class="mt-2 text-sm text-slate-600 dark:text-slate-400">One license covers up to 2 active devices. You can unregister old devices in Settings → License.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 p-5 dark:border-slate-700">
+            <dt class="font-semibold">Is this a subscription?</dt>
+            <dd class="mt-2 text-sm text-slate-600 dark:text-slate-400">No. $4.99 is a one-time payment. You get all v1.x updates for free.</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 p-5 dark:border-slate-700">
+            <dt class="font-semibold">How do refunds work?</dt>
+            <dd class="mt-2 text-sm text-slate-600 dark:text-slate-400">Contact us within 14 days for a full refund. See the <a href="/refund.html" class="text-emerald-600 hover:underline dark:text-emerald-400">refund policy</a>.</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
     <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
       function handlePaddleEvent(event) {
-        console.log('[Paddle event]', event);
         const name = event?.name || event?.event;
         const data = event?.data || {};
         const checkoutId = data.checkout?.id || data.id;
         const transactionId = data.transaction_id || data.transaction?.id || data.id;
 
-        console.log('[Paddle event parsed]', { name, checkoutId, transactionId, data });
-
         if (name === 'checkout.completed' && checkoutId) {
           const qs = new URLSearchParams();
           qs.set('checkout', checkoutId);
           if (transactionId && transactionId !== checkoutId) qs.set('transaction', transactionId);
-          const url = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
-          console.log('[Paddle redirect]', url);
-          window.location.href = url;
+          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
         } else if (name === 'transaction.completed' && transactionId) {
           const qs = new URLSearchParams();
           qs.set('transaction', transactionId);
           if (checkoutId && checkoutId !== transactionId) qs.set('checkout', checkoutId);
-          const url = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
-          console.log('[Paddle redirect]', url);
-          window.location.href = url;
+          window.location.href = 'https://tokenguard.pages.dev/thanks?' + qs.toString();
         }
       }
 
