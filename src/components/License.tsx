@@ -8,6 +8,7 @@ import {
   getDeviceId,
   normalizeLicenseKey,
   formatLicenseKey,
+  validateStoredKey,
   type RegisteredDevice,
 } from "../utils/license";
 import {
@@ -156,6 +157,27 @@ export default function License({
     }
   };
 
+  const handleRefreshLicense = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const valid = await validateStoredKey();
+      if (!valid) {
+        showError(t("licenseInvalidCleared"));
+        onChange(false);
+        setStoredKey(null);
+        setDevices([]);
+        return;
+      }
+      await loadDevices();
+      showMessage(t("licenseValid"));
+    } catch (e) {
+      showError(t("couldNotReachLicenseServer"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCheckUpdate = async () => {
     setUpdateStatus("checking");
     setUpdateError(null);
@@ -285,13 +307,22 @@ export default function License({
               ))}
             </ul>
           )}
-          <button
-            onClick={unregister}
-            disabled={loading}
-            className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-          >
-            {loading ? t("working") : t("unregisterThisDevice")}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleRefreshLicense}
+              disabled={loading}
+              className="rounded-md bg-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+            >
+              {loading ? t("working") : t("refreshLicense")}
+            </button>
+            <button
+              onClick={unregister}
+              disabled={loading}
+              className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {loading ? t("working") : t("unregisterThisDevice")}
+            </button>
+          </div>
 
           <div className="rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
             <h3 className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
