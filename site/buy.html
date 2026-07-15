@@ -127,17 +127,26 @@
 
     <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
+      function handleCheckoutCompleted(event) {
+        const checkoutId = event?.data?.id || event?.checkout?.id;
+        if (checkoutId) {
+          window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(checkoutId);
+        }
+      }
+
       document.addEventListener('DOMContentLoaded', function() {
         Paddle.Initialize({
-          token: 'live_c106d73f7e146918f4846c6023e'
-        });
-
-        Paddle.Events.on('checkout.completed', function(event) {
-          const checkoutId = event?.data?.id;
-          if (checkoutId) {
-            window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(checkoutId);
+          token: 'live_c106d73f7e146918f4846c6023e',
+          eventCallback: function(event) {
+            if (event && (event.name === 'checkout.completed' || event.event === 'checkout.completed')) {
+              handleCheckoutCompleted(event);
+            }
           }
         });
+
+        if (Paddle.Events && typeof Paddle.Events.on === 'function') {
+          Paddle.Events.on('checkout.completed', handleCheckoutCompleted);
+        }
 
         document.getElementById('buy-button').addEventListener('click', function() {
           Paddle.Checkout.open({
