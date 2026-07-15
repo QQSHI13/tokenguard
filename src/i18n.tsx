@@ -171,6 +171,7 @@ export const translations = {
     keychainHelp:
       "Diagnose API-key storage. Runs a write→read→new-entry-read probe against the OS keychain and reports which step fails.",
     testKeychain: "Test keychain",
+    version: "Version",
     privacySecurity: "Privacy & security",
     privacy1: "No cloud, no account, no telemetry. Only your provider calls leave the machine.",
     privacy2: "API keys live in the OS keychain — never on disk, never in your code.",
@@ -439,6 +440,7 @@ export const translations = {
     keychainHelp:
       "诊断 API 密钥存储。对系统钥匙串执行写入→读取→新条目读取探测，并报告哪一步失败。",
     testKeychain: "测试钥匙串",
+    version: "版本",
     privacySecurity: "隐私与安全",
     privacy1: "无云端、无账号、无遥测。只有你的服务商调用会离开本机。",
     privacy2: "API 密钥存储在系统钥匙串中 — 从不上盘，从不出现在你的代码里。",

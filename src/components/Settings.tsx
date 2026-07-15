@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { useI18n } from "../i18n";
 import License from "./License";
 
@@ -36,6 +37,11 @@ export default function SettingsTab({
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion(null));
+  }, []);
 
   const savePort = async () => {
     await invoke("set_port", { port: Number(port) || 3742 });
@@ -198,6 +204,15 @@ export default function SettingsTab({
         settings={settings}
         onSettingsChanged={onChanged}
       />
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+          {t("version")}
+        </h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          {version ?? "—"}
+        </p>
+      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
