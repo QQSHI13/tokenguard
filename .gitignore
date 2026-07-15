@@ -36,3 +36,6 @@ docs/POSITIONING.md
 workers/
 .venv*
 scripts/
+
+# cloudflare local state
+.wrangler/
