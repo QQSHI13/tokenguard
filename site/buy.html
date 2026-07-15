@@ -131,15 +131,19 @@
           token: 'live_c106d73f7e146918f4846c6023e'
         });
 
+        Paddle.Events.on('checkout.completed', function(event) {
+          const checkoutId = event?.data?.id;
+          if (checkoutId) {
+            window.location.href = 'https://tokenguard.pages.dev/thanks?checkout=' + encodeURIComponent(checkoutId);
+          }
+        });
+
         document.getElementById('buy-button').addEventListener('click', function() {
           Paddle.Checkout.open({
             items: [{
               priceId: 'pri_01kwtjwk0jh05szy2e4n7f61j4',
               quantity: 1
-            }],
-            settings: {
-              successUrl: 'https://tokenguard.pages.dev/thanks?checkout={checkout.id}'
-            }
+            }]
           });
         });
       });
