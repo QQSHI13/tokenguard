@@ -35,3 +35,4 @@ docs/ARCHITECTURE.md
 docs/POSITIONING.md
 workers/
 .venv*
+scripts/
