@@ -44,12 +44,23 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Type-check frontend
+        run: npx tsc -b --noEmit
+
       - name: Build frontend
         run: npm run build
 
+      - name: Build site
+        run: cd site && npm ci && npm run build
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Run Rust clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
       - name: Run Rust tests
-        working-directory: ./src-tauri
-        run: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   bump-version:
     needs: test
