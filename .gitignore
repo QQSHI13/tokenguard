@@ -34,3 +34,4 @@ site/styles.css
 docs/ARCHITECTURE.md
 docs/POSITIONING.md
 workers/
+.venv*
