@@ -76,31 +76,6 @@
       </div>
     </section>
 
-    <section class="px-6 py-16">
-      <div class="mx-auto max-w-5xl">
-        <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
-          <div class="rounded-xl bg-slate-900 p-4 font-mono text-sm text-emerald-300 shadow-inner">
-            <div class="flex items-center gap-2 border-b border-slate-700 pb-2 text-slate-400">
-              <span class="h-3 w-3 rounded-full bg-red-500"></span>
-              <span class="h-3 w-3 rounded-full bg-amber-500"></span>
-              <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
-              <span class="ml-2 text-xs">Token Guard dashboard</span>
-            </div>
-            <div class="mt-4 space-y-2">
-              <div class="flex justify-between"><span>Project</span> <span class="text-slate-400">api-proxy</span></div>
-              <div class="flex justify-between"><span>Today</span> <span>$1.24 / $10.00</span></div>
-              <div class="flex justify-between"><span>Requests</span> <span>42</span></div>
-              <div class="flex justify-between"><span>Tokens</span> <span>128,403</span></div>
-              <div class="mt-3 h-2 w-full rounded-full bg-slate-700"><div class="h-2 rounded-full bg-emerald-500" style="width: 12%"></div></div>
-            </div>
-          </div>
-        </div>
-        <p class="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
-          Local dashboard showing real-time spend, limits, and provider health.
-        </p>
-      </div>
-    </section>
-
     <section id="how-it-works" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
       <div class="mx-auto max-w-5xl">
         <h2 class="text-center text-3xl font-bold">How it works</h2>
@@ -177,6 +152,27 @@
             <h3 class="text-xl font-bold">Native tray app</h3>
             <p class="mt-3 text-slate-600 dark:text-slate-300">
               Pause, resume, open the dashboard, or check today's spend from the system tray on macOS, Windows, and Linux.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
+            <div class="mb-4 text-3xl">📊</div>
+            <h3 class="text-xl font-bold">Daily &amp; per-project history</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              SQLite-backed history with charts per project and provider. See trends over days and spot cost spikes early.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🔔</div>
+            <h3 class="text-xl font-bold">Desktop notifications</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Get alerted when a project hits a budget threshold or a provider goes down, right on your desktop.
+            </p>
+          </div>
+          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
+            <div class="mb-4 text-3xl">🚀</div>
+            <h3 class="text-xl font-bold">Auto-start &amp; background run</h3>
+            <p class="mt-3 text-slate-600 dark:text-slate-300">
+              Launch at login and keep the proxy running in the background. Your agents work even when the window is closed.
             </p>
           </div>
         </div>
