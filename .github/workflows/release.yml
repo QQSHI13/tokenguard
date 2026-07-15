@@ -161,6 +161,6 @@ jobs:
           tagName: ${{ github.event.inputs.tag }}
           releaseName: ${{ github.event.inputs.releaseName || github.event.inputs.tag }}
           releaseBody: 'See the assets below to download Token Guard for your platform.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
