@@ -1423,21 +1423,88 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
         .as_array()
         .ok_or("missing assets in release")?;
     let os = std::env::consts::OS;
-    let asset_url = assets
-        .iter()
-        .find_map(|a| {
+
+    fn linux_package_family() -> &'static str {
+        let content = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        let id = content
+            .lines()
+            .find_map(|l| l.strip_prefix("ID="))
+            .map(|s| s.trim_matches('"').to_lowercase())
+            .unwrap_or_default();
+        let id_like = content
+            .lines()
+            .find_map(|l| l.strip_prefix("ID_LIKE="))
+            .map(|s| s.trim_matches('"').to_lowercase())
+            .unwrap_or_default();
+        if id.contains("fedora")
+            || id_like.contains("fedora")
+            || id.contains("rhel")
+            || id_like.contains("rhel")
+            || id.contains("suse")
+            || id_like.contains("suse")
+        {
+            return "rpm";
+        }
+        if id.contains("debian")
+            || id_like.contains("debian")
+            || id.contains("ubuntu")
+            || id_like.contains("ubuntu")
+        {
+            return "deb";
+        }
+        ""
+    }
+
+    let asset_url = match os {
+        "windows" => assets.iter().find_map(|a| {
             let name = a["name"].as_str()?;
             let url = a["browser_download_url"].as_str()?;
-            match os {
-                "windows" if name.contains(".msi") || name.contains(".exe") => {
-                    Some(url.to_string())
-                }
-                "macos" if name.contains(".dmg") => Some(url.to_string()),
-                "linux" if name.contains(".AppImage") => Some(url.to_string()),
-                _ => None,
+            if name.ends_with(".msi") || name.ends_with(".exe") {
+                Some(url.to_string())
+            } else {
+                None
             }
-        })
-        .ok_or("no suitable update asset found")?;
+        }),
+        "macos" => assets.iter().find_map(|a| {
+            let name = a["name"].as_str()?;
+            let url = a["browser_download_url"].as_str()?;
+            if name.ends_with(".dmg") || name.ends_with(".app.tar.gz") {
+                Some(url.to_string())
+            } else {
+                None
+            }
+        }),
+        "linux" => {
+            let preferred = match linux_package_family() {
+                "deb" => ".deb",
+                "rpm" => ".rpm",
+                _ => ".AppImage",
+            };
+            let mut chosen = assets.iter().find_map(|a| {
+                let name = a["name"].as_str()?;
+                let url = a["browser_download_url"].as_str()?;
+                if name.ends_with(preferred) {
+                    Some(url.to_string())
+                } else {
+                    None
+                }
+            });
+            if chosen.is_none() {
+                chosen = assets.iter().find_map(|a| {
+                    let name = a["name"].as_str()?;
+                    let url = a["browser_download_url"].as_str()?;
+                    if name.ends_with(".AppImage") {
+                        Some(url.to_string())
+                    } else {
+                        None
+                    }
+                });
+            }
+            chosen
+        }
+        _ => None,
+    }
+    .ok_or("no suitable update asset found")?;
 
     Ok(Some(UpdateInfo {
         version: tag_name.to_string(),
@@ -1559,33 +1626,50 @@ pub fn install_update(path: String) -> Result<(), String> {
 
     let os = std::env::consts::OS;
     let path_str = path.to_string_lossy().to_string();
+    let lower = path_str.to_lowercase();
 
     match os {
         "windows" => {
-            // Launch the MSI installer. For a silent install use:
-            //   msiexec /i "path" /qn
-            // We use /passive so the user sees progress but doesn't need to interact.
-            std::process::Command::new("msiexec")
-                .args(["/i", &path_str, "/passive"])
-                .spawn()
-                .map_err(|e| format!("failed to start installer: {e}"))?;
+            if lower.ends_with(".msi") {
+                // Silent MSI install with progress bar.
+                std::process::Command::new("msiexec")
+                    .args(["/i", &path_str, "/passive"])
+                    .spawn()
+                    .map_err(|e| format!("failed to start MSI installer: {e}"))?;
+            } else if lower.ends_with(".exe") {
+                // NSIS setup.exe: run directly.
+                std::process::Command::new(&path_str)
+                    .spawn()
+                    .map_err(|e| format!("failed to start installer: {e}"))?;
+            } else {
+                return Err("unsupported Windows installer".into());
+            }
         }
         "macos" => {
-            // Open the DMG; user drags the app to Applications.
+            // .dmg mounts in Finder; .app.tar.gz opens in Archive Utility.
             std::process::Command::new("open")
                 .arg(&path_str)
                 .spawn()
-                .map_err(|e| format!("failed to open DMG: {e}"))?;
+                .map_err(|e| format!("failed to open installer: {e}"))?;
         }
         "linux" => {
-            // Make AppImage executable and run it.
-            #[cfg(unix)]
-            {
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+            if lower.ends_with(".appimage") {
+                #[cfg(unix)]
+                {
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+                }
+                std::process::Command::new(&path_str)
+                    .spawn()
+                    .map_err(|e| format!("failed to run AppImage: {e}"))?;
+            } else if lower.ends_with(".deb") || lower.ends_with(".rpm") {
+                // Open with the default package installer (GNOME Software, Discover, etc.).
+                std::process::Command::new("xdg-open")
+                    .arg(&path_str)
+                    .spawn()
+                    .map_err(|e| format!("failed to open package installer: {e}"))?;
+            } else {
+                return Err("unsupported Linux installer".into());
             }
-            std::process::Command::new(&path_str)
-                .spawn()
-                .map_err(|e| format!("failed to run AppImage: {e}"))?;
         }
         _ => return Err("unsupported OS".into()),
     }
