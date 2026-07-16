@@ -6,12 +6,12 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Token Guard — Local LLM cost tracker &amp; gateway</title>
-  <meta name="description" content="Token Guard is a free, open-source local gateway for OpenAI, Anthropic, and Google Gemini. Track cost, enforce budgets, and keep your prompts on your machine.">
+  <title>Token Guard — local LLM gateway &amp; cost tracker</title>
+  <meta name="description" content="Token Guard is a free, open-source desktop app that tracks LLM spend and converts between OpenAI, Anthropic, and Gemini SDK formats — all locally.">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=3">
+  <link rel="stylesheet" href="/styles.css?v=4">
   <meta name="color-scheme" content="light dark">
   <script>
     if ('serviceWorker' in navigator) {
@@ -24,23 +24,25 @@
     }
   </script>
 </head>
-<body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-  <header class="border-b border-slate-100 dark:border-slate-800">
+<body class="bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+  <header class="border-b border-zinc-200/60 bg-white/70 backdrop-blur dark:border-zinc-800/60 dark:bg-zinc-950/70">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-      <a href="/" class="flex items-center gap-2 text-lg font-bold">
-        <img src="/logo.svg" alt="" class="h-8 w-8">
+      <a href="/" class="flex items-center gap-2.5 text-lg font-bold tracking-tight">
+        <img src="/logo.svg" alt="" class="h-7 w-7">
         <span>Token Guard</span>
       </a>
-      <nav class="hidden items-center gap-6 text-sm font-medium md:flex">
-        <a href="#how-it-works" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">How it works</a>
-        <a href="#features" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Features</a>
-        <a href="#support" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Support</a>
-        <a href="/privacy.html" class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">Privacy</a>
+      <nav class="hidden items-center gap-8 text-sm font-medium md:flex">
+        <a href="#features" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Features</a>
+        <a href="#how-it-works" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">How it works</a>
+        <a href="#support" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Support</a>
       </nav>
-      <div class="flex items-center gap-3">
-        <button id="theme-toggle" aria-label="Toggle dark mode" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-          🌙
+      <div class="flex items-center gap-2">
+        <button id="theme-toggle" aria-label="Toggle dark mode" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+          <span id="theme-icon">🌙</span>
         </button>
+        <a href="https://github.com/QQSHI13/tokenguard" class="hidden rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white sm:inline-flex">
+          GitHub
+        </a>
         <a href="/buy.html" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
           Support
         </a>
@@ -49,60 +51,42 @@
   </header>
 
   <main>
-    <section class="px-6 pt-20 pb-16 text-center">
-      <div class="mx-auto max-w-4xl">
-        <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
+    <section class="relative overflow-hidden px-6 pt-20 pb-24">
+      <div class="absolute inset-0 -z-10 opacity-40 dark:opacity-20">
+        <div class="absolute inset-0" style="background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0); background-size: 32px 32px;"></div>
+      </div>
+      <div class="mx-auto max-w-5xl text-center">
+        <p class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">
           <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-          Free, open-source, runs locally
-        </div>
-        <h1 class="mt-6 text-5xl font-extrabold tracking-tight sm:text-6xl">
-          A local gateway for your coding agents.
-        </h1>
-        <p class="mx-auto mt-6 max-w-2xl text-xl leading-relaxed text-slate-600 dark:text-slate-300">
-          Token Guard is a <strong>free, open-source</strong> desktop app that sits between your agents and OpenAI, Anthropic, or Gemini. Track cost per project, enforce budgets, and fail over to backup providers — without ever sending your prompts anywhere else.
+          Free &amp; open source
         </p>
-        <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <a href="https://github.com/QQSHI13/tokenguard/releases" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-7 py-3.5 text-base font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+        <h1 class="mx-auto mt-7 max-w-3xl text-5xl font-extrabold tracking-tight sm:text-6xl">
+          Route, track, and budget your LLM calls.
+        </h1>
+        <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+          A tiny local gateway that speaks OpenAI, Anthropic, and Gemini SDK shapes. Track spend per project, enforce budgets, and keep your prompts on your machine.
+        </p>
+        <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a href="https://github.com/QQSHI13/tokenguard/releases" class="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-3 text-base font-semibold text-white shadow-lg transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             Download for free
           </a>
-          <a href="/buy.html" class="rounded-xl border border-slate-200 bg-white px-7 py-3.5 text-base font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
-            Support the project — $4.99
+          <a href="/buy.html" class="rounded-xl border border-zinc-200 bg-white px-6 py-3 text-base font-semibold text-zinc-900 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">
+            Support the project
           </a>
         </div>
-        <p class="mt-4 text-sm text-slate-400 dark:text-slate-500">
-          macOS · Windows · Linux
-        </p>
-      </div>
-    </section>
+        <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-500">macOS · Windows · Linux</p>
 
-    <section id="how-it-works" class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
-      <div class="mx-auto max-w-5xl">
-        <h2 class="text-center text-3xl font-bold">How it works</h2>
-        <p class="mx-auto mt-4 max-w-2xl text-center text-lg text-slate-600 dark:text-slate-400">
-          One environment variable. No SDK changes. No extra network hop.
-        </p>
-        <div class="mt-12 grid gap-8 md:grid-cols-3">
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">1</div>
-            <h3 class="mt-4 text-xl font-bold">Point your client</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Set <code class="rounded bg-slate-100 px-1 py-0.5 font-mono text-sm dark:bg-slate-700">OPENAI_BASE_URL=http://localhost:3742/v1</code>. Token Guard speaks the OpenAI, Anthropic, and Gemini SDK shapes natively.
-            </p>
+        <div class="mx-auto mt-16 max-w-3xl overflow-hidden rounded-xl border border-zinc-200 bg-zinc-900 text-left shadow-2xl dark:border-zinc-700">
+          <div class="flex items-center gap-1.5 border-b border-zinc-700 bg-zinc-800 px-4 py-2.5">
+            <span class="h-3 w-3 rounded-full bg-red-500"></span>
+            <span class="h-3 w-3 rounded-full bg-amber-500"></span>
+            <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
+            <span class="ml-3 text-xs text-zinc-400">.env</span>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">2</div>
-            <h3 class="mt-4 text-xl font-bold">Add your real key</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Store your provider API key in Token Guard once. It lives in the OS keychain and is never written to your agent's config.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-lg font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">3</div>
-            <h3 class="mt-4 text-xl font-bold">Tag projects</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Give each project a label key and use it as <code class="rounded bg-slate-100 px-1 py-0.5 font-mono text-sm dark:bg-slate-700">OPENAI_API_KEY</code> in that agent. Token Guard tags the request and forwards with your real key.
-            </p>
+          <div class="p-5 font-mono text-sm leading-relaxed text-zinc-100">
+            <span class="text-emerald-400">OPENAI_BASE_URL</span>=<span class="text-amber-300">http://localhost:3742/v1</span><br>
+            <span class="text-emerald-400">OPENAI_API_KEY</span>=<span class="text-amber-300">tg_your-project-label</span>
           </div>
         </div>
       </div>
@@ -110,229 +94,148 @@
 
     <section id="features" class="px-6 py-20">
       <div class="mx-auto max-w-6xl">
-        <h2 class="text-center text-3xl font-bold">Everything you need to control spend</h2>
-        <div class="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">💰</div>
-            <h3 class="text-xl font-bold">Real-time cost tracking</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              See spend per project, provider, model, and day. Catch runaway agents before they rack up a bill.
-            </p>
+        <div class="mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight">What it does</h2>
+          <p class="mt-3 text-zinc-600 dark:text-zinc-400">Everything runs locally. No cloud service, no account, no prompt logging.</p>
+        </div>
+        <div class="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">Real-time cost tracking</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Per-project, per-provider, per-model spend with local SQLite history.</p>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🚦</div>
-            <h3 class="text-xl font-bold">Budgets &amp; limits</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Set money, token, request, or time caps by project or globally. Choose warn, block, or pause when a limit is hit.
-            </p>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">Budgets &amp; limits</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Money, token, request, or time caps. Warn, block, or pause when a limit is hit.</p>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔌</div>
-            <h3 class="text-xl font-bold">One proxy, three API shapes</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Use OpenAI, Anthropic, or Google Gemini SDKs against any configured provider. Requests, responses, and streams are converted automatically.
-            </p>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">3 × 3 format conversion</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Use OpenAI, Anthropic, or Gemini SDKs against any configured provider.</p>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔄</div>
-            <h3 class="text-xl font-bold">Provider fallback</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Link a backup provider to each primary. If the main provider returns a 5xx or 429, Token Guard retries and falls back automatically.
-            </p>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">Keys in the OS keychain</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Provider API keys never touch your agent configs or the filesystem.</p>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔒</div>
-            <h3 class="text-xl font-bold">Keys in the OS keychain</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              API keys live in Windows Credential Manager, macOS Keychain, or Linux Secret Service. Your code and config files never touch them.
-            </p>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">Provider fallback</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Set a backup provider. Token Guard retries and fails over on 5xx or 429.</p>
           </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🖥️</div>
-            <h3 class="text-xl font-bold">Native tray app</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Pause, resume, open the dashboard, or check today's spend from the system tray on macOS, Windows, and Linux.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">📊</div>
-            <h3 class="text-xl font-bold">Daily &amp; per-project history</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              SQLite-backed history with charts per project and provider. See trends over days and spot cost spikes early.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🔔</div>
-            <h3 class="text-xl font-bold">Desktop notifications</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Get alerted when a project hits a budget threshold or a provider goes down, right on your desktop.
-            </p>
-          </div>
-          <div class="rounded-2xl bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:bg-slate-800">
-            <div class="mb-4 text-3xl">🚀</div>
-            <h3 class="text-xl font-bold">Auto-start &amp; background run</h3>
-            <p class="mt-3 text-slate-600 dark:text-slate-300">
-              Launch at login and keep the proxy running in the background. Your agents work even when the window is closed.
-            </p>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">System tray app</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Check spend, pause, or open the dashboard from the menu bar or tray.</p>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
-      <div class="mx-auto max-w-4xl text-center">
-        <h2 class="text-3xl font-bold">One env var. Done.</h2>
-        <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-          Your existing OpenAI-compatible client keeps working. Token Guard only intercepts the base URL.
-        </p>
-        <div class="mt-8 overflow-hidden rounded-xl bg-slate-900 p-6 text-left font-mono text-sm text-emerald-300 shadow-lg">
-          OPENAI_BASE_URL=http://localhost:3742/v1<br>
-          OPENAI_API_KEY=tg_your-project-label-key
+    <section id="how-it-works" class="border-y border-zinc-200 bg-white px-6 py-20 dark:border-zinc-800 dark:bg-zinc-900/30">
+      <div class="mx-auto max-w-5xl">
+        <div class="mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight">How it works</h2>
+          <p class="mt-3 text-zinc-600 dark:text-zinc-400">One env var. No SDK changes. No extra hop.</p>
+        </div>
+        <div class="mt-12 grid gap-8 md:grid-cols-3">
+          <div class="relative">
+            <div class="text-4xl font-black text-zinc-200 dark:text-zinc-700">01</div>
+            <h3 class="mt-2 text-lg font-bold">Point your client</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Set <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">OPENAI_BASE_URL=http://localhost:3742/v1</code>. Token Guard speaks OpenAI, Anthropic, and Gemini shapes.</p>
+          </div>
+          <div class="relative">
+            <div class="text-4xl font-black text-zinc-200 dark:text-zinc-700">02</div>
+            <h3 class="mt-2 text-lg font-bold">Store your key</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Add the real provider key in Token Guard. It lives in the OS keychain, not your agent config.</p>
+          </div>
+          <div class="relative">
+            <div class="text-4xl font-black text-zinc-200 dark:text-zinc-700">03</div>
+            <h3 class="mt-2 text-lg font-bold">Tag projects</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Use a label key like <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">tg_your-project</code> as <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">OPENAI_API_KEY</code>. Token Guard tags and forwards.</p>
+          </div>
         </div>
       </div>
     </section>
 
-    <section id="compare" class="px-6 py-20">
-      <div class="mx-auto max-w-5xl overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-800">
-        <table class="w-full text-left text-sm">
-          <thead class="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-            <tr>
-              <th class="px-6 py-4 font-semibold"></th>
-              <th class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">Token Guard</th>
-              <th class="px-6 py-4 font-semibold">Cloud gateways</th>
-              <th class="px-6 py-4 font-semibold">Self-host (LiteLLM)</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
-            <tr>
-              <td class="px-6 py-4 font-medium">Can see your prompts</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">Cannot</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Can</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Can</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium">Extra network hops</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">0</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">2</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">1</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium">Setup</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">1 env var</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">SDK + account</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Docker + Python</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium">Where keys live</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">OS keychain</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Their cloud</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Server env</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium">Native tray app</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">Yes</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">No</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">No</td>
-            </tr>
-            <tr>
-              <td class="px-6 py-4 font-medium">Multi-format SDK support</td>
-              <td class="px-6 py-4 font-semibold text-emerald-700 dark:text-emerald-400">OpenAI / Anthropic / Google</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Varies</td>
-              <td class="px-6 py-4 text-slate-600 dark:text-slate-300">Usually OpenAI only</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section id="support" class="px-6 py-20 text-center">
-      <div class="mx-auto max-w-2xl rounded-2xl bg-slate-50 p-10 dark:bg-slate-900">
-        <h2 class="text-3xl font-bold">Support the project</h2>
-        <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-          Token Guard is free and open source. If you find it useful, you can support the author with a small one-time contribution.
+    <section id="support" class="px-6 py-20">
+      <div class="mx-auto max-w-2xl text-center">
+        <h2 class="text-3xl font-bold tracking-tight">Support the project</h2>
+        <p class="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
+          Token Guard is free and open source. If it saves you money or time, you can support the author with a small one-time contribution.
         </p>
-        <p class="mt-6 text-4xl font-bold text-slate-900 dark:text-slate-100">
-          $4.99 USD
-        </p>
-        <p class="mt-2 text-slate-600 dark:text-slate-400">
-          One-time. No subscription.
-        </p>
-        <p class="mt-1 text-sm text-slate-500 dark:text-slate-500">
-          Taxes may apply and will be calculated at checkout.
-        </p>
-        <ul class="mt-6 inline-block text-left text-slate-600 dark:text-slate-400">
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Keep the project going</li>
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Remove the support banner</li>
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Automatic updates from GitHub Releases</li>
-          <li class="flex gap-2"><span class="text-emerald-600">✓</span> Use on up to 2 devices</li>
-        </ul>
-        <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <a href="/buy.html" class="rounded-lg bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">
-            Support — $4.99
-          </a>
-          <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg border border-slate-200 px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
-            Download free
-          </a>
+        <div class="mt-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <p class="text-4xl font-black text-zinc-900 dark:text-zinc-100">$4.99</p>
+          <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-500">One-time. No subscription. Taxes calculated at checkout.</p>
+          <ul class="mt-6 space-y-2 text-left text-sm text-zinc-700 dark:text-zinc-300">
+            <li class="flex gap-2"><span class="text-emerald-600">✓</span> Keep the project going</li>
+            <li class="flex gap-2"><span class="text-emerald-600">✓</span> Hide the support banner</li>
+            <li class="flex gap-2"><span class="text-emerald-600">✓</span> Automatic updates from GitHub Releases</li>
+            <li class="flex gap-2"><span class="text-emerald-600">✓</span> Use on up to 2 devices</li>
+          </ul>
+          <div class="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <a href="/buy.html" class="rounded-xl bg-emerald-600 px-6 py-3 text-base font-semibold text-white hover:bg-emerald-700">Support — $4.99</a>
+            <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-xl border border-zinc-200 bg-white px-6 py-3 text-base font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">Download free</a>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="bg-slate-50 px-6 py-20 dark:bg-slate-900">
+    <section class="border-t border-zinc-200 bg-white px-6 py-20 dark:border-zinc-800 dark:bg-zinc-900/30">
       <div class="mx-auto max-w-3xl">
-        <h2 class="text-center text-3xl font-bold">Frequently asked questions</h2>
-        <dl class="mt-10 space-y-6">
-          <div class="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-800">
+        <h2 class="text-center text-3xl font-bold tracking-tight">Questions</h2>
+        <dl class="mt-10 space-y-4">
+          <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <dt class="font-semibold">Is Token Guard really free?</dt>
-            <dd class="mt-2 text-slate-600 dark:text-slate-300">Yes. The app is open source under Apache-2.0. Download from GitHub Releases and use every core feature. The $4.99 supporter code removes the banner and enables automatic updates.</dd>
+            <dd class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Yes. The app is open source under Apache-2.0. Every core feature works without paying. A supporter code removes the banner and enables auto-updates.</dd>
           </div>
-          <div class="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-800">
+          <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <dt class="font-semibold">Do you see my prompts or API keys?</dt>
-            <dd class="mt-2 text-slate-600 dark:text-slate-300">No. The app runs entirely on your machine. Your provider API key is stored in the OS keychain, and requests go straight from your computer to the provider.</dd>
+            <dd class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">No. The app runs entirely on your machine. Your provider key is stored in the OS keychain, and requests go directly from your computer to the provider.</dd>
           </div>
-          <div class="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-800">
-            <dt class="font-semibold">What does supporting the project get me?</dt>
-            <dd class="mt-2 text-slate-600 dark:text-slate-300">It helps keep development going. As a thank-you, the support banner is hidden and auto-updates from GitHub Releases are enabled on up to 2 devices.</dd>
+          <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <dt class="font-semibold">What platforms are supported?</dt>
+            <dd class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">macOS, Windows, and Linux. Binaries are built and published from GitHub Actions.</dd>
           </div>
-          <div class="rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-800">
+          <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <dt class="font-semibold">Can I get a refund?</dt>
-            <dd class="mt-2 text-slate-600 dark:text-slate-300">Yes. If you're not happy, email <a href="mailto:qingquanshi65@gmail.com" class="text-emerald-600 hover:underline dark:text-emerald-400">qingquanshi65@gmail.com</a> within 14 days for a full refund. See the <a href="/refund.html" class="text-emerald-600 hover:underline dark:text-emerald-400">refund policy</a>.</dd>
+            <dd class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Yes. Email <a href="mailto:qingquanshi65@gmail.com" class="text-emerald-600 hover:underline dark:text-emerald-400">qingquanshi65@gmail.com</a> within 14 days for a full refund.</dd>
           </div>
         </dl>
       </div>
     </section>
-
-    <section class="px-6 py-20 text-center">
-      <h2 class="text-3xl font-bold">Built in the open</h2>
-      <p class="mt-4 text-lg text-slate-600 dark:text-slate-400">
-        Download Token Guard for free, star it on GitHub, or support the author if it saves you time and money.
-      </p>
-      <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-        <a href="https://github.com/QQSHI13/tokenguard/releases" class="rounded-lg bg-slate-900 px-6 py-3 text-base font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
-          Download for free
-        </a>
-        <a href="/buy.html" class="rounded-lg border border-slate-200 px-6 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-900">
-          Support the project — $4.99
-        </a>
-      </div>
-    </section>
   </main>
 
-  <footer class="border-t border-slate-100 px-6 py-10 dark:border-slate-800">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400 md:flex-row">
+  <footer class="border-t border-zinc-200 bg-zinc-50 px-6 py-10 dark:border-zinc-800 dark:bg-zinc-950">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-zinc-500 dark:text-zinc-500 md:flex-row">
       <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
       <div class="flex gap-6">
-        <a href="/privacy.html" class="hover:text-slate-900 dark:hover:text-slate-100">Privacy</a>
-        <a href="/terms.html" class="hover:text-slate-900 dark:hover:text-slate-100">Terms</a>
-        <a href="/refund.html" class="hover:text-slate-900 dark:hover:text-slate-100">Refund</a>
-        <a href="https://github.com/QQSHI13/tokenguard" class="hover:text-slate-900 dark:hover:text-slate-100">GitHub</a>
+        <a href="/privacy.html" class="hover:text-zinc-900 dark:hover:text-zinc-300">Privacy</a>
+        <a href="/terms.html" class="hover:text-zinc-900 dark:hover:text-zinc-300">Terms</a>
+        <a href="/refund.html" class="hover:text-zinc-900 dark:hover:text-zinc-300">Refund</a>
+        <a href="https://github.com/QQSHI13/tokenguard" class="hover:text-zinc-900 dark:hover:text-zinc-300">GitHub</a>
       </div>
     </div>
   </footer>
 
   <script>
     const btn = document.getElementById('theme-toggle');
+    const icon = document.getElementById('theme-icon');
     function updateIcon() {
-      btn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+      icon.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
     }
     btn.addEventListener('click', () => {
       const html = document.documentElement;

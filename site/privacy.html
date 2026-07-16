@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css?v=4">
   <meta name="color-scheme" content="light dark">
   <script>
     if ('serviceWorker' in navigator) {
@@ -24,18 +24,18 @@
     }
   </script>
 </head>
-<body class="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-  <header class="border-b border-slate-100 dark:border-slate-800">
+<body class="bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+  <header class="border-b border-zinc-200/60 bg-white/70 backdrop-blur dark:border-zinc-800/60 dark:bg-zinc-950/70">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-      <a href="/" class="flex items-center gap-2 text-lg font-bold">
-        <img src="/logo.svg" alt="" class="h-8 w-8">
+      <a href="/" class="flex items-center gap-2.5 text-lg font-bold tracking-tight">
+        <img src="/logo.svg" alt="" class="h-7 w-7">
         <span>Token Guard</span>
       </a>
-      <div class="flex items-center gap-3">
-        <button id="theme-toggle" aria-label="Toggle dark mode" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-          🌙
+      <div class="flex items-center gap-2">
+        <button id="theme-toggle" aria-label="Toggle dark mode" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+          <span id="theme-icon">🌙</span>
         </button>
-        <a href="/" class="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100">← Back</a>
+        <a href="/" class="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">← Back</a>
       </div>
     </div>
   </header>
@@ -83,19 +83,22 @@
     </article>
   </main>
 
-  <footer class="border-t border-slate-100 px-6 py-10 dark:border-slate-800">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 dark:text-slate-400 md:flex-row">
+  <footer class="border-t border-zinc-200 bg-zinc-50 px-6 py-10 dark:border-zinc-800 dark:bg-zinc-950">
+    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-zinc-500 dark:text-zinc-500 md:flex-row">
       <p>© 2026 Token Guard. Open source under Apache-2.0.</p>
-      <a href="/" class="hover:text-slate-900 dark:hover:text-slate-100">Home</a>
-        <a href="/terms.html" class="hover:text-slate-900 dark:hover:text-slate-100">Terms</a>
-        <a href="/refund.html" class="hover:text-slate-900 dark:hover:text-slate-100">Refund</a>
+      <div class="flex gap-6">
+        <a href="/" class="hover:text-zinc-900 dark:hover:text-zinc-300">Home</a>
+        <a href="/terms.html" class="hover:text-zinc-900 dark:hover:text-zinc-300">Terms</a>
+        <a href="/refund.html" class="hover:text-zinc-900 dark:hover:text-zinc-300">Refund</a>
+      </div>
     </div>
   </footer>
 
   <script>
     const btn = document.getElementById('theme-toggle');
+    const icon = document.getElementById('theme-icon');
     function updateIcon() {
-      btn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+      icon.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
     }
     btn.addEventListener('click', () => {
       const html = document.documentElement;
