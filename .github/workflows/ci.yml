@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches-ignore: [pages]
   pull_request:
   issue_comment:
     types: [created]
