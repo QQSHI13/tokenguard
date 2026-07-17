@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discussions
+    url: https://github.com/QQSHI13/tokenguard/discussions
+    about: Setup questions, ideas, and show-and-tell — use Discussions for open-ended threads.
+  - name: Website & docs
+    url: https://tokenguard.pages.dev
+    about: Download, quickstart, and support information.
+  - name: Security reports
+    url: https://github.com/QQSHI13/tokenguard/security/policy
+    about: Report vulnerabilities privately — never file security issues publicly.

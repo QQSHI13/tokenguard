@@ -56,7 +56,19 @@ cd site && npm run build
 
 ## Releases
 
-Releases are built via `.github/workflows/release.yml` (manual workflow dispatch). It runs tests, bumps versions, creates a tag, and builds binaries for macOS, Windows, and Linux.
+Releases are built via `.github/workflows/release.yml` (manual workflow dispatch with a `tag` input like `v0.1.6`). The pipeline:
+
+1. **test** — runs the full CI suite: TypeScript type-check, frontend build, site build, `cargo fmt --check`, `cargo clippy -D warnings`, and `cargo test`.
+2. **bump-version** — writes the version into `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, pushes a `chore(release): bump version` commit (as github-actions[bot]) and the tag.
+3. **publish-tauri** — builds binaries in a matrix (macOS, Windows, Linux) and attaches them to the GitHub Release for that tag via `tauri-apps/tauri-action`. Releases are **published immediately** (not drafts).
+
+Trigger a release with:
+
+```bash
+gh workflow run release.yml -f tag=v0.1.7 -f releaseName="Token Guard v0.1.7"
+```
+
+Note: the tag is created by the workflow from the bumped commit — never tag manually beforehand.
 
 ## What NOT to do
 

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in Token Guard isn't working right
+title: "bug: "
+labels: [bug]
+body:
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Token Guard version
+      description: Shown in Settings, e.g. 0.1.6
+      placeholder: "0.1.6"
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider(s) involved
+      description: e.g. OpenAI, Anthropic, Gemini — or "n/a"
+      placeholder: "n/a"
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Point my agent at http://127.0.0.1:3742
+        2. Send a request with ...
+        3. See error ...
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: From the app's Logs tab. Redact API keys and prompts before pasting.
+      render: text
+    validations:
+      required: false

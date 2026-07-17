@@ -1,5 +1,10 @@
 # Token Guard
 
+[![GitHub release](https://img.shields.io/github/v/release/QQSHI13/tokenguard)](https://github.com/QQSHI13/tokenguard/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/QQSHI13/tokenguard/ci.yml?branch=main)](https://github.com/QQSHI13/tokenguard/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/QQSHI13/tokenguard)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/QQSHI13/tokenguard/total)](https://github.com/QQSHI13/tokenguard/releases)
+
 > The local LLM gateway. Your keys, your machine, your tokens.
 
 A cross-platform desktop app (Tauri v2 + Rust) that runs a local HTTP proxy to
@@ -28,9 +33,13 @@ One base URL (`http://127.0.0.1:3742`). Requests are routed to a provider by the
 - `/v1/chat/completions` and `/v1/responses` → OpenAI-format providers
 - `/v1/completions` → OpenAI legacy completions
 - `/v1/messages` → Anthropic Messages API
+- `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` → Gemini
+  API (streaming via the method suffix or `?alt=sse`; `GET /v1beta/models` and
+  `/v1beta/models/{model}` also work)
 
 Falls back to the default provider for that family. `GET /v1/models` returns the
-merged local model list.
+merged local model list. Any client format can be routed to any provider format —
+requests, responses, and SSE streams are converted as needed (the "3 × 3").
 
 ### Model aliases
 
