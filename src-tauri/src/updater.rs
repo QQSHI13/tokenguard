@@ -223,8 +223,33 @@ pub async fn download_update(
     Ok(path_str)
 }
 
+/// Write a helper shell script to the temp dir and spawn it detached.
+/// The script outlives the app process so it can swap binaries after exit.
+#[cfg(unix)]
+fn spawn_helper_script(script: &str, args: &[&str]) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let script_path =
+        std::env::temp_dir().join(format!("tokenguard-update-{}.sh", std::process::id()));
+    std::fs::write(&script_path, script).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    std::process::Command::new("sh")
+        .arg(&script_path)
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("failed to start update helper: {e}"))?;
+    Ok(())
+}
+
+/// Install the downloaded update in place and remove the downloaded file.
+///
+/// Every platform works the same way: a detached helper waits for this process
+/// to exit, swaps/updates the installed binary, relaunches it, and deletes the
+/// downloaded installer. Falls back to opening the installer for manual
+/// installation when an in-place update isn't possible (e.g. no write access,
+/// no pkexec); in that case the file is kept so the user can finish manually.
 #[tauri::command]
-pub fn install_update(path: String) -> Result<(), String> {
+pub async fn install_update(app: AppHandle, path: String) -> Result<(), String> {
     let path = std::path::PathBuf::from(path);
     if !path.exists() {
         return Err("installer not found".into());
@@ -233,47 +258,145 @@ pub fn install_update(path: String) -> Result<(), String> {
     let os = std::env::consts::OS;
     let path_str = path.to_string_lossy().to_string();
     let lower = path_str.to_lowercase();
+    let pid = std::process::id().to_string();
 
     match os {
         "windows" => {
-            if lower.ends_with(".msi") {
-                // Silent MSI install with progress bar.
-                std::process::Command::new("msiexec")
-                    .args(["/i", &path_str, "/passive"])
-                    .spawn()
-                    .map_err(|e| format!("failed to start MSI installer: {e}"))?;
+            // Batch runs the installer, then deletes it (and itself).
+            let bat = std::env::temp_dir().join(format!("tokenguard-update-{pid}.bat"));
+            let content = if lower.ends_with(".msi") {
+                format!(
+                    "@echo off\r\nmsiexec /i \"{path_str}\" /passive\r\ndel \"{path_str}\"\r\ndel \"%~f0\"\r\n"
+                )
             } else if lower.ends_with(".exe") {
-                // NSIS setup.exe: run directly.
-                std::process::Command::new(&path_str)
-                    .spawn()
-                    .map_err(|e| format!("failed to start installer: {e}"))?;
+                format!("@echo off\r\n\"{path_str}\"\r\ndel \"{path_str}\"\r\ndel \"%~f0\"\r\n")
             } else {
                 return Err("unsupported Windows installer".into());
-            }
+            };
+            std::fs::write(&bat, content).map_err(|e| e.to_string())?;
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "", "/min", &bat.to_string_lossy()])
+                .spawn()
+                .map_err(|e| format!("failed to start installer: {e}"))?;
         }
         "macos" => {
-            // .dmg mounts in Finder; .app.tar.gz opens in Archive Utility.
-            std::process::Command::new("open")
-                .arg(&path_str)
-                .spawn()
-                .map_err(|e| format!("failed to open installer: {e}"))?;
+            // $1 = downloaded file, $2 = app PID to wait for.
+            let script = r#"#!/bin/sh
+FILE="$1"
+PID="$2"
+while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+
+install_app() {
+  SRC="$1"
+  if [ -w "/Applications" ]; then
+    rm -rf "/Applications/Token Guard.app"
+    cp -R "$SRC" "/Applications/Token Guard.app" && \
+      xattr -dr com.apple.quarantine "/Applications/Token Guard.app" 2>/dev/null
+    return $?
+  fi
+  return 1
+}
+
+OK=1
+case "$FILE" in
+  *.dmg)
+    MNT=$(hdiutil attach -nobrowse -readonly "$FILE" 2>/dev/null | sed -n 's|.*\(/Volumes/.*\)|\1|p' | head -1)
+    if [ -n "$MNT" ] && [ -d "$MNT/Token Guard.app" ]; then
+      install_app "$MNT/Token Guard.app" && OK=0
+      hdiutil detach -quiet "$MNT" 2>/dev/null
+    fi
+    ;;
+  *.tar.gz)
+    TMP=$(mktemp -d)
+    tar -xzf "$FILE" -C "$TMP" 2>/dev/null
+    if [ -d "$TMP/Token Guard.app" ]; then
+      install_app "$TMP/Token Guard.app" && OK=0
+    fi
+    rm -rf "$TMP"
+    ;;
+esac
+
+if [ "$OK" = "0" ]; then
+  rm -f "$FILE"
+  open "/Applications/Token Guard.app"
+else
+  # No write access to /Applications: fall back to manual install, keep the file.
+  open "$FILE"
+fi
+rm -f "$0"
+"#;
+            spawn_helper_script(script, &[&path_str, &pid])?;
         }
         "linux" => {
             if lower.ends_with(".appimage") {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+                let target = std::env::var("APPIMAGE").unwrap_or_default();
+                if target.is_empty() {
+                    // Not running from an AppImage (dev build): just launch the new one.
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ =
+                            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+                    }
+                    std::process::Command::new(&path_str)
+                        .spawn()
+                        .map_err(|e| format!("failed to run AppImage: {e}"))?;
+                    return Ok(());
                 }
-                std::process::Command::new(&path_str)
-                    .spawn()
-                    .map_err(|e| format!("failed to run AppImage: {e}"))?;
+                // $1 = new AppImage, $2 = path of the running AppImage, $3 = app PID.
+                let script = r#"#!/bin/sh
+NEW="$1"
+TARGET="$2"
+PID="$3"
+while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+if mv "$NEW" "$TARGET"; then
+  chmod +x "$TARGET"
+  "$TARGET" &
+else
+  chmod +x "$NEW"
+  "$NEW" &
+fi
+rm -f "$0"
+"#;
+                spawn_helper_script(script, &[&path_str, &target, &pid])?;
             } else if lower.ends_with(".deb") || lower.ends_with(".rpm") {
-                // Open with the default package installer (GNOME Software, Discover, etc.).
-                std::process::Command::new("xdg-open")
-                    .arg(&path_str)
-                    .spawn()
-                    .map_err(|e| format!("failed to open package installer: {e}"))?;
+                let exec_path = std::env::current_exe()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .map_err(|e| e.to_string())?;
+                // $1 = package file, $2 = app PID, $3 = installed binary to relaunch.
+                let script = r#"#!/bin/sh
+FILE="$1"
+PID="$2"
+EXEC="$3"
+DONE=1
+if command -v pkexec >/dev/null 2>&1; then
+  case "$FILE" in
+    *.deb)
+      if command -v apt-get >/dev/null 2>&1; then
+        pkexec apt-get install -y "$FILE" && DONE=0
+      fi
+      ;;
+    *.rpm)
+      if command -v dnf >/dev/null 2>&1; then
+        pkexec dnf install -y "$FILE" && DONE=0
+      elif command -v rpm >/dev/null 2>&1; then
+        pkexec rpm -U "$FILE" && DONE=0
+      fi
+      ;;
+  esac
+fi
+
+if [ "$DONE" = "0" ]; then
+  rm -f "$FILE"
+  while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+  "$EXEC" &
+else
+  # No pkexec / unsupported: open the graphical package installer, keep the file.
+  xdg-open "$FILE" &
+fi
+rm -f "$0"
+"#;
+                spawn_helper_script(script, &[&path_str, &pid, &exec_path])?;
             } else {
                 return Err("unsupported Linux installer".into());
             }
@@ -281,5 +404,7 @@ pub fn install_update(path: String) -> Result<(), String> {
         _ => return Err("unsupported OS".into()),
     }
 
+    // Exit so the helper can replace binaries without file locks.
+    crate::graceful_exit(&app).await;
     Ok(())
 }
