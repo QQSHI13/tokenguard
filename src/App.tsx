@@ -67,6 +67,13 @@ export default function App() {
   }, [licensed, settings?.auto_update_interval_minutes]);
 
   useEffect(() => {
+    const i = setInterval(() => {
+      invoke("maybe_run_auto_export").catch(console.error);
+    }, 60 * 60 * 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     listen<string>("set_tab", (event) => {
       const t = event.payload as Tab;

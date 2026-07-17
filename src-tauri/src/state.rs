@@ -110,6 +110,20 @@ const ICON_RED: &[u8] = include_bytes!("../icons/icon_red.png");
 pub struct LimitViolation {
     pub limit: Limit,
     pub used: f64,
+    /// Whether this violation should trigger a desktop notification, based on
+    /// a non-mutating cooldown peek. The caller records the notification via
+    /// mark_block_notified()/mark_warning_notified() when it actually notifies.
+    pub should_notify: bool,
+}
+
+/// Result of a limit check. Reservations made in the in-flight counters are
+/// returned so the caller can release each exactly once per terminal outcome:
+/// immediately on block/pause, or after the request is logged on success.
+#[derive(Debug, Default)]
+pub struct LimitCheckResult {
+    pub violations: Vec<LimitViolation>,
+    /// Limit ids reserved in the in-flight counters (keyed by limit id only).
+    pub reservations: Vec<i64>,
 }
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
@@ -125,6 +139,8 @@ pub struct AppState {
     last_warning: Mutex<HashMap<i64, Instant>>,
     /// Per-limit cooldown so block/pause notifications don't spam.
     last_block_notify: Mutex<HashMap<i64, Instant>>,
+    /// Per-project cooldown so budget warning notifications don't spam.
+    last_budget_warning: Mutex<HashMap<String, Instant>>,
     /// Signal the proxy server to stop accepting new connections on shutdown.
     shutdown_tx: watch::Sender<()>,
     /// In-flight request counters for atomic request-limit enforcement.
@@ -168,6 +184,7 @@ impl AppState {
             app,
             last_warning: Mutex::new(HashMap::new()),
             last_block_notify: Mutex::new(HashMap::new()),
+            last_budget_warning: Mutex::new(HashMap::new()),
             shutdown_tx,
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
@@ -191,23 +208,37 @@ impl AppState {
         self.next_request_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Check whether a block/pause notification for this limit is still in the
-    /// cooldown window. If not, record the current time and return true.
-    pub fn should_notify_block(&self, limit_id: i64) -> bool {
-        let now = Instant::now();
-        self.last_block_notify
-            .lock()
-            .map(|mut map| {
-                let notify = map
-                    .get(&limit_id)
-                    .map(|last| now.duration_since(*last) >= WARNING_COOLDOWN)
-                    .unwrap_or(true);
-                if notify {
-                    map.insert(limit_id, now);
-                }
-                notify
-            })
-            .unwrap_or(true)
+    /// Non-mutating peek: is a block/pause notification for this limit out of
+    /// cooldown? Pair with mark_block_notified() when it actually notifies.
+    pub fn can_notify_block(&self, limit_id: i64) -> bool {
+        cooldown_peek(&self.last_block_notify, &limit_id)
+    }
+
+    /// Record that a block/pause notification was sent for this limit.
+    pub fn mark_block_notified(&self, limit_id: i64) {
+        cooldown_mark(&self.last_block_notify, limit_id);
+    }
+
+    /// Non-mutating peek: is a warning notification for this limit out of
+    /// cooldown? Pair with mark_warning_notified() when it actually notifies.
+    pub fn can_notify_warning(&self, limit_id: i64) -> bool {
+        cooldown_peek(&self.last_warning, &limit_id)
+    }
+
+    /// Record that a warning notification was sent for this limit.
+    pub fn mark_warning_notified(&self, limit_id: i64) {
+        cooldown_mark(&self.last_warning, limit_id);
+    }
+
+    /// Non-mutating peek: is a budget warning for this project out of
+    /// cooldown? Pair with mark_budget_notified() when it actually notifies.
+    pub fn can_notify_budget(&self, project_tag: &str) -> bool {
+        cooldown_peek(&self.last_budget_warning, project_tag)
+    }
+
+    /// Record that a budget warning notification was sent for this project.
+    pub fn mark_budget_notified(&self, project_tag: &str) {
+        cooldown_mark(&self.last_budget_warning, project_tag.to_string());
     }
 
     /// Route a request to a provider by (format family, model name).
@@ -238,24 +269,34 @@ impl AppState {
     }
 
     /// Check whether a project's spend in its budget period has exceeded its
-    /// budget. Returns `(used, budget, action)` when the budget is configured
-    /// and exceeded; otherwise None.
-    pub fn check_project_budget(&self, project_tag: &str) -> Option<(f64, f64, LimitAction)> {
+    /// budget. Returns `(used, budget, action, should_notify)` when the budget
+    /// is configured and exceeded; otherwise None. `should_notify` is a
+    /// peek-based cooldown decision for the Warn action (always true for
+    /// Block/Pause); the caller records it via mark_budget_notified().
+    pub fn check_project_budget(&self, project_tag: &str) -> Option<(f64, f64, LimitAction, bool)> {
         let Ok(conn) = self.db.get() else {
             tracing::error!("failed to get DB connection from pool for project budget");
             return None;
         };
-        let Ok(cfg) = self.config.read() else {
-            return None;
-        };
-        let project = cfg.projects.iter().find(|p| p.name == project_tag)?;
+        let project = self
+            .config
+            .read()
+            .ok()?
+            .projects
+            .iter()
+            .find(|p| p.name == project_tag)?
+            .clone();
         if project.budget <= 0.0 {
             return None;
         }
         let used =
             db::project_period_spend(&conn, project_tag, project.budget_period).unwrap_or(0.0);
         if used >= project.budget {
-            Some((used, project.budget, project.budget_action))
+            let should_notify = match project.budget_action {
+                LimitAction::Warn => self.can_notify_budget(project_tag),
+                _ => true,
+            };
+            Some((used, project.budget, project.budget_action, should_notify))
         } else {
             None
         }
@@ -279,7 +320,9 @@ impl AppState {
     ///
     /// Request limits are enforced atomically via in-memory counters so a burst
     /// of concurrent requests cannot overshoot the cap between the check and
-    /// the log insert.
+    /// the log insert. Each check reserves +1 per request-based limit; the
+    /// reservation is released exactly once by the caller (see
+    /// release_request_limits) — check_limits never decrements internally.
     pub fn check_limits(
         &self,
         provider_id: i64,
@@ -287,23 +330,27 @@ impl AppState {
         cost: f64,
         tokens: u64,
         duration_ms: u64,
-    ) -> Vec<LimitViolation> {
+    ) -> LimitCheckResult {
         let Ok(conn) = self.db.get() else {
             tracing::error!("failed to get DB connection from pool for check_limits");
-            return Vec::new();
+            return LimitCheckResult::default();
         };
-        let Ok(cfg) = self.config.read() else {
-            return Vec::new();
+        // Clone what we need and drop the read guard before any DB work.
+        let (limits, projects, webhook_url) = match self.config.read() {
+            Ok(cfg) => (
+                cfg.limits.clone(),
+                cfg.projects.clone(),
+                cfg.webhook_url.clone(),
+            ),
+            Err(_) => return LimitCheckResult::default(),
         };
 
-        let mut violations = Vec::new();
-        let webhook_url = cfg.webhook_url.clone();
-        let now = Instant::now();
-        for limit in &cfg.limits {
+        let mut result = LimitCheckResult::default();
+        for limit in &limits {
             if !limit.enabled {
                 continue;
             }
-            if !limit_scope_matches(limit, provider_id, project_tag, &cfg.projects) {
+            if !limit_scope_matches(limit, provider_id, project_tag, &projects) {
                 continue;
             }
             if !is_limit_active(limit) {
@@ -313,13 +360,15 @@ impl AppState {
             let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
 
             // For request-based limits, reserve one in the atomic counter first so
-            // concurrent requests see each other. If the request is going to be
-            // blocked/paused, the caller must call release_request_limit() later.
-            // Rate-based metrics use a 60-second rolling window (see db::usage_for_limit).
+            // concurrent requests see each other. The counter is keyed by limit id
+            // only and holds just in-flight reservations; the persisted DB count
+            // handles the time window. The caller releases the reservation exactly
+            // once per terminal outcome.
             let (current, used) = if limit.metric == LimitMetric::Requests
                 || limit.metric == LimitMetric::RequestsPerMinute
             {
-                let reserved = self.limit_counters.increment(limit, 1.0);
+                let reserved = self.limit_counters.increment(limit.id, 1.0);
+                result.reservations.push(limit.id);
                 (1.0, persisted + reserved - 1.0)
             } else {
                 let current = match limit.metric {
@@ -333,7 +382,8 @@ impl AppState {
 
             let total = used + current;
             if limit.cap > 0.0 && total >= limit.cap {
-                self.audit(
+                audit_with_conn(
+                    &conn,
                     "limit_hit",
                     &format!(
                         "limit={} metric={} action={} used={:.4} cap={:.4}",
@@ -344,7 +394,12 @@ impl AppState {
                         limit.cap
                     ),
                 );
-                if self.should_notify_block(limit.id) {
+                // Peek only; the proxy records the cooldown when it notifies.
+                let should_notify = match limit.action {
+                    LimitAction::Warn => self.can_notify_warning(limit.id),
+                    _ => self.can_notify_block(limit.id),
+                };
+                if should_notify {
                     if let Some(ref url) = webhook_url {
                         webhook::send_limit_event(
                             &self.client,
@@ -356,70 +411,58 @@ impl AppState {
                         );
                     }
                 }
-                // Blocked/paused requests don't count; the caller will release.
-                if limit.metric == LimitMetric::Requests
-                    && (limit.action == LimitAction::Block || limit.action == LimitAction::Pause)
-                {
-                    self.limit_counters.increment(limit, -1.0);
-                }
-                violations.push(LimitViolation {
+                result.violations.push(LimitViolation {
                     limit: limit.clone(),
                     used,
+                    should_notify,
                 });
                 continue;
             }
 
-            // Warning threshold notification (throttled).
+            // Warning threshold notification (throttled). This path notifies
+            // directly, so it also records the cooldown here.
             if limit.cap > 0.0
                 && limit.warning_threshold > 0.0
                 && used >= limit.warning_threshold * limit.cap
+                && self.can_notify_warning(limit.id)
             {
-                let should_notify = self
-                    .last_warning
-                    .lock()
-                    .map(|map| {
-                        map.get(&limit.id)
-                            .map(|last| now.duration_since(*last) >= WARNING_COOLDOWN)
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(true);
-                if should_notify {
-                    self.audit(
+                audit_with_conn(
+                    &conn,
+                    "limit_warning",
+                    &format!(
+                        "limit={} metric={} used={:.4} cap={:.4} threshold={:.2}",
+                        limit.name,
+                        limit.metric.as_db_str(),
+                        used,
+                        limit.cap,
+                        limit.warning_threshold
+                    ),
+                );
+                notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
+                if let Some(ref url) = webhook_url {
+                    webhook::send_limit_event(
+                        &self.client,
+                        url,
                         "limit_warning",
-                        &format!(
-                            "limit={} metric={} used={:.4} cap={:.4} threshold={:.2}",
-                            limit.name,
-                            limit.metric.as_db_str(),
-                            used,
-                            limit.cap,
-                            limit.warning_threshold
-                        ),
+                        limit,
+                        used,
+                        limit.cap,
                     );
-                    notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
-                    if let Some(ref url) = webhook_url {
-                        webhook::send_limit_event(
-                            &self.client,
-                            url,
-                            "limit_warning",
-                            limit,
-                            used,
-                            limit.cap,
-                        );
-                    }
-                    if let Ok(mut map) = self.last_warning.lock() {
-                        map.insert(limit.id, now);
-                    }
                 }
+                self.mark_warning_notified(limit.id);
             }
         }
-        violations
+        result
     }
 
-    /// Release a reserved request-limit unit when a request is blocked/paused
-    /// before it reaches the upstream provider.
-    pub fn release_request_limit(&self, limit: &Limit) {
-        if limit.metric == LimitMetric::Requests || limit.metric == LimitMetric::RequestsPerMinute {
-            self.limit_counters.increment(limit, -1.0);
+    /// Release in-flight reservations made by check_limits. Each reservation
+    /// must be released exactly once per terminal outcome: immediately when
+    /// the request is blocked/paused, or after the request is logged on
+    /// success (the DB count then includes it, so the reservation is
+    /// redundant). Releasing clamps at zero, never going negative.
+    pub fn release_request_limits(&self, reservations: &[i64]) {
+        for id in reservations {
+            self.limit_counters.release(*id);
         }
     }
 
@@ -536,17 +579,60 @@ impl AppState {
         self.provider_health.clone()
     }
 
-    pub fn toggle_pause(&self) -> bool {
-        let new = !self.paused.load(Ordering::Relaxed);
-        self.paused.store(new, Ordering::Relaxed);
-        if new {
+    /// Idempotently set the paused flag. Budget/limit enforcement uses this
+    /// (instead of toggling) so concurrent violations can't flip the proxy
+    /// back to unpaused. Notifications and tray refresh fire only on change.
+    pub fn set_paused(&self, paused: bool) {
+        let was = self.paused.swap(paused, Ordering::Relaxed);
+        if was == paused {
+            return;
+        }
+        if paused {
             notifications::proxy_paused(&self.app);
         } else {
             notifications::proxy_resumed(&self.app);
         }
         self.refresh_tray();
+    }
+
+    /// User-facing tray action: flip the paused flag. Returns the new state.
+    pub fn toggle_pause(&self) -> bool {
+        let new = !self.paused.load(Ordering::Relaxed);
+        self.set_paused(new);
         new
     }
+}
+
+/// Insert an audit event on an already-held connection, so the proxy hot path
+/// doesn't take a second pooled connection per event.
+fn audit_with_conn(conn: &rusqlite::Connection, event_type: &str, details: &str) {
+    if let Err(e) = db::insert_audit_event(conn, event_type, details) {
+        tracing::warn!("failed to insert audit event: {e}");
+    }
+}
+
+/// True when `key` has no recorded notification within the cooldown window.
+/// Does not record anything; use cooldown_mark() after actually notifying.
+fn cooldown_peek<K, Q>(map: &Mutex<HashMap<K, Instant>>, key: &Q) -> bool
+where
+    K: Eq + std::hash::Hash + std::borrow::Borrow<Q>,
+    Q: Eq + std::hash::Hash + ?Sized,
+{
+    let now = Instant::now();
+    map.lock()
+        .map(|m| cooldown_allows(m.get(key).copied(), now))
+        .unwrap_or(true)
+}
+
+fn cooldown_mark<K: Eq + std::hash::Hash>(map: &Mutex<HashMap<K, Instant>>, key: K) {
+    if let Ok(mut m) = map.lock() {
+        m.insert(key, Instant::now());
+    }
+}
+
+fn cooldown_allows(last: Option<Instant>, now: Instant) -> bool {
+    last.map(|l| now.duration_since(l) >= WARNING_COOLDOWN)
+        .unwrap_or(true)
 }
 
 /// Parse a "HH:MM" string into minutes since midnight.
@@ -895,5 +981,40 @@ mod tests {
         ));
         assert!(!limit_scope_matches(&limit, 1, Some("other"), &projects));
         assert!(!limit_scope_matches(&limit, 1, None, &projects));
+    }
+
+    #[test]
+    fn cooldown_allows_first_notification() {
+        assert!(cooldown_allows(None, Instant::now()));
+    }
+
+    #[test]
+    fn cooldown_blocks_within_window() {
+        let now = Instant::now();
+        assert!(!cooldown_allows(Some(now), now));
+        assert!(!cooldown_allows(
+            Some(now),
+            now + WARNING_COOLDOWN - Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn cooldown_allows_after_window() {
+        let now = Instant::now();
+        assert!(cooldown_allows(
+            Some(now),
+            now + WARNING_COOLDOWN + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn cooldown_peek_does_not_record() {
+        // The peek/mark split: peeking must stay true until someone records.
+        let map: Mutex<HashMap<i64, Instant>> = Mutex::new(HashMap::new());
+        assert!(cooldown_peek(&map, &1));
+        assert!(cooldown_peek(&map, &1));
+        cooldown_mark(&map, 1);
+        assert!(!cooldown_peek(&map, &1));
+        assert!(cooldown_peek(&map, &2));
     }
 }

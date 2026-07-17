@@ -11,7 +11,7 @@ use crate::state::AppState;
 use rusqlite::params;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
 #[derive(Debug, serde::Serialize)]
@@ -111,14 +111,9 @@ pub fn add_provider(
     input: ProviderInput,
 ) -> Result<ProviderDto, String> {
     validate_provider_input(&input)?;
-    if !input.api_key.is_empty() {
-        secrets::set(&input.name, &input.api_key)?;
-        {
-            let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-            record_provider_key_time(&conn, &input.name)?;
-            drop(conn);
-        }
-    }
+    // Insert the DB row first; only persist the key once the row exists,
+    // otherwise a failed insert (e.g. duplicate name) would overwrite the
+    // existing provider's key in the keychain.
     let provider = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let id = db::insert_provider(&conn, &input).map_err(|e| e.to_string())?;
@@ -129,6 +124,18 @@ pub fn add_provider(
             .find(|p| p.id == id)
             .ok_or("provider not found after insert")?
     };
+    if !input.api_key.is_empty() {
+        if let Err(e) = secrets::set(&input.name, &input.api_key) {
+            // Roll back the row so a failed key write leaves nothing behind.
+            if let Ok(conn) = state.inner().db.get() {
+                let _ = db::delete_provider(&conn, provider.id);
+            }
+            return Err(e);
+        }
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        record_provider_key_time(&conn, &input.name)?;
+        drop(conn);
+    }
     // reload config into memory
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
@@ -205,6 +212,39 @@ pub fn set_provider_key(
     Ok(())
 }
 
+/// Apply the keychain side of a provider update: explicit clear wins, then a
+/// new key, then a key move on rename. The caller persists the DB change first
+/// and reverts it when this fails, so DB and keychain never diverge.
+fn migrate_provider_key(old_name: &str, input: &ProviderInput) -> Result<(), String> {
+    if input.clear_key {
+        let _ = secrets::delete(&input.name);
+        if old_name != input.name {
+            let _ = secrets::delete(old_name);
+        }
+    } else if !input.api_key.is_empty() {
+        secrets::set(&input.name, &input.api_key)?;
+        if old_name != input.name {
+            let _ = secrets::delete(old_name);
+        }
+    } else if old_name != input.name {
+        match secrets::get(old_name) {
+            Ok(k) => {
+                secrets::set(&input.name, &k)?;
+                let _ = secrets::delete(old_name);
+            }
+            Err(e) => {
+                // No stored key is fine (nothing to move); any other error
+                // aborts so the key is not stranded under the old name.
+                let lower = e.to_lowercase();
+                if !lower.contains("noentry") && !lower.contains("no entry") {
+                    return Err(format!("could not read API key from keychain: {e}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn update_provider(
     state: State<'_, Arc<AppState>>,
@@ -212,34 +252,50 @@ pub fn update_provider(
     input: ProviderInput,
 ) -> Result<ProviderDto, String> {
     validate_provider_input(&input)?;
-    // current name, to handle rename + key move
-    let old_name = {
+    // current provider, to handle rename + key move (and a possible revert)
+    let old = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         let providers = db::list_providers(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         providers
-            .iter()
+            .into_iter()
             .find(|p| p.id == id)
-            .map(|p| p.name.clone())
             .ok_or("provider not found")?
     };
-    // key handling: explicit clear wins; else new key; else move on rename
-    if input.clear_key {
-        let _ = secrets::delete(&input.name);
-        if old_name != input.name {
-            let _ = secrets::delete(&old_name);
-        }
-    } else if !input.api_key.is_empty() {
-        secrets::set(&input.name, &input.api_key)?;
-        if old_name != input.name {
-            let _ = secrets::delete(&old_name);
-        }
-    } else if old_name != input.name {
-        if let Ok(k) = secrets::get(&old_name) {
-            secrets::set(&input.name, &k)?;
-            let _ = secrets::delete(&old_name);
-        }
+    let old_name = old.name.clone();
+
+    // DB update first: keychain changes only happen once it succeeded.
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::update_provider(&conn, id, &input).map_err(|e| e.to_string())?;
+        drop(conn);
     }
+
+    if let Err(e) = migrate_provider_key(&old_name, &input) {
+        // Best-effort revert of the DB row so DB and keychain stay consistent.
+        let revert = ProviderInput {
+            name: old.name,
+            base_url: old.base_url,
+            format: old.format,
+            auth: old.auth,
+            api_key: String::new(),
+            models: old.models,
+            is_default: old.is_default,
+            clear_key: false,
+            fallback_provider_id: old.fallback_provider_id,
+            extra_headers: old.extra_headers,
+        };
+        if let Ok(conn) = state.inner().db.get() {
+            let _ = db::update_provider(&conn, id, &revert);
+            if let Ok(new_cfg) = db::load_config(&conn) {
+                if let Ok(mut cfg) = state.inner().config.write() {
+                    *cfg = new_cfg;
+                }
+            }
+        }
+        return Err(e);
+    }
+
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         if input.clear_key {
@@ -270,7 +326,6 @@ pub fn update_provider(
     }
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::update_provider(&conn, id, &input).map_err(|e| e.to_string())?;
         let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
         drop(conn);
         *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
@@ -459,9 +514,51 @@ pub fn backup_database(state: State<'_, Arc<AppState>>, target_path: String) -> 
     Ok(())
 }
 
+/// Path of the marker file that schedules a database restore on next boot.
+fn restore_marker_path(db_path: &std::path::Path) -> std::path::PathBuf {
+    let mut s = db_path.as_os_str().to_os_string();
+    s.push(".restore-pending");
+    std::path::PathBuf::from(s)
+}
+
+/// Read-only check that `source` is a SQLite database with a schema.
+fn validate_sqlite_source(source: &std::path::Path) -> bool {
+    let Ok(test) =
+        rusqlite::Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return false;
+    };
+    test.query_row("PRAGMA schema_version", [], |row| row.get::<_, bool>(0))
+        .unwrap_or(false)
+}
+
+/// Apply a restore scheduled by `restore_database`: while the database is
+/// still closed, copy the recorded source over it and drop stale WAL/SHM
+/// files. Any problem just removes the marker and lets the app boot normally.
+pub fn apply_pending_restore(db_path: &std::path::Path) {
+    let marker = restore_marker_path(db_path);
+    let Ok(recorded) = std::fs::read_to_string(&marker) else {
+        return;
+    };
+    let source = std::path::PathBuf::from(recorded.trim());
+    if source.exists() && validate_sqlite_source(&source) && std::fs::copy(&source, db_path).is_ok()
+    {
+        for suffix in ["-wal", "-shm"] {
+            let mut s = db_path.as_os_str().to_os_string();
+            s.push(suffix);
+            let _ = std::fs::remove_file(std::path::PathBuf::from(s));
+        }
+        tracing::info!("database restored from {}", source.display());
+    } else {
+        tracing::warn!("pending database restore skipped (bad marker or source)");
+    }
+    let _ = std::fs::remove_file(&marker);
+}
+
 #[tauri::command]
-pub fn restore_database(
+pub async fn restore_database(
     state: State<'_, Arc<AppState>>,
+    app: AppHandle,
     source_path: String,
 ) -> Result<(), String> {
     let source = std::path::PathBuf::from(source_path);
@@ -479,11 +576,14 @@ pub fn restore_database(
         }
     }
 
-    let target = state.inner().db_path.clone();
-    // Copy over the current database. The app will restart so the pool re-opens
-    // the restored file.
-    std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
-    state.inner().app.restart();
+    // Never overwrite the live WAL database under open connections: record a
+    // pending restore (applied on next boot by `apply_pending_restore`) and
+    // shut down so the pool closes cleanly first.
+    let marker = restore_marker_path(&state.inner().db_path);
+    let canonical = source.canonicalize().unwrap_or(source);
+    std::fs::write(&marker, canonical.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
+    crate::graceful_exit(&app).await;
+    Ok(())
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -833,8 +933,22 @@ pub fn get_logs_filtered(
 }
 
 #[tauri::command]
-pub fn write_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+pub fn write_text_file(app: AppHandle, path: String, content: String) -> Result<(), String> {
+    // The frontend only passes save-dialog paths; refuse anything outside the
+    // user's home directory so the webview cannot overwrite arbitrary files.
+    let target = std::path::PathBuf::from(&path);
+    let parent = target.parent().ok_or("invalid target path")?;
+    let canonical_parent = parent.canonicalize().map_err(|e| e.to_string())?;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| e.to_string())?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !canonical_parent.starts_with(&home) {
+        return Err("refusing to write outside the home directory".into());
+    }
+    std::fs::write(&target, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -959,7 +1073,7 @@ pub async fn refresh_models(
     if !status.is_success() {
         return Err(format!(
             "provider returned {status}: {}",
-            &body[..body.len().min(200)]
+            body.chars().take(200).collect::<String>()
         ));
     }
     let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
@@ -1332,4 +1446,92 @@ pub fn get_monthly_usage(
 ) -> Result<Vec<db::MonthlyUsage>, String> {
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     db::monthly_usage(&conn, months.unwrap_or(12)).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_sqlite_db(path: &std::path::Path, value: i64) {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE t (x INTEGER); INSERT INTO t VALUES ({value});"
+        ))
+        .unwrap();
+    }
+
+    fn read_value(path: &std::path::Path) -> i64 {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.query_row("SELECT x FROM t", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn pending_restore_swaps_db_and_removes_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("tokenguard.db");
+        let backup_path = dir.path().join("backup.db");
+        make_sqlite_db(&db_path, 1);
+        make_sqlite_db(&backup_path, 2);
+
+        // Stale WAL/SHM files from the old database must be dropped.
+        let wal = std::path::PathBuf::from(format!("{}-wal", db_path.display()));
+        let shm = std::path::PathBuf::from(format!("{}-shm", db_path.display()));
+        std::fs::write(&wal, b"stale").unwrap();
+        std::fs::write(&shm, b"stale").unwrap();
+
+        let marker = restore_marker_path(&db_path);
+        std::fs::write(&marker, backup_path.to_string_lossy().as_bytes()).unwrap();
+
+        apply_pending_restore(&db_path);
+
+        assert!(!marker.exists());
+        assert!(!wal.exists());
+        assert!(!shm.exists());
+        assert_eq!(read_value(&db_path), 2);
+    }
+
+    #[test]
+    fn pending_restore_missing_source_removes_marker_and_keeps_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("tokenguard.db");
+        make_sqlite_db(&db_path, 1);
+
+        let marker = restore_marker_path(&db_path);
+        std::fs::write(
+            &marker,
+            dir.path().join("gone.db").to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+
+        apply_pending_restore(&db_path);
+
+        assert!(!marker.exists());
+        assert_eq!(read_value(&db_path), 1);
+    }
+
+    #[test]
+    fn pending_restore_non_sqlite_source_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("tokenguard.db");
+        make_sqlite_db(&db_path, 1);
+        let bogus = dir.path().join("not-a-db.txt");
+        std::fs::write(&bogus, b"plain text").unwrap();
+
+        let marker = restore_marker_path(&db_path);
+        std::fs::write(&marker, bogus.to_string_lossy().as_bytes()).unwrap();
+
+        apply_pending_restore(&db_path);
+
+        assert!(!marker.exists());
+        assert_eq!(read_value(&db_path), 1);
+    }
+
+    #[test]
+    fn no_marker_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("tokenguard.db");
+        make_sqlite_db(&db_path, 1);
+        apply_pending_restore(&db_path);
+        assert_eq!(read_value(&db_path), 1);
+    }
 }

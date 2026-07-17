@@ -227,7 +227,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-neutral-200">
+        <h2 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-neutral-200">
           {t("configuredProviders")}
         </h2>
         <div className="space-y-2">
@@ -242,34 +242,34 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                 key={p.id}
                 className={`rounded-lg border px-3 py-2 ${
                   editingId === p.id
-                    ? "border-emerald-600 bg-neutral-900/60"
-                    : "border-neutral-800 bg-neutral-900/40"
+                    ? "border-emerald-600 bg-emerald-50/60 dark:bg-neutral-900/60"
+                    : "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/40"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-neutral-200">
+                      <span className="text-sm font-medium text-neutral-900 dark:text-neutral-200">
                         {p.name}
                       </span>
                       {p.is_default && (
-                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300">
                           {t("default")}
                         </span>
                       )}
                       {key_error ? (
                         <span
                           title={key_error}
-                          className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300"
+                          className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-700 dark:text-red-300"
                         >
                           {t("keyError")}
                         </span>
                       ) : api_key_set ? (
-                        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
+                        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
                           {t("keySet")}
                         </span>
                       ) : (
-                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">
+                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-700 dark:text-red-300">
                           {t("noKey")}
                         </span>
                       )}
@@ -305,7 +305,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                     <button
                       onClick={() => checkHealth(p.id)}
                       title={t("checkHealth")}
-                      className="rounded bg-neutral-800 px-2 py-1 text-[10px] text-neutral-300 hover:bg-neutral-700"
+                      className="rounded bg-neutral-200 px-2 py-1 text-[10px] text-neutral-700 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
                     >
                       {t("checkHealth")}
                     </button>
@@ -340,17 +340,17 @@ export default function Providers({ onChange }: { onChange: () => void }) {
 
       <form
         onSubmit={submit}
-        className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
+        className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-200">
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-200">
             {editing ? t("editProvider") : t("addProvider")}
           </h2>
           {editing && (
             <button
               type="button"
               onClick={cancelEdit}
-              className="text-[11px] text-neutral-500 hover:text-neutral-300"
+              className="text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
             >
               {t("cancel")}
             </button>
@@ -364,7 +364,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
                 key={p.name}
                 type="button"
                 onClick={() => applyPreset(p)}
-                className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+                className="rounded bg-neutral-200 px-2 py-1 text-[11px] text-neutral-700 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
               >
                 {p.name}
               </button>
@@ -443,7 +443,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           />
         </Field>
         {editing && (
-          <label className="flex items-center gap-2 text-xs text-neutral-400">
+          <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
             <input
               type="checkbox"
               checked={form.clear_key}
@@ -564,7 +564,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
             {t("modelAliasHint")}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-neutral-400">
+        <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
           <input
             type="checkbox"
             checked={form.is_default}
@@ -649,10 +649,10 @@ export default function Providers({ onChange }: { onChange: () => void }) {
           <p className="mt-1 text-[10px] text-neutral-500">{t("extraHeadersHint")}</p>
         </div>
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
-          className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
+          className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300"
         >
           {editing ? t("saveChanges") : t("addProvider")}
         </button>
@@ -713,13 +713,13 @@ function HealthText({
   }
   if (health.ok) {
     return (
-      <span className="text-emerald-400">
+      <span className="text-emerald-600 dark:text-emerald-400">
         {t("healthy", { ms: health.latency_ms })}
       </span>
     );
   }
   return (
-    <span className="text-red-400" title={health.error ?? undefined}>
+    <span className="text-red-600 dark:text-red-400" title={health.error ?? undefined}>
       {health.error ?? t("unhealthy")}
     </span>
   );

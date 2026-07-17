@@ -92,11 +92,15 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
         _ => return Ok(None),
     };
     let device = license::get_device_fingerprint()?;
+    // Key travels in a header, not the query string (which lands in CDN/proxy logs).
     let validate_url = format!(
-        "{}/api/license/validate?key={key}&device={device}",
+        "{}/api/license/validate?device={device}",
         license::WORKER_BASE
     );
-    let valid_resp = reqwest::get(&validate_url)
+    let valid_resp = client
+        .get(&validate_url)
+        .header("X-License-Key", &key)
+        .send()
         .await
         .map_err(|e| e.to_string())?;
     let valid_json: serde_json::Value = valid_resp.json().await.map_err(|e| e.to_string())?;

@@ -353,6 +353,13 @@ fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
     })
 }
 
+/// RFC3339 cutoff `days` before now. ts values are stored as RFC3339 strings,
+/// so cutoffs must use the same format — mixing SQLite `datetime('now', …)`
+/// strings breaks lexicographic boundary comparisons ('T' > ' ').
+fn cutoff_rfc3339(days: u64) -> String {
+    (chrono::Utc::now() - chrono::TimeDelta::days(days as i64)).to_rfc3339()
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct LogFilter {
     pub provider: Option<String>,
@@ -367,11 +374,13 @@ pub struct LogFilter {
 pub fn list_logs(
     conn: &Connection,
     limit: u64,
-    _days: Option<u64>,
+    days: Option<u64>,
 ) -> rusqlite::Result<Vec<LogRow>> {
+    let start = days.filter(|d| *d > 0).map(cutoff_rfc3339);
     list_logs_filtered(
         conn,
         &LogFilter {
+            start,
             page_size: limit,
             ..LogFilter::default()
         },
@@ -442,8 +451,8 @@ pub fn list_audit_events(
     let mut sql = String::from("SELECT id, ts, event_type, details FROM audit_events WHERE 1=1");
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if days > 0 {
-        sql.push_str(" AND ts >= datetime('now', ?1)");
-        params.push(Box::new(format!("-{days} days")));
+        sql.push_str(" AND ts >= ?1");
+        params.push(Box::new(cutoff_rfc3339(days as u64)));
     }
     sql.push_str(" ORDER BY id DESC LIMIT ?");
     params.push(Box::new(limit));
@@ -466,8 +475,8 @@ pub fn cleanup_old_audit_events(conn: &Connection, days: u32) -> rusqlite::Resul
         return Ok(0);
     }
     conn.execute(
-        "DELETE FROM audit_events WHERE ts < datetime('now', ?1)",
-        params![format!("-{days} days")],
+        "DELETE FROM audit_events WHERE ts < ?1",
+        params![cutoff_rfc3339(days as u64)],
     )
 }
 
@@ -477,8 +486,8 @@ pub fn cleanup_old_logs(conn: &Connection, days: u32) -> rusqlite::Result<usize>
         return Ok(0);
     }
     conn.execute(
-        "DELETE FROM logs WHERE ts < datetime('now', ?1)",
-        params![format!("-{days} days")],
+        "DELETE FROM logs WHERE ts < ?1",
+        params![cutoff_rfc3339(days as u64)],
     )
 }
 
@@ -652,14 +661,14 @@ pub fn provider_daily_usage(
     days: u64,
 ) -> rusqlite::Result<Vec<DailyUsage>> {
     let mut sql = String::from(
-        "SELECT date(ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+        "SELECT date(ts) AS day, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
          FROM logs WHERE provider = ?1",
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     params.push(Box::new(provider_name.to_string()));
     if days > 0 {
-        sql.push_str(" AND ts >= datetime('now', ?2)");
-        params.push(Box::new(format!("-{days} days")));
+        sql.push_str(" AND ts >= ?2");
+        params.push(Box::new(cutoff_rfc3339(days)));
     }
     sql.push_str(" GROUP BY date(ts) ORDER BY day");
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -683,14 +692,14 @@ pub fn project_daily_usage(
     days: u64,
 ) -> rusqlite::Result<Vec<DailyUsage>> {
     let mut sql = String::from(
-        "SELECT date(ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+        "SELECT date(ts) AS day, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
          FROM logs WHERE project_tag IS ?1",
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     params.push(Box::new(project_tag));
     if days > 0 {
-        sql.push_str(" AND ts >= datetime('now', ?2)");
-        params.push(Box::new(format!("-{days} days")));
+        sql.push_str(" AND ts >= ?2");
+        params.push(Box::new(cutoff_rfc3339(days)));
     }
     sql.push_str(" GROUP BY date(ts) ORDER BY day");
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -723,8 +732,8 @@ pub fn project_totals(conn: &Connection, days: u64) -> rusqlite::Result<Vec<Proj
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if days > 0 {
-        sql.push_str(" AND ts >= datetime('now', ?1)");
-        params.push(Box::new(format!("-{days} days")));
+        sql.push_str(" AND ts >= ?1");
+        params.push(Box::new(cutoff_rfc3339(days)));
     }
     sql.push_str(" GROUP BY project_tag ORDER BY SUM(cost) DESC");
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -742,12 +751,20 @@ pub fn project_totals(conn: &Connection, days: u64) -> rusqlite::Result<Vec<Proj
 
 /// Aggregate usage per month for the last `months` months (including the current month).
 pub fn monthly_usage(conn: &Connection, months: u32) -> rusqlite::Result<Vec<MonthlyUsage>> {
-    let sql = "SELECT strftime('%Y-%m', ts), COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
-               FROM logs WHERE ts >= datetime('now', 'start of month', ?1) \
+    let sql = "SELECT strftime('%Y-%m', ts) AS month, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
+               FROM logs WHERE ts >= ?1 \
                GROUP BY strftime('%Y-%m', ts) ORDER BY month";
-    let offset = format!("-{} months", months.saturating_sub(1));
+    // First day of the month `months - 1` months ago, 00:00 UTC, as RFC3339.
+    use chrono::Datelike as _;
+    let cutoff = chrono::Utc::now()
+        .date_naive()
+        .with_day(1)
+        .and_then(|d| d.checked_sub_months(chrono::Months::new(months.saturating_sub(1))))
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|dt| dt.and_utc().to_rfc3339())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([&offset], |row| {
+    let rows = stmt.query_map([&cutoff], |row| {
         Ok(MonthlyUsage {
             month: row.get(0)?,
             cost: row.get(1)?,
@@ -1021,34 +1038,39 @@ pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64
 }
 
 /// Migrate the legacy `settings.budget` value into a global daily money limit.
-/// Does nothing if a limit already exists or if budget is 0.
+/// Runs at most once (tracked by the `legacy_budget_migrated` setting) so a
+/// deleted limit is never resurrected; also skips when a limit already exists
+/// or the budget is 0.
 pub fn migrate_legacy_budget(conn: &Connection) -> rusqlite::Result<()> {
-    let existing: i64 = conn.query_row("SELECT COUNT(*) FROM limits", [], |r| r.get(0))?;
-    if existing > 0 {
+    let tx = conn.unchecked_transaction()?;
+    if get_setting(&tx, "legacy_budget_migrated").as_deref() == Some("1") {
         return Ok(());
     }
-    let budget = get_setting(conn, "budget")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0);
-    if budget <= 0.0 {
-        return Ok(());
+    let existing: i64 = tx.query_row("SELECT COUNT(*) FROM limits", [], |r| r.get(0))?;
+    if existing == 0 {
+        let budget = get_setting(&tx, "budget")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0);
+        if budget > 0.0 {
+            let limit = LimitInput {
+                name: "Daily budget".to_string(),
+                metric: LimitMetric::Money,
+                period: LimitPeriod::Daily,
+                cap: budget,
+                warning_threshold: 0.8,
+                scope: LimitScope::Global,
+                scope_id: None,
+                action: LimitAction::Warn,
+                enabled: true,
+                active_hours_start: None,
+                active_hours_end: None,
+                active_days: 0b1111111,
+            };
+            insert_limit(&tx, &limit)?;
+        }
     }
-    let limit = LimitInput {
-        name: "Daily budget".to_string(),
-        metric: LimitMetric::Money,
-        period: LimitPeriod::Daily,
-        cap: budget,
-        warning_threshold: 0.8,
-        scope: LimitScope::Global,
-        scope_id: None,
-        action: LimitAction::Warn,
-        enabled: true,
-        active_hours_start: None,
-        active_hours_end: None,
-        active_days: 0b1111111,
-    };
-    insert_limit(conn, &limit)?;
-    Ok(())
+    set_setting(&tx, "legacy_budget_migrated", "1")?;
+    tx.commit()
 }
 
 pub fn get_setting(conn: &Connection, key: &str) -> Option<String> {
@@ -1443,5 +1465,117 @@ mod tests {
         assert_eq!(limits[0].metric, LimitMetric::Money);
         assert_eq!(limits[0].cap, 25.0);
         assert_eq!(limits[0].period, LimitPeriod::Daily);
+        assert_eq!(
+            get_setting(&conn, "legacy_budget_migrated").as_deref(),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn legacy_budget_migration_runs_once() {
+        let (conn, _path) = temp_db();
+        set_setting(&conn, "budget", "25.00").unwrap();
+        load_config(&conn).unwrap();
+        let limits = list_limits(&conn).unwrap();
+        assert_eq!(limits.len(), 1);
+
+        // Deleting the last limit must not resurrect it on the next load.
+        delete_limit(&conn, limits[0].id).unwrap();
+        load_config(&conn).unwrap();
+        assert!(list_limits(&conn).unwrap().is_empty());
+    }
+
+    fn insert_log_at(conn: &Connection, ts: &str, provider: &str) {
+        conn.execute(
+            "INSERT INTO logs (ts, provider, model, prompt_tokens, completion_tokens, cost, duration_ms) \
+             VALUES (?1, ?2, 'm', 1, 1, 0.1, 0)",
+            params![ts, provider],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn list_logs_days_filters_old_rows() {
+        let (conn, _path) = temp_db();
+        let recent = (chrono::Utc::now() - chrono::TimeDelta::hours(1)).to_rfc3339();
+        let old = (chrono::Utc::now() - chrono::TimeDelta::days(10)).to_rfc3339();
+        insert_log_at(&conn, &recent, "recent-provider");
+        insert_log_at(&conn, &old, "old-provider");
+
+        // None and 0 keep the unfiltered behavior.
+        assert_eq!(list_logs(&conn, 10, None).unwrap().len(), 2);
+        assert_eq!(list_logs(&conn, 10, Some(0)).unwrap().len(), 2);
+
+        let filtered = list_logs(&conn, 10, Some(7)).unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].provider, "recent-provider");
+    }
+
+    #[test]
+    fn cleanup_old_logs_respects_rfc3339_boundary() {
+        let (conn, _path) = temp_db();
+        // Rows on the cutoff day but before the cutoff instant must be deleted;
+        // mixed SQLite/RFC3339 formats used to keep them ('T' > ' ').
+        let before =
+            (chrono::Utc::now() - chrono::TimeDelta::days(3) - chrono::TimeDelta::hours(1))
+                .to_rfc3339();
+        let after = (chrono::Utc::now() - chrono::TimeDelta::days(3) + chrono::TimeDelta::hours(1))
+            .to_rfc3339();
+        insert_log_at(&conn, &before, "before-cutoff");
+        insert_log_at(&conn, &after, "after-cutoff");
+
+        let deleted = cleanup_old_logs(&conn, 3).unwrap();
+        assert_eq!(deleted, 1);
+        let remaining = list_logs(&conn, 10, None).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].provider, "after-cutoff");
+    }
+
+    #[test]
+    fn cleanup_old_audit_events_respects_rfc3339_boundary() {
+        let (conn, _path) = temp_db();
+        let before =
+            (chrono::Utc::now() - chrono::TimeDelta::days(3) - chrono::TimeDelta::hours(1))
+                .to_rfc3339();
+        let after = (chrono::Utc::now() - chrono::TimeDelta::days(3) + chrono::TimeDelta::hours(1))
+            .to_rfc3339();
+        for ts in [&before, &after] {
+            conn.execute(
+                "INSERT INTO audit_events (ts, event_type, details) VALUES (?1, 't', '{}')",
+                params![ts],
+            )
+            .unwrap();
+        }
+
+        let deleted = cleanup_old_audit_events(&conn, 3).unwrap();
+        assert_eq!(deleted, 1);
+        let remaining = list_audit_events(&conn, 0, 10).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].ts, after);
+
+        // The days filter has the same boundary semantics.
+        let filtered = list_audit_events(&conn, 3, 10).unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].ts, after);
+    }
+
+    #[test]
+    fn provider_daily_usage_excludes_rows_before_cutoff() {
+        let (conn, _path) = temp_db();
+        let before =
+            (chrono::Utc::now() - chrono::TimeDelta::days(3) - chrono::TimeDelta::hours(1))
+                .to_rfc3339();
+        let after = (chrono::Utc::now() - chrono::TimeDelta::days(3) + chrono::TimeDelta::hours(1))
+            .to_rfc3339();
+        insert_log_at(&conn, &before, "p");
+        insert_log_at(&conn, &after, "p");
+
+        let rows = provider_daily_usage(&conn, "p", 3).unwrap();
+        let requests: u64 = rows.iter().map(|r| r.requests).sum();
+        assert_eq!(requests, 1);
+
+        let totals = project_totals(&conn, 3).unwrap();
+        let requests: u64 = totals.iter().map(|t| t.requests).sum();
+        assert_eq!(requests, 1);
     }
 }

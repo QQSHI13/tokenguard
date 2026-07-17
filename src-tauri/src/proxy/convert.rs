@@ -65,10 +65,68 @@ pub fn convert_response(from: ProviderFormat, to: ProviderFormat, body: &Value) 
     }
 }
 
+/// Build an error envelope in the client's format carrying the upstream
+/// status code and message. Used for upstream error responses, which must not
+/// go through the success-path `convert_response`.
+pub fn error_envelope(format: ProviderFormat, status: u16, body: &[u8]) -> Value {
+    let message = extract_error_message(body);
+    match format {
+        ProviderFormat::OpenAI => serde_json::json!({
+            "error": {"message": message, "type": "upstream_error", "code": status}
+        }),
+        ProviderFormat::Anthropic => serde_json::json!({
+            "type": "error",
+            "error": {"type": "api_error", "message": message},
+        }),
+        ProviderFormat::Google => serde_json::json!({
+            "error": {"code": status, "message": message, "status": "UNKNOWN"},
+        }),
+    }
+}
+
+/// Pull the message out of common provider error shapes (Anthropic, OpenAI,
+/// and Google all use `error.message`); fall back to the truncated raw body.
+fn extract_error_message(body: &[u8]) -> String {
+    if let Ok(v) = serde_json::from_slice::<Value>(body) {
+        if let Some(m) = v
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+        {
+            return m.to_string();
+        }
+    }
+    String::from_utf8_lossy(body).chars().take(500).collect()
+}
+
+/// Determine whether the client asked for a streaming response. OpenAI and
+/// Anthropic signal it with `"stream": true` in the body; Gemini signals it
+/// via the URL (`:streamGenerateContent` suffix) or the `?alt=sse` query.
+pub fn is_stream_request(format: ProviderFormat, client_path: &str, body: &Value) -> bool {
+    if body
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if format == ProviderFormat::Google {
+        let (path, query) = match client_path.split_once('?') {
+            Some((p, q)) => (p, q),
+            None => (client_path, ""),
+        };
+        if path.contains(":streamGenerateContent") {
+            return true;
+        }
+        return query.split('&').any(|kv| kv == "alt=sse");
+    }
+    false
+}
+
 /// Convert a single SSE streaming chunk from provider format (`from`) to the
 /// client format (`to`). `event` is the SSE event name when one was supplied by
-/// the upstream (Anthropic/Google). Returns `None` when the chunk should be
-/// passed through unchanged.
+/// the upstream (Anthropic/Google). Returns `None` when the chunk has no
+/// equivalent in the client format and should be dropped.
 pub fn convert_sse_data(
     from: ProviderFormat,
     to: ProviderFormat,
@@ -112,6 +170,9 @@ pub fn target_path(
     stream: bool,
 ) -> String {
     if from == to {
+        if to == ProviderFormat::Google {
+            return rewrite_google_model_segment(client_path, remote_model);
+        }
         return client_path.to_string();
     }
     match to {
@@ -128,6 +189,27 @@ pub fn target_path(
     }
 }
 
+/// Replace the model segment of a Gemini-style path
+/// (`/v1beta/models/{model}:{method}?query`) with the remote model name,
+/// keeping the method suffix and query string.
+fn rewrite_google_model_segment(client_path: &str, remote_model: &str) -> String {
+    let (path, query) = match client_path.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (client_path, None),
+    };
+    let rewritten = match path.rsplit_once("/models/") {
+        Some((prefix, rest)) => match rest.split_once(':') {
+            Some((_, method)) => format!("{prefix}/models/{remote_model}:{method}"),
+            None => format!("{prefix}/models/{remote_model}"),
+        },
+        None => path.to_string(),
+    };
+    match query {
+        Some(q) => format!("{rewritten}?{q}"),
+        None => rewritten,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -138,6 +220,17 @@ fn ensure_model(body: &mut Value, format: ProviderFormat, remote_model: &str) {
             obj.insert("model".to_string(), Value::String(remote_model.to_string()));
         }
     }
+}
+
+/// Mint a unique tool-call ID for a function name. Google has no tool-call
+/// IDs, so they are synthesized per occurrence within one request/response,
+/// letting parallel calls to the same function (and their results, mapped
+/// back positionally) be told apart.
+fn next_tool_call_id(name: &str, counts: &mut std::collections::HashMap<String, usize>) -> String {
+    let n = counts.entry(name.to_string()).or_insert(0);
+    let id = format!("call_{name}_{n}");
+    *n += 1;
+    id
 }
 
 fn get_f64(obj: &serde_json::Map<String, Value>, key: &str) -> Option<f64> {
@@ -1224,6 +1317,10 @@ fn google_to_openai_request(body: &Value, remote_model: &str) -> Value {
         }
     }
 
+    let mut call_id_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut result_id_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     if let Some(contents) = obj.get("contents").and_then(|v| v.as_array()) {
         for c in contents {
             let role = c
@@ -1243,7 +1340,7 @@ fn google_to_openai_request(body: &Value, remote_model: &str) -> Value {
                     if part.get("functionResponse").is_some() {
                         if let Some(fr) = part.get("functionResponse") {
                             let name = fr.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                            let id = format!("call_{}", name);
+                            let id = next_tool_call_id(name, &mut result_id_counts);
                             let response = fr.get("response").cloned().unwrap_or(Value::Null);
                             tool_results.push(serde_json::json!({
                                 "role": "tool",
@@ -1271,7 +1368,7 @@ fn google_to_openai_request(body: &Value, remote_model: &str) -> Value {
                     if let Some(fc) = part.get("functionCall") {
                         let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         let args = fc.get("args").cloned().unwrap_or(Value::Null);
-                        let id = format!("call_{}", name);
+                        let id = next_tool_call_id(name, &mut call_id_counts);
                         tool_calls.push(serde_json::json!({
                             "id": id,
                             "type": "function",
@@ -1356,11 +1453,15 @@ fn google_to_openai_response(body: &Value) -> Value {
 
     let mut text_parts = Vec::new();
     let mut tool_calls = Vec::new();
+    let mut call_id_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for p in &parts {
         if let Some(t) = p.get("text").and_then(|v| v.as_str()) {
             text_parts.push(t);
         } else if let Some(fc) = p.get("functionCall") {
-            if let Some(tc) = google_function_call_to_openai(fc) {
+            let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let id = next_tool_call_id(name, &mut call_id_counts);
+            if let Some(tc) = google_function_call_to_openai(fc, &id) {
                 tool_calls.push(tc);
             }
         }
@@ -1399,7 +1500,7 @@ fn google_to_openai_response(body: &Value) -> Value {
     Value::Object(out)
 }
 
-fn google_function_call_to_openai(fc: &Value) -> Option<Value> {
+fn google_function_call_to_openai(fc: &Value, id: &str) -> Option<Value> {
     let obj = fc.as_object()?;
     let name = obj.get("name")?.as_str()?;
     let args = obj
@@ -1407,7 +1508,7 @@ fn google_function_call_to_openai(fc: &Value) -> Option<Value> {
         .cloned()
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     Some(serde_json::json!({
-        "id": format!("call_{}", name),
+        "id": id,
         "type": "function",
         "function": {"name": name, "arguments": args.to_string()},
     }))
@@ -1921,5 +2022,148 @@ mod tests {
             ),
             "/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn target_path_google_passthrough_rewrites_model() {
+        assert_eq!(
+            target_path(
+                ProviderFormat::Google,
+                ProviderFormat::Google,
+                "gemini-remote",
+                "/v1beta/models/gemini-local:streamGenerateContent?alt=sse",
+                true
+            ),
+            "/v1beta/models/gemini-remote:streamGenerateContent?alt=sse"
+        );
+        assert_eq!(
+            target_path(
+                ProviderFormat::Google,
+                ProviderFormat::Google,
+                "gemini-remote",
+                "/v1beta/models/gemini-local:generateContent",
+                false
+            ),
+            "/v1beta/models/gemini-remote:generateContent"
+        );
+        // Non-method paths are left untouched.
+        assert_eq!(
+            target_path(
+                ProviderFormat::Google,
+                ProviderFormat::Google,
+                "gemini-remote",
+                "/v1beta/models",
+                false
+            ),
+            "/v1beta/models"
+        );
+    }
+
+    #[test]
+    fn stream_detection() {
+        assert!(is_stream_request(
+            ProviderFormat::OpenAI,
+            "/v1/chat/completions",
+            &serde_json::json!({"stream": true})
+        ));
+        assert!(!is_stream_request(
+            ProviderFormat::OpenAI,
+            "/v1/chat/completions",
+            &serde_json::json!({})
+        ));
+        assert!(is_stream_request(
+            ProviderFormat::Google,
+            "/v1beta/models/g:streamGenerateContent",
+            &serde_json::json!({})
+        ));
+        assert!(is_stream_request(
+            ProviderFormat::Google,
+            "/v1beta/models/g:generateContent?alt=sse",
+            &serde_json::json!({})
+        ));
+        assert!(!is_stream_request(
+            ProviderFormat::Google,
+            "/v1beta/models/g:generateContent?alt=json",
+            &serde_json::json!({})
+        ));
+        assert!(!is_stream_request(
+            ProviderFormat::Google,
+            "/v1beta/models/g:generateContent",
+            &serde_json::json!({})
+        ));
+    }
+
+    #[test]
+    fn error_envelopes() {
+        let anthropic_err =
+            br#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#;
+        let out = error_envelope(ProviderFormat::OpenAI, 429, anthropic_err);
+        assert_eq!(out["error"]["message"], "slow down");
+        assert_eq!(out["error"]["type"], "upstream_error");
+        assert_eq!(out["error"]["code"], 429);
+
+        let out = error_envelope(ProviderFormat::Anthropic, 500, anthropic_err);
+        assert_eq!(out["type"], "error");
+        assert_eq!(out["error"]["type"], "api_error");
+        assert_eq!(out["error"]["message"], "slow down");
+
+        let google_err =
+            br#"{"error":{"code":429,"message":"quota","status":"RESOURCE_EXHAUSTED"}}"#;
+        let out = error_envelope(ProviderFormat::Google, 429, google_err);
+        assert_eq!(out["error"]["message"], "quota");
+        assert_eq!(out["error"]["code"], 429);
+        assert_eq!(out["error"]["status"], "UNKNOWN");
+    }
+
+    #[test]
+    fn error_envelope_unparseable_truncates() {
+        let body = vec![b'x'; 1000];
+        let out = error_envelope(ProviderFormat::OpenAI, 502, &body);
+        let msg = out["error"]["message"].as_str().unwrap();
+        assert_eq!(msg.len(), 500);
+    }
+
+    #[test]
+    fn google_parallel_tool_calls_get_unique_ids() {
+        let body = serde_json::json!({
+            "contents": [
+                {"role": "model", "parts": [
+                    {"functionCall": {"name": "get_weather", "args": {"city": "Paris"}}},
+                    {"functionCall": {"name": "get_weather", "args": {"city": "London"}}},
+                ]},
+                {"role": "user", "parts": [
+                    {"functionResponse": {"name": "get_weather", "response": {"temp": 20}}},
+                    {"functionResponse": {"name": "get_weather", "response": {"temp": 15}}},
+                ]},
+            ],
+        });
+        let out = convert_request(
+            ProviderFormat::Google,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let msgs = out["messages"].as_array().unwrap();
+        let tcs = msgs[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(tcs[0]["id"], "call_get_weather_0");
+        assert_eq!(tcs[1]["id"], "call_get_weather_1");
+        assert_eq!(msgs[1]["tool_call_id"], "call_get_weather_0");
+        assert_eq!(msgs[2]["tool_call_id"], "call_get_weather_1");
+    }
+
+    #[test]
+    fn google_response_parallel_tool_calls_get_unique_ids() {
+        let body = serde_json::json!({
+            "candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "f", "args": {"a": 1}}},
+                {"functionCall": {"name": "f", "args": {"a": 2}}},
+            ]}, "finishReason": "STOP"}],
+        });
+        let out = convert_response(ProviderFormat::Google, ProviderFormat::OpenAI, &body);
+        let tcs = out["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .unwrap();
+        assert_eq!(tcs[0]["id"], "call_f_0");
+        assert_eq!(tcs[1]["id"], "call_f_1");
     }
 }

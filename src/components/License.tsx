@@ -62,7 +62,8 @@ export default function License({
     try {
       const device = await getDeviceId();
       const res = await fetch(
-        `${WORKER_URL}/api/license/devices?key=${encodeURIComponent(normalizeLicenseKey(raw))}&device=${encodeURIComponent(device)}`
+        `${WORKER_URL}/api/license/devices?device=${encodeURIComponent(device)}`,
+        { headers: { "X-License-Key": normalizeLicenseKey(raw) } }
       );
       const data = await res.json();
       if (res.ok) {

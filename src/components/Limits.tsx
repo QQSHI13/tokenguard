@@ -242,7 +242,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-neutral-200">{t("configuredLimits")}</h2>
+        <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-200">{t("configuredLimits")}</h2>
         <div className="space-y-2">
           {limits.length === 0 && (
             <p className="text-xs text-neutral-600">{t("noLimitsYet")}</p>
@@ -257,26 +257,26 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                 key={l.id}
                 className={`rounded-lg border px-3 py-2 ${
                   editingId === l.id
-                    ? "border-emerald-600 bg-neutral-900/60"
-                    : "border-neutral-800 bg-neutral-900/40"
+                    ? "border-emerald-600 bg-emerald-50/60 dark:bg-neutral-900/60"
+                    : "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/40"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-neutral-200">{l.name}</span>
+                      <span className="text-sm font-medium text-neutral-900 dark:text-neutral-200">{l.name}</span>
                       {!l.enabled && (
-                        <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-300">
+                        <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
                           {t("disabled")}
                         </span>
                       )}
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] ${
                           l.action === "block"
-                            ? "bg-red-500/20 text-red-300"
+                            ? "bg-red-500/20 text-red-700 dark:text-red-300"
                             : l.action === "pause"
-                            ? "bg-amber-500/20 text-amber-300"
-                            : "bg-sky-500/20 text-sky-300"
+                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                            : "bg-sky-500/20 text-sky-700 dark:text-sky-300"
                         }`}
                       >
                         {t(l.action)}
@@ -304,13 +304,13 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                 </div>
                 {s && l.enabled && (
                   <div className="mt-2">
-                    <div className="flex justify-between text-[10px] text-neutral-400">
+                    <div className="flex justify-between text-[10px] text-neutral-500 dark:text-neutral-400">
                       <span>
                         {formatMetricValue(l.metric, s.used)} / {formatMetricValue(l.metric, l.cap)}
                       </span>
                       <span>{(ratio * 100).toFixed(0)}%</span>
                     </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-800">
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
                       <div
                         className={`h-full transition-all ${color}`}
                         style={{ width: `${ratio * 100}%` }}
@@ -327,17 +327,17 @@ export default function Limits({ onChange }: { onChange: () => void }) {
       <div className="space-y-4">
         <form
           onSubmit={submit}
-          className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
+          className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-200">
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-200">
               {editingId !== null ? t("editLimit") : t("addLimit")}
             </h2>
             {editingId !== null && (
               <button
                 type="button"
                 onClick={cancelEdit}
-                className="text-[11px] text-neutral-500 hover:text-neutral-300"
+                className="text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
               >
                 {t("cancel")}
               </button>
@@ -351,7 +351,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                   key={p.name}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className="rounded bg-neutral-800 px-2 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700"
+                  className="rounded bg-neutral-200 px-2 py-1 text-[11px] text-neutral-700 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   {p.name}
                 </button>
@@ -434,7 +434,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                   <button
                     type="button"
                     onClick={() => setIsCustomPeriod(false)}
-                    className="text-[11px] text-neutral-500 hover:text-neutral-300"
+                    className="text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
                   >
                     {t("presets")}
                   </button>
@@ -514,7 +514,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                 ))}
               </select>
             </Field>
-            <label className="flex items-center gap-2 self-end text-xs text-neutral-400">
+            <label className="flex items-center gap-2 self-end text-xs text-neutral-600 dark:text-neutral-400">
               <input
                 type="checkbox"
                 checked={form.enabled}
@@ -524,8 +524,8 @@ export default function Limits({ onChange }: { onChange: () => void }) {
             </label>
           </div>
 
-          <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-900/20 p-3">
-            <h3 className="text-xs font-medium text-neutral-400">{t("schedule")}</h3>
+          <div className="space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900/20">
+            <h3 className="text-xs font-medium text-neutral-600 dark:text-neutral-400">{t("schedule")}</h3>
             <div className="grid grid-cols-2 gap-2">
               <Field label={t("activeHoursStart")}>
                 <input
@@ -560,7 +560,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                 {DAYS.map((d) => (
                   <label
                     key={d.bit}
-                    className="flex items-center gap-1 text-[11px] text-neutral-400"
+                    className="flex items-center gap-1 text-[11px] text-neutral-600 dark:text-neutral-400"
                   >
                     <input
                       type="checkbox"
@@ -579,17 +579,17 @@ export default function Limits({ onChange }: { onChange: () => void }) {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           <button
             type="submit"
-            className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"
+            className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300"
           >
             {editingId !== null ? t("saveChanges") : t("addLimit")}
           </button>
         </form>
 
-        <section className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-[11px] leading-relaxed text-neutral-500">
-          <h2 className="mb-2 text-sm font-semibold text-neutral-300">{t("howLimitsWork")}</h2>
+        <section className="rounded-lg border border-neutral-200 bg-white p-4 text-[11px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">{t("howLimitsWork")}</h2>
           <ul className="list-inside list-disc space-y-1">
             <li>{t("limitsHelp1")}</li>
             <li>{t("limitsHelp2")}</li>

@@ -143,10 +143,7 @@ async fn attempt_forward(
 
     let upstream_body =
         convert::convert_request(client_format, provider.format, &body_json, &remote_model);
-    let is_stream = body_json
-        .get("stream")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let is_stream = convert::is_stream_request(client_format, client_path, &body_json);
     let upstream_path = convert::target_path(
         client_format,
         provider.format,
@@ -223,7 +220,7 @@ async fn finalize_forward(
         >(32);
         tauri::async_runtime::spawn(async move {
             let mut s = resp.bytes_stream();
-            let mut converter = SseConverter::new(prov.format, client_fmt);
+            let mut converter = SseConverter::new(prov.format, client_fmt, model_owned.clone());
             while let Some(chunk) = s.next().await {
                 match chunk {
                     Ok(bytes) => {
@@ -239,6 +236,12 @@ async fn finalize_forward(
                         break;
                     }
                 }
+            }
+            // Flush any trailing unterminated line and emit terminal lifecycle
+            // events the upstream format never sends.
+            let tail = converter.finish();
+            if !tail.is_empty() {
+                let _ = tx.send(Ok(tail)).await;
             }
             let usage = converter.usage;
             let (input_cost, output_cost) = input_output_cost_per_1k(&prov, &model_owned);
@@ -279,9 +282,15 @@ async fn finalize_forward(
                 )
             }
         };
-        let upstream_json = serde_json::from_slice::<Value>(&bytes)
-            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
-        let client_json = convert::convert_response(provider.format, client_format, &upstream_json);
+        // Upstream errors must not go through the success-path converter;
+        // re-envelope the real status + message in the client's format.
+        let client_json = if status.is_client_error() || status.is_server_error() {
+            convert::error_envelope(client_format, status.as_u16(), &bytes)
+        } else {
+            let upstream_json = serde_json::from_slice::<Value>(&bytes)
+                .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+            convert::convert_response(provider.format, client_format, &upstream_json)
+        };
         let client_bytes = serde_json::to_vec(&client_json)
             .map(Bytes::from)
             .unwrap_or(bytes);
@@ -333,16 +342,23 @@ fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -
 }
 
 /// Find a fallback provider that supports the requested model. Format is not a
-/// constraint because conversion is handled downstream.
+/// constraint because conversion is handled downstream. Honors the primary's
+/// configured `fallback_provider_id` first; otherwise picks the first *other*
+/// provider serving the model.
 fn find_fallback_provider(
     state: &Arc<AppState>,
-    _primary: &Provider,
+    primary: &Provider,
     model: &str,
 ) -> Option<Provider> {
     let cfg = state.config.read().ok()?;
+    if let Some(id) = primary.fallback_provider_id {
+        if let Some(p) = cfg.providers.iter().find(|p| p.id == id) {
+            return Some(p.clone());
+        }
+    }
     cfg.providers
         .iter()
-        .find(|p| p.models.iter().any(|m| m.local == model))
+        .find(|p| p.id != primary.id && p.models.iter().any(|m| m.local == model))
         .cloned()
 }
 
@@ -404,23 +420,33 @@ struct StreamingToolCall {
 struct SseConverter {
     from: ProviderFormat,
     to: ProviderFormat,
+    model: String,
     buf: Vec<u8>,
     usage: sse::Usage,
     pending_event: Option<String>,
     streaming_tools: std::collections::HashMap<usize, StreamingToolCall>,
     last_tool_index: Option<usize>,
+    anthropic_started: bool,
+    anthropic_text_open: bool,
+    anthropic_stopped: bool,
+    done_sent: bool,
 }
 
 impl SseConverter {
-    fn new(from: ProviderFormat, to: ProviderFormat) -> Self {
+    fn new(from: ProviderFormat, to: ProviderFormat, model: String) -> Self {
         Self {
             from,
             to,
+            model,
             buf: Vec::new(),
             usage: sse::Usage::default(),
             pending_event: None,
             streaming_tools: std::collections::HashMap::new(),
             last_tool_index: None,
+            anthropic_started: false,
+            anthropic_text_open: false,
+            anthropic_stopped: false,
+            done_sent: false,
         }
     }
 
@@ -434,8 +460,45 @@ impl SseConverter {
         Bytes::from(out)
     }
 
+    /// Flush any remaining buffered bytes as a final line and emit terminal
+    /// lifecycle events the upstream format never sends.
+    fn finish(&mut self) -> Bytes {
+        let mut out = Vec::new();
+        if !self.buf.is_empty() {
+            let mut line: Vec<u8> = std::mem::take(&mut self.buf);
+            line.push(b'\n');
+            self.handle_line(&line, &mut out);
+        }
+        if self.to == ProviderFormat::OpenAI && !self.done_sent {
+            out.extend_from_slice(b"data: [DONE]\n");
+            self.done_sent = true;
+        }
+        if self.to == ProviderFormat::Anthropic
+            && self.from != ProviderFormat::Anthropic
+            && !self.anthropic_stopped
+        {
+            self.ensure_anthropic_message(&mut out);
+            self.close_anthropic_blocks(&mut out);
+            self.emit_anthropic_event(
+                &mut out,
+                "message_stop",
+                serde_json::json!({"type": "message_stop"}),
+            );
+            self.anthropic_stopped = true;
+        }
+        Bytes::from(out)
+    }
+
     fn handle_line(&mut self, line: &[u8], out: &mut Vec<u8>) {
-        let s = std::str::from_utf8(line).unwrap_or("").trim_end();
+        let s = match std::str::from_utf8(line) {
+            Ok(s) => s.trim_end(),
+            Err(_) => {
+                // Undecodable bytes: forward the line verbatim instead of
+                // blanking it.
+                out.extend_from_slice(line);
+                return;
+            }
+        };
 
         if s.is_empty() {
             self.pending_event = None;
@@ -465,12 +528,16 @@ impl SseConverter {
         }
         if payload == "[DONE]" {
             self.pending_event = None;
+            self.done_sent = true;
             if self.from == ProviderFormat::OpenAI && self.to == ProviderFormat::Anthropic {
+                self.ensure_anthropic_message(out);
+                self.close_anthropic_blocks(out);
                 self.emit_anthropic_event(
                     out,
                     "message_stop",
                     serde_json::json!({"type": "message_stop"}),
                 );
+                self.anthropic_stopped = true;
             } else {
                 out.extend_from_slice(line);
             }
@@ -517,6 +584,20 @@ impl SseConverter {
 
         match convert::convert_sse_data(self.from, self.to, self.pending_event.as_deref(), &value) {
             Some((event_name, converted)) => {
+                // Synthesize the mandatory Anthropic lifecycle events around
+                // converted chunks.
+                if self.to == ProviderFormat::Anthropic {
+                    match event_name.as_deref() {
+                        Some("content_block_delta") => {
+                            self.ensure_anthropic_message(out);
+                            self.ensure_anthropic_text_block(out);
+                        }
+                        Some("message_delta") => {
+                            self.close_anthropic_blocks(out);
+                        }
+                        _ => {}
+                    }
+                }
                 if let Some(name) = event_name {
                     out.extend_from_slice(format!("event: {}\n", name).as_bytes());
                 }
@@ -525,11 +606,74 @@ impl SseConverter {
                 }
             }
             None => {
-                // Unrecognized chunk shape: pass through the original line.
-                out.extend_from_slice(line);
+                // No equivalent in the client format: drop the chunk instead
+                // of leaking provider-format events.
             }
         }
         self.pending_event = None;
+    }
+
+    /// Emit message_start once, before the first content block.
+    fn ensure_anthropic_message(&mut self, out: &mut Vec<u8>) {
+        if self.anthropic_started {
+            return;
+        }
+        self.anthropic_started = true;
+        self.emit_anthropic_event(
+            out,
+            "message_start",
+            serde_json::json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_tokenguard",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": self.model,
+                    "content": [],
+                    "stop_reason": null,
+                    "usage": {"input_tokens": 0, "output_tokens": 0},
+                },
+            }),
+        );
+    }
+
+    /// Open the index-0 text block once, before the first text delta.
+    fn ensure_anthropic_text_block(&mut self, out: &mut Vec<u8>) {
+        if self.anthropic_text_open {
+            return;
+        }
+        self.anthropic_text_open = true;
+        self.emit_anthropic_event(
+            out,
+            "content_block_start",
+            serde_json::json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            }),
+        );
+    }
+
+    /// Close any open text/tool content blocks before message_delta/stop.
+    fn close_anthropic_blocks(&mut self, out: &mut Vec<u8>) {
+        if self.anthropic_text_open {
+            self.anthropic_text_open = false;
+            self.emit_anthropic_event(
+                out,
+                "content_block_stop",
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+            );
+        }
+        let mut indices: Vec<usize> = self.streaming_tools.keys().copied().collect();
+        indices.sort_unstable();
+        for idx in indices {
+            self.emit_anthropic_event(
+                out,
+                "content_block_stop",
+                serde_json::json!({"type": "content_block_stop", "index": idx}),
+            );
+        }
+        self.streaming_tools.clear();
     }
 
     fn emit_anthropic_event(&self, out: &mut Vec<u8>, event: &str, data: Value) {
@@ -553,6 +697,7 @@ impl SseConverter {
             None => return false,
         };
 
+        self.ensure_anthropic_message(out);
         for tc in tool_calls {
             let idx = match tc.get("index").and_then(|v| v.as_u64()).map(|u| u as usize) {
                 Some(i) => i,
@@ -671,7 +816,14 @@ impl SseConverter {
                     Some(p) => p,
                     None => return false,
                 };
-                let idx = self.last_tool_index.unwrap_or(0);
+                // The event carries its own block index; attributing deltas to
+                // the last-started block corrupts interleaved tool calls.
+                let idx = value
+                    .get("index")
+                    .and_then(|v| v.as_u64())
+                    .map(|u| u as usize)
+                    .or(self.last_tool_index)
+                    .unwrap_or(0);
                 let openai = serde_json::json!({
                     "choices": [{
                         "index": 0,
@@ -690,5 +842,99 @@ impl SseConverter {
             }
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn converter(from: ProviderFormat, to: ProviderFormat) -> SseConverter {
+        SseConverter::new(from, to, "test-model".to_string())
+    }
+
+    #[test]
+    fn finish_flushes_trailing_unterminated_line() {
+        let mut c = converter(ProviderFormat::OpenAI, ProviderFormat::OpenAI);
+        let first = c.feed(b"data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}");
+        assert!(first.is_empty());
+        let tail = c.finish();
+        let s = String::from_utf8(tail.to_vec()).unwrap();
+        assert!(s.contains("\"prompt_tokens\":3"));
+        assert!(s.contains("data: [DONE]"));
+        assert_eq!(c.usage.prompt, 3);
+        assert_eq!(c.usage.completion, 2);
+    }
+
+    #[test]
+    fn openai_to_anthropic_synthesizes_lifecycle_events() {
+        let input = b"data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let mut c = converter(ProviderFormat::OpenAI, ProviderFormat::Anthropic);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+
+        // The provider-format role chunk must not leak to the client.
+        assert!(!s.contains("choices"));
+        assert!(s.contains("Hello"));
+
+        let ms = s.find("event: message_start").unwrap();
+        let cbs = s.find("event: content_block_start").unwrap();
+        let cbd = s.find("event: content_block_delta").unwrap();
+        let cbstop = s.find("event: content_block_stop").unwrap();
+        let md = s.find("event: message_delta").unwrap();
+        let mstop = s.find("event: message_stop").unwrap();
+        assert!(ms < cbs && cbs < cbd && cbd < cbstop && cbstop < md && md < mstop);
+    }
+
+    #[test]
+    fn anthropic_to_openai_emits_done_and_drops_unknown_events() {
+        let input = b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\n";
+        let mut c = converter(ProviderFormat::Anthropic, ProviderFormat::OpenAI);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+
+        assert!(s.contains("data: [DONE]"));
+        assert!(s.contains("Hi"));
+        assert!(!s.contains("ping"));
+        assert!(!s.contains("content_block_start"));
+        assert_eq!(c.usage.prompt, 10);
+        assert_eq!(c.usage.completion, 5);
+    }
+
+    #[test]
+    fn google_to_openai_emits_done_on_finish() {
+        let input = b"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]}}],\"usageMetadata\":{\"promptTokenCount\":7,\"candidatesTokenCount\":1}}\n\n";
+        let mut c = converter(ProviderFormat::Google, ProviderFormat::OpenAI);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("Hi"));
+        assert!(s.contains("data: [DONE]"));
+        assert_eq!(c.usage.prompt, 7);
+    }
+
+    #[test]
+    fn invalid_utf8_line_forwarded_verbatim() {
+        let mut c = converter(ProviderFormat::OpenAI, ProviderFormat::Anthropic);
+        let out = c.feed(b"data: \xff\xfe\n");
+        assert_eq!(&out[..], &b"data: \xff\xfe\n"[..]);
+    }
+
+    #[test]
+    fn anthropic_tool_delta_uses_its_own_index() {
+        let input = b"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu_0\",\"name\":\"a\"}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu_1\",\"name\":\"b\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\n";
+        let mut c = converter(ProviderFormat::Anthropic, ProviderFormat::OpenAI);
+        let out = c.feed(input);
+        let s = String::from_utf8(out.to_vec()).unwrap();
+        let chunks: Vec<Value> = s
+            .lines()
+            .filter_map(|l| l.strip_prefix("data:"))
+            .map(str::trim)
+            .filter_map(|p| serde_json::from_str::<Value>(p).ok())
+            .collect();
+        let last = chunks.last().unwrap();
+        assert_eq!(last["choices"][0]["delta"]["tool_calls"][0]["index"], 0);
     }
 }

@@ -80,6 +80,17 @@ pub fn extract_json(body: &[u8], _format: ProviderFormat) -> Usage {
         return Usage::default();
     };
     let mut u = Usage::default();
+    // Buffered Google streaming (no alt=sse upstream) returns a top-level
+    // array of response objects; usage is usually carried by the last one.
+    if let Value::Array(items) = &v {
+        for item in items {
+            let usage = item.get("usage").or_else(|| item.get("usageMetadata"));
+            if let Some(usage) = usage {
+                extract_from_usage_object(usage, &mut u);
+            }
+        }
+        return u;
+    }
     let usage = v
         .get("usage")
         .or_else(|| v.get("response").and_then(|r| r.get("usage")))
@@ -194,5 +205,13 @@ mod tests {
         let usage = extract_json(body, ProviderFormat::Google);
         assert_eq!(usage.prompt, 8);
         assert_eq!(usage.completion, 4);
+    }
+
+    #[test]
+    fn extract_json_google_buffered_stream_array() {
+        let body = br#"[{"candidates":[{"content":{"parts":[{"text":"Hi"}]}}]},{"candidates":[{"content":{"parts":[{"text":"!"}]}}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":2,"totalTokenCount":13}}]"#;
+        let usage = extract_json(body, ProviderFormat::Google);
+        assert_eq!(usage.prompt, 11);
+        assert_eq!(usage.completion, 2);
     }
 }

@@ -68,7 +68,8 @@ export async function validateStoredKey(): Promise<boolean> {
   const device = await getDeviceId();
   try {
     const res = await fetch(
-      `${WORKER_URL}/api/license/validate?key=${encodeURIComponent(key)}&device=${encodeURIComponent(device)}`
+      `${WORKER_URL}/api/license/validate?device=${encodeURIComponent(device)}`,
+      { headers: { "X-License-Key": key } }
     );
     const data = await res.json();
     if (!data.valid) {

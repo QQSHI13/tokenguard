@@ -87,7 +87,9 @@ pub fn estimate_request(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     let n = body.get("n").and_then(|v| v.as_u64()).unwrap_or(1).max(1);
-    let total_completion = max_completion * n;
+    // Attacker-controlled values: saturate instead of wrapping to a low number
+    // (which would bypass the pre-flight cost check with a ~$0 estimate).
+    let total_completion = max_completion.saturating_mul(n);
     let cost = estimate(
         model_local,
         model_remote,
@@ -165,5 +167,23 @@ mod tests {
         );
         // (500 * 2.5 + 500 * 0.5 + 100 * 10) / 1000 = (1250 + 250 + 1000) / 1000 = 2.5
         assert!((cost - 2.5).abs() < 0.001, "expected ~2.5, got {cost}");
+    }
+
+    #[test]
+    fn estimate_request_multiplication_saturates() {
+        // 2^32 * 2^32 would wrap to 0 in u64, faking a $0 estimate.
+        let body = serde_json::json!({"max_tokens": 4294967296u64, "n": 4294967296u64});
+        let (cost, tokens) = estimate_request(&body, "gpt-4o", "gpt-4o", None, None);
+        assert_eq!(tokens, u64::MAX);
+        assert!(cost > 0.0, "expected a non-zero estimate, got {cost}");
+    }
+
+    #[test]
+    fn estimate_request_normal_values() {
+        let body = serde_json::json!({"max_tokens": 1000u64, "n": 2u64});
+        let (cost, tokens) = estimate_request(&body, "gpt-4o", "gpt-4o", None, None);
+        assert_eq!(tokens, 2000);
+        // gpt-4o output: $10.00 / 1K -> 2000 * 10 / 1000 = $20
+        assert!((cost - 20.0).abs() < 0.001, "expected ~20.0, got {cost}");
     }
 }

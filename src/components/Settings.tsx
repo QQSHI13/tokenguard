@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "../i18n";
 import License from "./License";
 
@@ -38,6 +39,15 @@ export default function SettingsTab({
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
   const [version, setVersion] = useState<string | null>(null);
+  const [budget, setBudget] = useState(String(settings?.budget ?? 0));
+  const [webhookUrl, setWebhookUrl] = useState(settings?.webhook_url ?? "");
+  const [webhookStatus, setWebhookStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [exportDays, setExportDays] = useState(String(settings?.auto_export_days ?? 0));
+  const [exportFolder, setExportFolder] = useState(settings?.auto_export_folder ?? "");
+  const [exportStatus, setExportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [retentionDays, setRetentionDays] = useState(String(settings?.log_retention_days ?? 0));
+  const [retentionStatus, setRetentionStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [backupStatus, setBackupStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion(null));
@@ -83,6 +93,129 @@ export default function SettingsTab({
       setAutoStartStatus(t("autoStartSaved"));
     } catch (e) {
       setAutoStartStatus(String(e));
+    }
+  };
+
+  const saveBudget = async () => {
+    await invoke("set_budget", { budget: Number(budget) || 0 });
+    onChanged();
+  };
+
+  const saveWebhook = async () => {
+    try {
+      await invoke("set_webhook_url", { url: webhookUrl.trim() || null });
+      onChanged();
+      setWebhookStatus({ ok: true, msg: t("webhookSaved") });
+    } catch (e) {
+      setWebhookStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const testWebhook = async () => {
+    const url = webhookUrl.trim();
+    if (!url) return;
+    setWebhookStatus(null);
+    try {
+      await invoke("test_webhook", { url });
+      setWebhookStatus({ ok: true, msg: t("webhookTestOk") });
+    } catch (e) {
+      setWebhookStatus({ ok: false, msg: t("webhookTestFailed", { error: String(e) }) });
+    }
+  };
+
+  const pickFolder = async () => {
+    const dir = await open({ directory: true });
+    if (typeof dir === "string") setExportFolder(dir);
+  };
+
+  const saveAutoExport = async () => {
+    try {
+      await invoke("set_auto_export", {
+        input: { days: Math.round(Number(exportDays)) || 0, folder: exportFolder },
+      });
+      onChanged();
+      setExportStatus({ ok: true, msg: t("autoExportSaved") });
+    } catch (e) {
+      setExportStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const runExportNow = async () => {
+    setExportStatus(null);
+    try {
+      const path = await invoke<string>("run_auto_export_now_cmd");
+      setExportStatus({ ok: true, msg: t("exportedTo", { path }) });
+    } catch (e) {
+      setExportStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const saveRetention = async () => {
+    try {
+      await invoke("set_log_retention_days", {
+        days: Math.round(Number(retentionDays)) || 0,
+      });
+      onChanged();
+      setRetentionStatus({ ok: true, msg: t("retentionSaved") });
+    } catch (e) {
+      setRetentionStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const cleanNow = async () => {
+    try {
+      const n = await invoke<number>("cleanup_logs_now");
+      setRetentionStatus({ ok: true, msg: t("logsCleaned", { count: n }) });
+      onChanged();
+    } catch (e) {
+      setRetentionStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const backup = async () => {
+    const path = await save({
+      defaultPath: "tokenguard-backup.db",
+      filters: [{ name: "SQLite", extensions: ["db"] }],
+    });
+    if (!path) return;
+    try {
+      await invoke("backup_database", { targetPath: path });
+      setBackupStatus({ ok: true, msg: t("backedUpTo", { path }) });
+    } catch (e) {
+      setBackupStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const restore = async () => {
+    if (!confirm(t("restoreConfirm"))) return;
+    const path = await open({
+      filters: [{ name: "SQLite", extensions: ["db", "sqlite", "sqlite3"] }],
+    });
+    if (typeof path !== "string") return;
+    try {
+      await invoke("restore_database", { sourcePath: path });
+      // The app restarts immediately after a successful restore.
+    } catch (e) {
+      setBackupStatus({ ok: false, msg: String(e) });
+    }
+  };
+
+  const exportAudit = async () => {
+    const path = await save({
+      defaultPath: "tokenguard-audit.csv",
+      filters: [
+        { name: "CSV", extensions: ["csv"] },
+        { name: "JSON", extensions: ["json"] },
+      ],
+    });
+    if (!path) return;
+    try {
+      const format = path.toLowerCase().endsWith(".json") ? "json" : "csv";
+      const content = await invoke<string>("export_audit_logs", { format, days: 0 });
+      await invoke("write_text_file", { path, content });
+      setBackupStatus({ ok: true, msg: t("auditExportedTo", { path }) });
+    } catch (e) {
+      setBackupStatus({ ok: false, msg: String(e) });
     }
   };
 
@@ -196,6 +329,166 @@ export default function SettingsTab({
         >
           {t("testKeychain")}
         </button>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("dataAlerts")}</h2>
+
+        <label className="mt-4 block text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+          {t("dailyBudget")}
+        </label>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step="0.5"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            className="w-32 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <button
+            onClick={saveBudget}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+        </div>
+        <p className="mt-1 text-[10px] text-neutral-500">{t("dailyBudgetHelp")}</p>
+
+        <label className="mt-4 block text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+          {t("webhookUrl")}
+        </label>
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            type="text"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder="https://"
+            className="flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <button
+            onClick={saveWebhook}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+          <button
+            onClick={testWebhook}
+            disabled={!webhookUrl.trim()}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("test")}
+          </button>
+        </div>
+        <p className="mt-1 text-[10px] text-neutral-500">{t("webhookUrlHelp")}</p>
+        {webhookStatus && (
+          <p className={`mt-1 text-xs ${webhookStatus.ok ? "text-emerald-600" : "text-red-600"}`}>
+            {webhookStatus.msg}
+          </p>
+        )}
+
+        <h3 className="mt-5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+          {t("autoExport")}
+        </h3>
+        <p className="mt-1 text-[10px] text-neutral-500">{t("autoExportHelp")}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-[11px] text-neutral-500">{t("exportEveryDays")}</label>
+          <input
+            type="number"
+            min={0}
+            value={exportDays}
+            onChange={(e) => setExportDays(e.target.value)}
+            className="w-20 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <code className="flex-1 truncate rounded-md border border-neutral-300 bg-neutral-100 px-2.5 py-1.5 text-[11px] text-neutral-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300">
+            {exportFolder || t("noFolderChosen")}
+          </code>
+          <button
+            onClick={pickFolder}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("chooseFolder")}
+          </button>
+          <button
+            onClick={saveAutoExport}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+          <button
+            onClick={runExportNow}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("runNow")}
+          </button>
+        </div>
+        {exportStatus && (
+          <p className={`mt-1 text-xs ${exportStatus.ok ? "text-emerald-600" : "text-red-600"}`}>
+            {exportStatus.msg}
+          </p>
+        )}
+
+        <h3 className="mt-5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+          {t("logRetention")}
+        </h3>
+        <p className="mt-1 text-[10px] text-neutral-500">{t("logRetentionHelp")}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={retentionDays}
+            onChange={(e) => setRetentionDays(e.target.value)}
+            className="w-20 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+          />
+          <button
+            onClick={saveRetention}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("save")}
+          </button>
+          <button
+            onClick={cleanNow}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("cleanNow")}
+          </button>
+        </div>
+        {retentionStatus && (
+          <p className={`mt-1 text-xs ${retentionStatus.ok ? "text-emerald-600" : "text-red-600"}`}>
+            {retentionStatus.msg}
+          </p>
+        )}
+
+        <h3 className="mt-5 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+          {t("backupRestore")}
+        </h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            onClick={backup}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("backup")}
+          </button>
+          <button
+            onClick={restore}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("restore")}
+          </button>
+          <button
+            onClick={exportAudit}
+            className="rounded-md bg-neutral-200 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            {t("exportAuditLog")}
+          </button>
+        </div>
+        {backupStatus && (
+          <p className={`mt-1 text-xs ${backupStatus.ok ? "text-emerald-600" : "text-red-600"}`}>
+            {backupStatus.msg}
+          </p>
+        )}
       </section>
 
       <License

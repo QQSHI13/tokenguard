@@ -92,14 +92,21 @@ async fn handle(
             );
         }
         let start = std::time::Instant::now();
-        let path = req.uri().path().to_string();
         let req_headers = req.headers().clone();
+        let query = req.uri().query();
 
         // Project tagging by the client's API key: the user sets a project's
         // label_key as OPENAI_API_KEY in their agent. We never forward this key —
         // the real provider key comes from the keychain in forward().
-        let client_key = extract_client_key(&req_headers);
+        let client_key = extract_client_key(&req_headers, query);
         let project_tag = client_key.as_ref().and_then(|k| state.project_for_key(k));
+
+        // Forward the query string upstream (Gemini needs e.g. ?alt=sse), but
+        // strip our `key` auth param so it never leaks to the provider.
+        let path = match query.map(strip_key_param) {
+            Some(q) if !q.is_empty() => format!("{}?{q}", req.uri().path()),
+            _ => req.uri().path().to_string(),
+        };
 
         // Every request must be tagged with a known project. The client's API
         // key is only a label; the real provider key comes from the keychain.
@@ -111,7 +118,9 @@ async fn handle(
         }
 
         // Per-project budget enforcement.
-        if let Some((used, budget, action)) = project_tag.as_ref().and_then(|t| state.check_project_budget(t)) {
+        if let Some((used, budget, action, should_notify)) =
+            project_tag.as_ref().and_then(|t| state.check_project_budget(t))
+        {
             match action {
                 LimitAction::Block => {
                     notifications::limit_blocked(
@@ -134,19 +143,22 @@ async fn handle(
                         used,
                         budget,
                     );
-                    state.toggle_pause();
+                    state.set_paused(true);
                     return super::error_resp(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "project budget exceeded — proxy paused",
                     );
                 }
                 LimitAction::Warn => {
-                    notifications::limit_warning(
-                        &state.app,
-                        project_tag.as_deref().unwrap_or(""),
-                        used,
-                        budget,
-                    );
+                    if should_notify {
+                        notifications::limit_warning(
+                            &state.app,
+                            project_tag.as_deref().unwrap_or(""),
+                            used,
+                            budget,
+                        );
+                        state.mark_budget_notified(project_tag.as_deref().unwrap_or(""));
+                    }
                     tracing::warn!(
                         "project budget warning: {} ({:.2}/{:.2})",
                         project_tag.as_deref().unwrap_or(""),
@@ -232,25 +244,26 @@ async fn handle(
             output_cost,
         );
         let duration_ms = start.elapsed().as_millis() as u64;
-        let violations = state.check_limits(
+        let check = state.check_limits(
             provider.id,
             project_tag.as_deref(),
             estimated_cost,
             estimated_tokens,
             duration_ms,
         );
-        for v in &violations {
+        for v in &check.violations {
             match v.limit.action {
                 LimitAction::Block => {
-                    if state.should_notify_block(v.limit.id) {
+                    if v.should_notify {
                         notifications::limit_blocked(
                             &state.app,
                             &v.limit.name,
                             v.used,
                             v.limit.cap,
                         );
+                        state.mark_block_notified(v.limit.id);
                     }
-                    state.release_request_limit(&v.limit);
+                    state.release_request_limits(&check.reservations);
                     return super::error_resp(
                         StatusCode::TOO_MANY_REQUESTS,
                         &format!(
@@ -260,18 +273,22 @@ async fn handle(
                     );
                 }
                 LimitAction::Pause => {
-                    if state.should_notify_block(v.limit.id) {
+                    if v.should_notify {
                         notifications::limit_paused(&state.app, &v.limit.name, v.used, v.limit.cap);
+                        state.mark_block_notified(v.limit.id);
                     }
-                    state.release_request_limit(&v.limit);
-                    state.toggle_pause();
+                    state.release_request_limits(&check.reservations);
+                    state.set_paused(true);
                     return super::error_resp(
                         StatusCode::SERVICE_UNAVAILABLE,
                         &format!("limit exceeded: {} — proxy paused", v.limit.name),
                     );
                 }
                 LimitAction::Warn => {
-                    notifications::limit_warning(&state.app, &v.limit.name, v.used, v.limit.cap);
+                    if v.should_notify {
+                        notifications::limit_warning(&state.app, &v.limit.name, v.used, v.limit.cap);
+                        state.mark_warning_notified(v.limit.id);
+                    }
                     tracing::warn!(
                         "limit warning: {} ({:.0}/{:.0})",
                         v.limit.name,
@@ -282,8 +299,8 @@ async fn handle(
             }
         }
 
-        forwarder::forward(
-            state,
+        let response = forwarder::forward(
+            state.clone(),
             start,
             path,
             body_bytes,
@@ -294,7 +311,11 @@ async fn handle(
             project_tag,
             model,
         )
-        .await
+        .await;
+        // The request completed and its usage is persisted; release the
+        // in-flight reservations so it isn't counted twice.
+        state.release_request_limits(&check.reservations);
+        response
     }
     .instrument(span)
     .await
@@ -317,7 +338,7 @@ fn extract_model_from_path(path: &str) -> Option<String> {
     None
 }
 
-fn extract_client_key(headers: &axum::http::HeaderMap) -> Option<String> {
+fn extract_client_key(headers: &axum::http::HeaderMap, query: Option<&str>) -> Option<String> {
     headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -334,9 +355,49 @@ fn extract_client_key(headers: &axum::http::HeaderMap) -> Option<String> {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string)
         })
+        .or_else(|| {
+            headers
+                .get("x-goog-api-key")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        })
+        .or_else(|| query.and_then(query_key_param))
 }
 
-async fn handle_models(State(state): State<Arc<AppState>>) -> Response {
+/// Extract the `key` query param (how Google's own SDKs authenticate). Label
+/// keys are plain tokens, so the raw value is compared without decoding.
+fn query_key_param(query: &str) -> Option<String> {
+    query.split('&').find_map(|p| {
+        let (name, value) = p.split_once('=')?;
+        (name == "key" && !value.is_empty()).then(|| value.to_string())
+    })
+}
+
+/// Remove the `key` query param (our client auth) so it never leaks upstream;
+/// every other param is kept verbatim.
+fn strip_key_param(query: &str) -> String {
+    query
+        .split('&')
+        .filter(|p| !p.is_empty())
+        .filter(|p| p.split('=').next() != Some("key"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+async fn handle_models(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
+    // Same label-key auth as every other route: the model inventory must not
+    // leak to unauthenticated clients (e.g. when exposed to the LAN).
+    let client_key = extract_client_key(req.headers(), req.uri().query());
+    if client_key
+        .as_ref()
+        .and_then(|k| state.project_for_key(k))
+        .is_none()
+    {
+        return super::error_resp(
+            StatusCode::UNAUTHORIZED,
+            "invalid or missing project key — create a project in Token Guard and set its label key as your API key",
+        );
+    }
     let Ok(cfg) = state.config.read() else {
         return super::error_resp(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -373,7 +434,7 @@ mod tests {
             axum::http::HeaderValue::from_static("Bearer tg_project_key_123"),
         );
         assert_eq!(
-            extract_client_key(&headers),
+            extract_client_key(&headers, None),
             Some("tg_project_key_123".to_string())
         );
     }
@@ -386,7 +447,7 @@ mod tests {
             axum::http::HeaderValue::from_static("anthropic_project_key"),
         );
         assert_eq!(
-            extract_client_key(&headers),
+            extract_client_key(&headers, None),
             Some("anthropic_project_key".to_string())
         );
     }
@@ -399,15 +460,48 @@ mod tests {
             axum::http::HeaderValue::from_static("azure_project_key"),
         );
         assert_eq!(
-            extract_client_key(&headers),
+            extract_client_key(&headers, None),
             Some("azure_project_key".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_client_key_reads_x_goog_api_key_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "x-goog-api-key",
+            axum::http::HeaderValue::from_static("gemini_project_key"),
+        );
+        assert_eq!(
+            extract_client_key(&headers, None),
+            Some("gemini_project_key".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_client_key_reads_key_query_param() {
+        let headers = axum::http::HeaderMap::new();
+        assert_eq!(
+            extract_client_key(&headers, Some("alt=sse&key=gemini_project_key")),
+            Some("gemini_project_key".to_string())
         );
     }
 
     #[test]
     fn extract_client_key_returns_none_when_missing() {
         let headers = axum::http::HeaderMap::new();
-        assert_eq!(extract_client_key(&headers), None);
+        assert_eq!(extract_client_key(&headers, None), None);
+        assert_eq!(extract_client_key(&headers, Some("alt=sse")), None);
+    }
+
+    #[test]
+    fn strip_key_param_removes_only_key() {
+        assert_eq!(strip_key_param("key=secret&alt=sse"), "alt=sse");
+        assert_eq!(strip_key_param("alt=sse&key=secret"), "alt=sse");
+        assert_eq!(strip_key_param("key=secret"), "");
+        assert_eq!(strip_key_param("alt=sse"), "alt=sse");
+        // Params merely containing "key" survive.
+        assert_eq!(strip_key_param("monkey=1&alt=sse"), "monkey=1&alt=sse");
     }
 
     #[test]

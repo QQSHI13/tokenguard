@@ -45,8 +45,12 @@ pub struct DeviceListDto {
 
 #[tauri::command]
 pub async fn get_registered_devices(key: String, device: String) -> Result<DeviceListDto, String> {
-    let url = format!("{WORKER_BASE}/api/license/devices?key={key}&device={device}");
-    let resp = reqwest::get(&url)
+    // Key travels in a header, not the query string (which lands in CDN/proxy logs).
+    let url = format!("{WORKER_BASE}/api/license/devices?device={device}");
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .header("X-License-Key", &key)
+        .send()
         .await
         .map_err(|e| format!("failed to contact license server: {e}"))?;
     if !resp.status().is_success() {

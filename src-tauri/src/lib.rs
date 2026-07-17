@@ -108,6 +108,9 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("tokenguard.db");
+            // Apply a scheduled database restore before opening the pool,
+            // while no WAL connections exist yet.
+            commands::apply_pending_restore(&db_path);
             let pool = db::build_pool(db_path.to_str().ok_or("invalid db path")?)?;
             let conn = pool
                 .get()

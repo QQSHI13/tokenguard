@@ -4,7 +4,7 @@ use crate::config::{AuthScheme, Provider, ProviderFormat};
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderHealth {
@@ -43,8 +43,18 @@ pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHea
     let mut last_error: Option<String> = None;
 
     for url in endpoints {
-        let api_key = crate::secrets::get(&provider.name).unwrap_or_default();
-        let mut req = client.get(&url);
+        let api_key = match crate::secrets::get(&provider.name) {
+            Ok(k) => k,
+            Err(e) => {
+                return ProviderHealth {
+                    ok: false,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                    error: Some(format!("could not read API key from keychain: {e}")),
+                    checked_at: chrono::Utc::now().to_rfc3339(),
+                };
+            }
+        };
+        let mut req = client.get(&url).timeout(Duration::from_secs(10));
         req = match provider.auth {
             AuthScheme::Bearer => req.bearer_auth(&api_key),
             AuthScheme::XApiKey => req
