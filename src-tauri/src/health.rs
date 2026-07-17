@@ -4,7 +4,6 @@ use crate::config::{AuthScheme, Provider, ProviderFormat};
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,15 +86,5 @@ pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHea
         latency_ms: start.elapsed().as_millis() as u64,
         error: last_error,
         checked_at: chrono::Utc::now().to_rfc3339(),
-    }
-}
-
-/// Run health checks for every configured provider and store the results.
-pub async fn refresh_all(client: &Client, providers: &[Provider], cache: Arc<Mutex<HealthCache>>) {
-    for provider in providers {
-        let health = check_provider(client, provider).await;
-        if let Ok(mut c) = cache.lock() {
-            c.insert(provider.id, health);
-        }
     }
 }

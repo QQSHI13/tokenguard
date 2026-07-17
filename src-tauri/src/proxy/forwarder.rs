@@ -603,7 +603,7 @@ impl SseConverter {
                 .and_then(|v| v.as_str())
             {
                 {
-                    let entry = self.streaming_tools.get_mut(&idx).unwrap();
+                    let entry = self.streaming_tools.entry(idx).or_default();
                     entry.arguments.push_str(args);
                 }
                 self.emit_anthropic_event(

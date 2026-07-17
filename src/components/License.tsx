@@ -201,7 +201,7 @@ export default function License({
     if (!updateInfo) return;
     setUpdateStatus("downloading");
     try {
-      const path = await downloadUpdate(updateInfo.asset_url);
+      const path = await downloadUpdate(updateInfo.asset_url, updateInfo.digest);
       setUpdatePath(path);
       setUpdateStatus("done");
     } catch (e) {

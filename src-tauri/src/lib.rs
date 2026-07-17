@@ -5,11 +5,13 @@ mod config;
 mod cost;
 mod db;
 mod health;
+mod license;
 mod limits;
 mod notifications;
 mod proxy;
 mod secrets;
 mod state;
+mod updater;
 mod webhook;
 
 use std::sync::Arc;
@@ -75,14 +77,14 @@ pub fn run() {
             commands::delete_limit,
             commands::get_limit_status,
             commands::get_limit_presets,
-            commands::get_license_key,
-            commands::set_license_key,
-            commands::delete_license_key,
-            commands::get_registered_devices,
-            commands::check_for_update,
-            commands::download_update,
-            commands::install_update,
-            commands::get_device_fingerprint,
+            license::get_license_key,
+            license::set_license_key,
+            license::delete_license_key,
+            license::get_registered_devices,
+            license::get_device_fingerprint,
+            updater::check_for_update,
+            updater::download_update,
+            updater::install_update,
             commands::get_provider_usage,
             commands::get_project_usage,
             commands::get_project_totals,
@@ -145,23 +147,6 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = proxy::server::serve(s, port, expose_to_lan, shutdown_rx).await {
                     tracing::error!("proxy server error: {e}");
-                }
-            });
-
-            // Run provider health checks periodically and cache the results.
-            let s = state.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
-                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                loop {
-                    interval.tick().await;
-                    let providers = s
-                        .config
-                        .read()
-                        .map(|cfg| cfg.providers.clone())
-                        .unwrap_or_default();
-                    crate::health::refresh_all(&s.client, &providers, s.provider_health_cache())
-                        .await;
                 }
             });
 

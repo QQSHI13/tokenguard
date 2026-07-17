@@ -8,6 +8,8 @@ import {
 export type UpdateInfo = {
   version: string;
   asset_url: string;
+  /** Expected sha256 of the asset, if GitHub reported one. */
+  digest?: string | null;
   downloaded_path?: string;
 };
 
@@ -24,8 +26,14 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   return await invoke<UpdateInfo | null>("check_for_update");
 }
 
-export async function downloadUpdate(assetUrl: string): Promise<string> {
-  return await invoke<string>("download_update", { assetUrl });
+export async function downloadUpdate(
+  assetUrl: string,
+  digest?: string | null,
+): Promise<string> {
+  return await invoke<string>("download_update", {
+    assetUrl,
+    digest: digest ?? null,
+  });
 }
 
 export async function installUpdate(path: string): Promise<void> {
@@ -37,7 +45,7 @@ export async function runAutoUpdate() {
     const info = await checkForUpdate();
     if (!info) return;
 
-    const path = await downloadUpdate(info.asset_url);
+    const path = await downloadUpdate(info.asset_url, info.digest);
 
     await ensureNotificationPermission();
     sendNotification({
