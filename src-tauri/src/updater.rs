@@ -229,14 +229,18 @@ pub async fn download_update(
 
 /// Write a helper shell script to the temp dir and spawn it detached.
 /// The script outlives the app process so it can swap binaries after exit.
-#[cfg(unix)]
+/// Compiles on all platforms (only called from the macOS/Linux arms), because
+/// the OS match in `install_update` is a runtime string match, not cfg-gated.
 fn spawn_helper_script(script: &str, args: &[&str]) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
     let script_path =
         std::env::temp_dir().join(format!("tokenguard-update-{}.sh", std::process::id()));
     std::fs::write(&script_path, script).map_err(|e| e.to_string())?;
-    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
     std::process::Command::new("sh")
         .arg(&script_path)
         .args(args)
