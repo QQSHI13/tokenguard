@@ -9,12 +9,12 @@ const DOCS_LANG: Record<string, string> = {
 };
 
 // Import all markdown source files for each book.
-const enModules = import.meta.glob("../../docs/book-en/src/*.md", {
+const enModules = import.meta.glob("../../docs/book-en/*.md", {
   eager: true,
   query: "?raw",
   import: "default",
 }) as Record<string, string>;
-const zhModules = import.meta.glob("../../docs/book-zh/src/*.md", {
+const zhModules = import.meta.glob("../../docs/book-zh/*.md", {
   eager: true,
   query: "?raw",
   import: "default",
@@ -33,8 +33,8 @@ const enByName = modulesByFileName(enModules);
 const zhByName = modulesByFileName(zhModules);
 
 // SUMMARY.md files drive the table of contents.
-import summaryEnRaw from "../../docs/book-en/src/SUMMARY.md?raw";
-import summaryZhRaw from "../../docs/book-zh/src/SUMMARY.md?raw";
+import summaryEnRaw from "../../docs/book-en/SUMMARY.md?raw";
+import summaryZhRaw from "../../docs/book-zh/SUMMARY.md?raw";
 
 type SummaryItem = { title: string; file: string };
 

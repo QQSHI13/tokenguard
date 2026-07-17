@@ -9,7 +9,7 @@ Token Guard is a local LLM API gateway and cost tracker built with:
 - **Frontend:** React + TypeScript + Tailwind CSS + Vite
 - **Desktop shell:** Tauri v2 (Rust)
 - **Local database:** SQLite (via `rusqlite`)
-- **Docs:** mdBook (`docs/book-en`, `docs/book-zh`)
+- **Docs:** Markdown source in `docs/book-en` and `docs/book-zh`, rendered inside the app by `src/components/Docs.tsx`
 - **Website:** Static HTML in `site/`, deployed to Cloudflare Pages from the `pages` branch
 
 ## Repository Layout
@@ -18,7 +18,7 @@ Token Guard is a local LLM API gateway and cost tracker built with:
 src/            React frontend
 src-tauri/      Rust backend + Tauri app shell
 public/         Static web assets (logo, favicon, etc.)
-docs/           mdBook documentation
+docs/           Markdown docs (rendered inside the app)
 site/           Marketing/purchase website
 ```
 
