@@ -7,8 +7,13 @@
 
 > The local LLM gateway. Your keys, your machine, your tokens.
 
+> [!NOTE]
+> 🎁 **Launch offer:** the first 20 people to email **qingquanshi65@gmail.com** with feedback on Token Guard get a **free Pro license** (no banner, automatic updates, up to 2 devices).
+
 A cross-platform desktop app (Tauri v2 + Rust) that runs a local HTTP proxy to
 intercept and log LLM API calls, showing real-time cost in the system tray.
+
+**Docs:** [project wiki](https://github.com/QQSHI13/tokenguard/wiki) (English + 中文) · **Website:** [tokenguard.pages.dev](https://tokenguard.pages.dev) · **Community:** [Discussions](https://github.com/QQSHI13/tokenguard/discussions)
 
 **The only LLM cost monitor that *cannot* see your prompts.** No cloud, no
 account, no telemetry. The proxy forwards bytes to the provider you already call
