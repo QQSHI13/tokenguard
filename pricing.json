@@ -1,0 +1,1309 @@
+{
+  "$comment": "LLM pricing snapshot (USD per 1K tokens) imported from models.dev. Community-maintained: every entry must cite a source. Ordered longest-pattern-first; first match wins.",
+  "models": [
+    {
+      "pattern": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "match_type": "prefix",
+      "input_per_1k": 0.00011,
+      "output_per_1k": 0.00034,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "meta-llama/llama-prompt-guard-2-22m",
+      "match_type": "prefix",
+      "input_per_1k": 3e-05,
+      "output_per_1k": 3e-05,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "meta-llama/llama-prompt-guard-2-86m",
+      "match_type": "prefix",
+      "input_per_1k": 4e-05,
+      "output_per_1k": 4e-05,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-3.1-pro-preview-customtools",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.012,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "gemini-3.1-flash-image-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.06,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-3.1-flash-lite-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.0015,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "gemini-2.5-flash-preview-tts",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.01,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "grok-4.20-0309-non-reasoning",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.0025,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "openai/gpt-oss-safeguard-20b",
+      "match_type": "prefix",
+      "input_per_1k": 7.5e-05,
+      "output_per_1k": 0.0003,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "claude-sonnet-4-5-20250929",
+      "match_type": "prefix",
+      "input_per_1k": 0.003,
+      "output_per_1k": 0.015,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0003
+    },
+    {
+      "pattern": "gemini-2.5-pro-preview-tts",
+      "match_type": "prefix",
+      "input_per_1k": 0.001,
+      "output_per_1k": 0.02,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-3-pro-image-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.12,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "grok-4.20-multi-agent-0309",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.0025,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "claude-haiku-4-5-20251001",
+      "match_type": "prefix",
+      "input_per_1k": 0.001,
+      "output_per_1k": 0.005,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0001
+    },
+    {
+      "pattern": "gemini-omni-flash-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.0015,
+      "output_per_1k": 0.0175,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "claude-opus-4-1-20250805",
+      "match_type": "prefix",
+      "input_per_1k": 0.015,
+      "output_per_1k": 0.075,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0015
+    },
+    {
+      "pattern": "claude-opus-4-5-20251101",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.025,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "gemini-flash-lite-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.0015,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "grok-4.20-0309-reasoning",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.0025,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "labs-devstral-small-2512",
+      "match_type": "prefix",
+      "input_per_1k": 0.0,
+      "output_per_1k": 0.0,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "llama-3.3-70b-versatile",
+      "match_type": "prefix",
+      "input_per_1k": 0.00059,
+      "output_per_1k": 0.00079,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "magistral-medium-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.005,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "devstral-medium-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-2.5-flash-image",
+      "match_type": "prefix",
+      "input_per_1k": 0.0003,
+      "output_per_1k": 0.03,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 7.5e-05
+    },
+    {
+      "pattern": "gemini-3-flash-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.003,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 5e-05
+    },
+    {
+      "pattern": "gemini-3.1-pro-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.012,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "text-embedding-3-large",
+      "match_type": "prefix",
+      "input_per_1k": 0.00013,
+      "output_per_1k": 0.0,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "text-embedding-3-small",
+      "match_type": "prefix",
+      "input_per_1k": 2e-05,
+      "output_per_1k": 0.0,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "text-embedding-ada-002",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-2.0-flash-lite",
+      "match_type": "prefix",
+      "input_per_1k": 7.5e-05,
+      "output_per_1k": 0.0003,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-2.5-flash-lite",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0004,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 1e-05
+    },
+    {
+      "pattern": "gemini-3.1-flash-lite",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.0015,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "mistral-medium-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0015,
+      "output_per_1k": 0.0075,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "o4-mini-deep-research",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.008,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "devstral-medium-2507",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-3-pro-preview",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.012,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "gemini-embedding-001",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.0,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "llama-3.1-8b-instant",
+      "match_type": "prefix",
+      "input_per_1k": 5e-05,
+      "output_per_1k": 8e-05,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-large-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.0015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-small-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.0006,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "pixtral-large-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.006,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "devstral-small-2505",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0003,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "devstral-small-2507",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0003,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-flash-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0015,
+      "output_per_1k": 0.009,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00015
+    },
+    {
+      "pattern": "gpt-5.1-chat-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "gpt-5.2-chat-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "gpt-5.3-chat-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "gpt-5.3-codex-spark",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "ministral-3b-latest",
+      "match_type": "prefix",
+      "input_per_1k": 4e-05,
+      "output_per_1k": 4e-05,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "ministral-8b-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0001,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-medium-2505",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-medium-2508",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-medium-2604",
+      "match_type": "prefix",
+      "input_per_1k": 0.0015,
+      "output_per_1k": 0.0075,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "openai/gpt-oss-120b",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.0006,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 7.5e-05
+    },
+    {
+      "pattern": "gpt-5.1-codex-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.002,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "mistral-large-2411",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.006,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-large-2512",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.0015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-small-2506",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0003,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "mistral-small-2603",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.0006,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "open-mixtral-8x22b",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.006,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "openai/gpt-oss-20b",
+      "match_type": "prefix",
+      "input_per_1k": 7.5e-05,
+      "output_per_1k": 0.0003,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 3.75e-05
+    },
+    {
+      "pattern": "claude-sonnet-4-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.003,
+      "output_per_1k": 0.015,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0003
+    },
+    {
+      "pattern": "claude-sonnet-4-6",
+      "match_type": "prefix",
+      "input_per_1k": 0.003,
+      "output_per_1k": 0.015,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0003
+    },
+    {
+      "pattern": "deepseek-reasoner",
+      "match_type": "prefix",
+      "input_per_1k": 0.00014,
+      "output_per_1k": 0.00028,
+      "provider": "deepseek",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.8e-06
+    },
+    {
+      "pattern": "deepseek-v4-flash",
+      "match_type": "prefix",
+      "input_per_1k": 0.00014,
+      "output_per_1k": 0.00028,
+      "provider": "deepseek",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.8e-06
+    },
+    {
+      "pattern": "gpt-4o-2024-05-13",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.015,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-4o-2024-08-06",
+      "match_type": "prefix",
+      "input_per_1k": 0.0025,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00125
+    },
+    {
+      "pattern": "gpt-4o-2024-11-20",
+      "match_type": "prefix",
+      "input_per_1k": 0.0025,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00125
+    },
+    {
+      "pattern": "gpt-5-chat-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "gpt-5.1-codex-max",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "open-mistral-nemo",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.00015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "open-mixtral-8x7b",
+      "match_type": "prefix",
+      "input_per_1k": 0.0007,
+      "output_per_1k": 0.0007,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "claude-haiku-4-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.001,
+      "output_per_1k": 0.005,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0001
+    },
+    {
+      "pattern": "codestral-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0003,
+      "output_per_1k": 0.0009,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gemini-2.0-flash",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0004,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "gemini-2.5-flash",
+      "match_type": "prefix",
+      "input_per_1k": 0.0003,
+      "output_per_1k": 0.0025,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 3e-05
+    },
+    {
+      "pattern": "gemini-3.5-flash",
+      "match_type": "prefix",
+      "input_per_1k": 0.0015,
+      "output_per_1k": 0.009,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00015
+    },
+    {
+      "pattern": "gpt-realtime-2.1",
+      "match_type": "prefix",
+      "input_per_1k": 0.004,
+      "output_per_1k": 0.024,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0004
+    },
+    {
+      "pattern": "o3-deep-research",
+      "match_type": "prefix",
+      "input_per_1k": 0.01,
+      "output_per_1k": 0.04,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0025
+    },
+    {
+      "pattern": "claude-opus-4-1",
+      "match_type": "prefix",
+      "input_per_1k": 0.015,
+      "output_per_1k": 0.075,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0015
+    },
+    {
+      "pattern": "claude-opus-4-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.025,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "claude-opus-4-6",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.025,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "claude-opus-4-7",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.025,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "claude-opus-4-8",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.025,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "claude-sonnet-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.01,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "deepseek-v4-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.000435,
+      "output_per_1k": 0.00087,
+      "provider": "deepseek",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 3.6e-06
+    },
+    {
+      "pattern": "devstral-latest",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "magistral-small",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.0015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "open-mistral-7b",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.00025,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "claude-fable-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.01,
+      "output_per_1k": 0.05,
+      "provider": "anthropic",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.001
+    },
+    {
+      "pattern": "gemini-2.5-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "google",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "grok-build-0.1",
+      "match_type": "prefix",
+      "input_per_1k": 0.001,
+      "output_per_1k": 0.002,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "qwen/qwen3-32b",
+      "match_type": "prefix",
+      "input_per_1k": 0.00029,
+      "output_per_1k": 0.00059,
+      "provider": "groq",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "deepseek-chat",
+      "match_type": "prefix",
+      "input_per_1k": 0.00014,
+      "output_per_1k": 0.00028,
+      "provider": "deepseek",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.8e-06
+    },
+    {
+      "pattern": "devstral-2512",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.002,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-3.5-turbo",
+      "match_type": "prefix",
+      "input_per_1k": 0.0005,
+      "output_per_1k": 0.0015,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0
+    },
+    {
+      "pattern": "gpt-5.1-codex",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "gpt-5.2-codex",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "gpt-5.3-codex",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "gpt-5.6-terra",
+      "match_type": "prefix",
+      "input_per_1k": 0.0025,
+      "output_per_1k": 0.015,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00025
+    },
+    {
+      "pattern": "mistral-embed",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-4.1-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.0004,
+      "output_per_1k": 0.0016,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0001
+    },
+    {
+      "pattern": "gpt-4.1-nano",
+      "match_type": "prefix",
+      "input_per_1k": 0.0001,
+      "output_per_1k": 0.0004,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "gpt-5.4-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.00075,
+      "output_per_1k": 0.0045,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 7.5e-05
+    },
+    {
+      "pattern": "gpt-5.4-nano",
+      "match_type": "prefix",
+      "input_per_1k": 0.0002,
+      "output_per_1k": 0.00125,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2e-05
+    },
+    {
+      "pattern": "gpt-5.6-luna",
+      "match_type": "prefix",
+      "input_per_1k": 0.001,
+      "output_per_1k": 0.006,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0001
+    },
+    {
+      "pattern": "mistral-nemo",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.00015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-4-turbo",
+      "match_type": "prefix",
+      "input_per_1k": 0.01,
+      "output_per_1k": 0.03,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-4o-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.0006,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 7.5e-05
+    },
+    {
+      "pattern": "gpt-5-codex",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "gpt-5.2-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.021,
+      "output_per_1k": 0.168,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-5.4-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.03,
+      "output_per_1k": 0.18,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-5.5-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.03,
+      "output_per_1k": 0.18,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-5.6-sol",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.03,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "gpt-image-2",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.03,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00125
+    },
+    {
+      "pattern": "pixtral-12b",
+      "match_type": "prefix",
+      "input_per_1k": 0.00015,
+      "output_per_1k": 0.00015,
+      "provider": "mistral",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-5-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.00025,
+      "output_per_1k": 0.002,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 2.5e-05
+    },
+    {
+      "pattern": "gpt-5-nano",
+      "match_type": "prefix",
+      "input_per_1k": 5e-05,
+      "output_per_1k": 0.0004,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 5e-06
+    },
+    {
+      "pattern": "gpt-5-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.015,
+      "output_per_1k": 0.12,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "grok-4.3",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.0025,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0002
+    },
+    {
+      "pattern": "grok-4.5",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.006,
+      "provider": "xai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "gpt-4.1",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.008,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "gpt-5.1",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "gpt-5.2",
+      "match_type": "prefix",
+      "input_per_1k": 0.00175,
+      "output_per_1k": 0.014,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000175
+    },
+    {
+      "pattern": "gpt-5.4",
+      "match_type": "prefix",
+      "input_per_1k": 0.0025,
+      "output_per_1k": 0.015,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00025
+    },
+    {
+      "pattern": "gpt-5.5",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.03,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "gpt-5.6",
+      "match_type": "prefix",
+      "input_per_1k": 0.005,
+      "output_per_1k": 0.03,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    },
+    {
+      "pattern": "o3-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.0011,
+      "output_per_1k": 0.0044,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00055
+    },
+    {
+      "pattern": "o4-mini",
+      "match_type": "prefix",
+      "input_per_1k": 0.0011,
+      "output_per_1k": 0.0044,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000275
+    },
+    {
+      "pattern": "gpt-4o",
+      "match_type": "prefix",
+      "input_per_1k": 0.0025,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.00125
+    },
+    {
+      "pattern": "o1-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.15,
+      "output_per_1k": 0.6,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "o3-pro",
+      "match_type": "prefix",
+      "input_per_1k": 0.02,
+      "output_per_1k": 0.08,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-4",
+      "match_type": "prefix",
+      "input_per_1k": 0.03,
+      "output_per_1k": 0.06,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18"
+    },
+    {
+      "pattern": "gpt-5",
+      "match_type": "prefix",
+      "input_per_1k": 0.00125,
+      "output_per_1k": 0.01,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.000125
+    },
+    {
+      "pattern": "o1",
+      "match_type": "prefix",
+      "input_per_1k": 0.015,
+      "output_per_1k": 0.06,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0075
+    },
+    {
+      "pattern": "o3",
+      "match_type": "prefix",
+      "input_per_1k": 0.002,
+      "output_per_1k": 0.008,
+      "provider": "openai",
+      "source": "https://models.dev",
+      "updated": "2026-07-18",
+      "cached_input_per_1k": 0.0005
+    }
+  ]
+}
