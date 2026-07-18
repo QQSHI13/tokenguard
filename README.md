@@ -20,6 +20,10 @@ account, no telemetry. The proxy forwards bytes to the provider you already call
 and records only metadata (tokens, model, cost) to a local SQLite database.
 API keys live in the OS keychain — never on disk, never in your code.
 
+<p align="center">
+  <img src="site/screenshot.png" alt="Token Guard window showing the local proxy endpoint" width="720">
+</p>
+
 ## Architecture
 
 | Layer | Tech |
