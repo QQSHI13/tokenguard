@@ -1,0 +1,93 @@
+name: Wiki sync
+
+# Keeps the GitHub wiki (tokenguard.wiki.git) in sync with the in-app docs in
+# docs/. English pages land at the wiki root, Chinese pages as zh-*.md
+# (subfolder paths don't route in the wiki UI). The sidebar is regenerated
+# from the two SUMMARY.md files. Home.md and _Footer.md are hand-maintained
+# in the wiki and are never touched here.
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7.0.0
+
+      - name: Clone wiki
+        run: git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki
+
+      - name: Sync docs into wiki
+        run: |
+          set -e
+          # Remove previously synced pages (keep hand-maintained files).
+          cd wiki
+          for f in *.md; do
+            case "$f" in Home.md|_Sidebar.md|_Footer.md) ;; *) rm -f "$f";; esac
+          done
+          cd ..
+
+          # English pages at the root, Chinese pages flattened with a zh- prefix.
+          for f in docs/book-en/*.md; do
+            b=$(basename "$f")
+            [ "$b" = "SUMMARY.md" ] && continue
+            cp "$f" "wiki/$b"
+          done
+          for f in docs/book-zh/*.md; do
+            b=$(basename "$f")
+            [ "$b" = "SUMMARY.md" ] && continue
+            cp "$f" "wiki/zh-$b"
+          done
+
+          # Regenerate the sidebar from the SUMMARY files.
+          python3 - <<'PY'
+          import pathlib, re
+
+          def parse(path):
+              items = []
+              for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+                  m = re.match(r"- \[(.+?)\]\(\./(.+?)\.md\)", line.strip())
+                  if m:
+                      items.append((m.group(1), m.group(2)))
+              return items
+
+          en = parse("docs/book-en/SUMMARY.md")
+          zh = parse("docs/book-zh/SUMMARY.md")
+
+          lines = ["**[Home](Home)**", "", "**Docs (English)**", ""]
+          lines += [f"- [{t}]({f})" for t, f in en]
+          lines += ["", "**文档（中文）**", ""]
+          lines += [f"- [{t}](zh-{f})" for t, f in zh]
+          lines += [
+              "",
+              "---",
+              "",
+              "[Website](https://tokenguard.pages.dev) · [Releases](https://github.com/QQSHI13/tokenguard/releases) · [Discussions](https://github.com/QQSHI13/tokenguard/discussions)",
+              "",
+          ]
+          pathlib.Path("wiki/_Sidebar.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+
+      - name: Commit and push
+        run: |
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "wiki already up to date"
+            exit 0
+          fi
+          git commit -m "Sync docs from ${{ github.event_name == 'workflow_dispatch' && 'manual run' || github.sha }}"
+          git push

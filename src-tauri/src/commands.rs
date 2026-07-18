@@ -28,6 +28,7 @@ pub struct SettingsDto {
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
     pub auto_update_interval_minutes: u32,
+    pub onboarding_completed: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -453,6 +454,10 @@ fn is_private_lan(ip: IpAddr) -> bool {
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, String> {
+    let onboarding_completed = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::get_setting(&conn, "onboarding_completed").as_deref() == Some("1")
+    };
     let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
     Ok(SettingsDto {
         port: cfg.port,
@@ -493,7 +498,15 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .auto_update_interval_minutes,
+        onboarding_completed,
     })
+}
+
+/// Persist that the user finished or skipped the onboarding flow.
+#[tauri::command]
+pub fn set_onboarding_completed(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, "onboarding_completed", "1").map_err(|e| e.to_string())
 }
 
 #[tauri::command]

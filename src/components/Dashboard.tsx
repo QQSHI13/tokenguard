@@ -76,6 +76,7 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
   const [limitStatus, setLimitStatus] = useState<LimitStatus[]>([]);
   const [providerCount, setProviderCount] = useState(-1);
   const [projectCount, setProjectCount] = useState(-1);
+  const [onboardingDone, setOnboardingDone] = useState(false);
   const [tab, setTab] = useState<DashboardTab>("usage");
 
   const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage[]>([]);
@@ -109,6 +110,9 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
       .catch(console.error);
     invoke<SimpleProject[]>("list_projects")
       .then((list) => setProjectCount(list.length))
+      .catch(console.error);
+    invoke<{ onboarding_completed: boolean }>("get_settings")
+      .then((s) => setOnboardingDone(s.onboarding_completed))
       .catch(console.error);
     invoke<MonthlyUsage[]>("get_monthly_usage", { months: 12 })
       .then(setMonthlyUsage)
@@ -183,8 +187,13 @@ export default function Dashboard({ proxyUrl }: { proxyUrl?: string }) {
       "json"
     );
 
-  if (providerCount === 0 && projectCount === 0) {
-    return <Onboarding onComplete={refresh} />;
+  if (providerCount === 0 && projectCount === 0 && !onboardingDone) {
+    const completeOnboarding = () => {
+      invoke("set_onboarding_completed")
+        .then(refresh)
+        .catch(console.error);
+    };
+    return <Onboarding onComplete={completeOnboarding} />;
   }
 
   const tabs: { id: DashboardTab; label: string }[] = [
