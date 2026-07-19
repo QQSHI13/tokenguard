@@ -1,9 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
-
-type ProviderFormat = "openai" | "anthropic";
-type AuthScheme = "bearer" | "x_api_key" | "api_key";
+import {
+  PRESETS,
+  defaultAuthFor,
+  type AuthScheme,
+  type ModelMapping,
+  type ProviderFormat,
+} from "../utils/providerPresets";
 
 type ProviderInput = {
   name: string;
@@ -11,13 +15,7 @@ type ProviderInput = {
   format: ProviderFormat;
   auth: AuthScheme;
   api_key: string;
-  models: {
-    local: string;
-    remote: string;
-    input_cost_per_1k: number | null;
-    output_cost_per_1k: number | null;
-    cached_input_cost_per_1k: number | null;
-  }[];
+  models: ModelMapping[];
   is_default: boolean;
 };
 
@@ -67,6 +65,20 @@ export default function Onboarding({
       .then(setSettings)
       .catch(console.error);
   }, []);
+
+  const applyPreset = (p: (typeof PRESETS)[number]) => {
+    setProvider((f) => ({
+      ...f,
+      name: p.name,
+      base_url: p.base_url,
+      format: p.format,
+      auth: p.auth,
+      models:
+        p.models.length > 0
+          ? [...p.models]
+          : [{ local: "", remote: "", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null }],
+    }));
+  };
 
   const submitProvider = async (e: FormEvent) => {
     e.preventDefault();
@@ -146,6 +158,22 @@ export default function Onboarding({
               <h2 className="text-base font-semibold">{t("onboardingProviderTitle")}</h2>
               <p className="text-xs text-neutral-500">{t("onboardingProviderSubtitle")}</p>
             </div>
+            <div className="flex flex-wrap gap-1.5">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => applyPreset(p)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    provider.name === p.name
+                      ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
             <label className={labelCls}>{t("name")}</label>
             <input
               required
@@ -170,13 +198,14 @@ export default function Onboarding({
                     setProvider({
                       ...provider,
                       format,
-                      auth: format === "anthropic" ? "x_api_key" : "bearer",
+                      auth: defaultAuthFor(format),
                     });
                   }}
                   className={inputCls}
                 >
                   <option value="openai">openai</option>
                   <option value="anthropic">anthropic</option>
+                  <option value="google">google</option>
                 </select>
               </div>
               <div>
@@ -189,8 +218,9 @@ export default function Onboarding({
                   className={inputCls}
                 >
                   <option value="bearer">Authorization: Bearer</option>
-                  <option value="x_api_key">x-api-key</option>
-                  <option value="api_key">api-key</option>
+                  <option value="x_api_key">x-api-key (Anthropic)</option>
+                  <option value="api_key">api-key (Azure)</option>
+                  <option value="x_goog_api_key">x-goog-api-key (Google)</option>
                 </select>
               </div>
             </div>

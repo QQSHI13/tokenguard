@@ -24,6 +24,22 @@ cargo tauri dev
 
 This starts the Vite dev server and the Tauri desktop app with hot reload.
 
+### Running on WSL
+
+WSLg has no real GPU, so the first launch prints warnings like
+`libEGL warning: MESA-LOADER: failed to retrieve device information` and
+`MESA: error: ZINK: failed to choose pdev`. These are environmental, not app
+bugs. Silence them by forcing software rendering:
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 cargo tauri dev
+```
+
+You may also see `gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed`
+from the system-tray library on startup — a known upstream quirk of the
+tray/appindicator stack under WSLg. It is harmless and does not affect the
+window, the proxy, or the tray on a real Linux desktop.
+
 ## Project Structure
 
 - `src/` — React frontend

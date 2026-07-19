@@ -2,17 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "../i18n";
-
-type ProviderFormat = "openai" | "anthropic" | "google";
-type AuthScheme = "bearer" | "x_api_key" | "api_key" | "x_goog_api_key";
-
-type ModelMapping = {
-  local: string;
-  remote: string;
-  input_cost_per_1k: number | null;
-  output_cost_per_1k: number | null;
-  cached_input_cost_per_1k: number | null;
-};
+import {
+  PRESETS,
+  type AuthScheme,
+  type ModelMapping,
+  type ProviderFormat,
+} from "../utils/providerPresets";
 
 type Provider = {
   id: number;
@@ -51,56 +46,6 @@ type Input = {
   fallback_provider_id: number | null;
   extra_headers: [string, string][];
 };
-
-const PRESETS: {
-  name: string;
-  base_url: string;
-  format: ProviderFormat;
-  auth: AuthScheme;
-  models: ModelMapping[];
-}[] = [
-  {
-    name: "OpenAI",
-    base_url: "https://api.openai.com",
-    format: "openai",
-    auth: "bearer",
-    models: [
-      { local: "gpt-4o", remote: "gpt-4o", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "gpt-4o-mini", remote: "gpt-4o-mini", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "gpt-4-turbo", remote: "gpt-4-turbo", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "gpt-3.5-turbo", remote: "gpt-3.5-turbo", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-    ],
-  },
-  {
-    name: "Anthropic",
-    base_url: "https://api.anthropic.com",
-    format: "anthropic",
-    auth: "x_api_key",
-    models: [
-      { local: "claude-sonnet-4", remote: "claude-sonnet-4-20250514", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "claude-3-5-sonnet", remote: "claude-3-5-sonnet-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "claude-3-5-haiku", remote: "claude-3-5-haiku-20241022", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-    ],
-  },
-  {
-    name: "Google",
-    base_url: "https://generativelanguage.googleapis.com",
-    format: "google",
-    auth: "x_goog_api_key",
-    models: [
-      { local: "gemini-1.5-pro", remote: "gemini-1.5-pro", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "gemini-1.5-flash", remote: "gemini-1.5-flash", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-      { local: "gemini-2.0-flash", remote: "gemini-2.0-flash", input_cost_per_1k: null, output_cost_per_1k: null, cached_input_cost_per_1k: null },
-    ],
-  },
-  {
-    name: "OpenRouter",
-    base_url: "https://openrouter.ai/api",
-    format: "openai",
-    auth: "bearer",
-    models: [],
-  },
-];
 
 function blank(): Input {
   return {
