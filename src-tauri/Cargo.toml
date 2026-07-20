@@ -1,6 +1,6 @@
 [package]
 name = "tokenguard"
-version = "0.1.6"
+version = "0.1.7"
 description = "Local LLM gateway — track every token, nothing leaves your machine."
 authors = ["QQSHI13"]
 edition = "2021"
