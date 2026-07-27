@@ -243,13 +243,15 @@ async fn handle(
             input_cost,
             output_cost,
         );
-        let duration_ms = start.elapsed().as_millis() as u64;
+        // Pre-flight limit check uses estimated cost/tokens. Time limits are
+        // checked after the request completes because the real duration is
+        // only known then.
         let check = state.check_limits(
             provider.id,
             project_tag.as_deref(),
             estimated_cost,
             estimated_tokens,
-            duration_ms,
+            0,
         );
         for v in &check.violations {
             match v.limit.action {
@@ -299,6 +301,7 @@ async fn handle(
             }
         }
 
+        let provider_id = provider.id;
         let response = forwarder::forward(
             state.clone(),
             start,
@@ -308,13 +311,68 @@ async fn handle(
             family,
             provider,
             api_key,
-            project_tag,
-            model,
+            project_tag.clone(),
+            model.clone(),
         )
         .await;
         // The request completed and its usage is persisted; release the
         // in-flight reservations so it isn't counted twice.
         state.release_request_limits(&check.reservations);
+
+        // Post-flight: time-based limits can only be evaluated now that the
+        // real wall-clock duration is known. The current request is already
+        // through, so Block/Pause here affects subsequent requests.
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let time_check = state.check_time_limits(
+            provider_id,
+            project_tag.as_deref(),
+            duration_ms,
+        );
+        for v in &time_check.violations {
+            match v.limit.action {
+                LimitAction::Block => {
+                    if v.should_notify {
+                        notifications::limit_blocked(
+                            &state.app,
+                            &v.limit.name,
+                            v.used,
+                            v.limit.cap,
+                        );
+                        state.mark_block_notified(v.limit.id);
+                    }
+                }
+                LimitAction::Pause => {
+                    if v.should_notify {
+                        notifications::limit_paused(
+                            &state.app,
+                            &v.limit.name,
+                            v.used,
+                            v.limit.cap,
+                        );
+                        state.mark_block_notified(v.limit.id);
+                    }
+                    state.set_paused(true);
+                }
+                LimitAction::Warn => {
+                    if v.should_notify {
+                        notifications::limit_warning(
+                            &state.app,
+                            &v.limit.name,
+                            v.used,
+                            v.limit.cap,
+                        );
+                        state.mark_warning_notified(v.limit.id);
+                    }
+                    tracing::warn!(
+                        "time limit warning: {} ({:.0}/{:.0})",
+                        v.limit.name,
+                        v.used,
+                        v.limit.cap
+                    );
+                }
+            }
+        }
+
         response
     }
     .instrument(span)

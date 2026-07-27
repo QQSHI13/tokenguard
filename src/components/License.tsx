@@ -409,13 +409,11 @@ export default function License({
               type="text"
               value={key}
               onChange={(e) => {
-                const raw = e.target.value.replace(/[^0-9a-zA-Z]/g, '').toUpperCase().slice(0, 16);
-                const parts = [
-                  raw.slice(0, 4),
-                  raw.slice(4, 8),
-                  raw.slice(8, 12),
-                  raw.slice(12, 16),
-                ].filter(Boolean);
+                const raw = e.target.value.replace(/[^0-9a-zA-Z]/g, '').toUpperCase().slice(0, 32);
+                const parts = [];
+                for (let i = 0; i < raw.length; i += 4) {
+                  parts.push(raw.slice(i, i + 4));
+                }
                 setKey(parts.join('-'));
               }}
               placeholder={t("licenseKeyPlaceholder")}

@@ -22,7 +22,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="p-6 text-neutral-200">
           <h2 className="text-sm font-semibold text-red-400">
-            UI crashed — paste this to Nova
+            UI crashed — please report this issue
           </h2>
           <pre className="mt-2 whitespace-pre-wrap text-xs text-neutral-400">
             {e.message}

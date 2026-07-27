@@ -171,7 +171,7 @@ impl AppState {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(600))
             .pool_max_idle_per_host(8)
-            .user_agent("TokenGuard/0.1.0")
+            .user_agent(format!("TokenGuard/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| format!("reqwest client build failed: {e}"))?;
         let (shutdown_tx, _shutdown_rx) = watch::channel(());
@@ -323,6 +323,10 @@ impl AppState {
     /// the log insert. Each check reserves +1 per request-based limit; the
     /// reservation is released exactly once by the caller (see
     /// release_request_limits) — check_limits never decrements internally.
+    ///
+    /// `duration_ms` is only meaningful for `TimeSec` limits. For the pre-flight
+    /// check it should be `0`; use `check_time_limits` after the request to
+    /// evaluate time limits against the real duration.
     pub fn check_limits(
         &self,
         provider_id: i64,
@@ -446,6 +450,115 @@ impl AppState {
                         "limit_warning",
                         limit,
                         used,
+                        limit.cap,
+                    );
+                }
+                self.mark_warning_notified(limit.id);
+            }
+        }
+        result
+    }
+
+    /// Post-flight check for time-based limits only. Time limits cannot be
+    /// estimated before the upstream request completes, so they are evaluated
+    /// after the request has finished and its real duration is known. Returns
+    /// any TimeSec limit that is now exceeded so the proxy can warn/pause.
+    pub fn check_time_limits(
+        &self,
+        provider_id: i64,
+        project_tag: Option<&str>,
+        duration_ms: u64,
+    ) -> LimitCheckResult {
+        let Ok(conn) = self.db.get() else {
+            tracing::error!("failed to get DB connection from pool for check_time_limits");
+            return LimitCheckResult::default();
+        };
+        let (limits, projects, webhook_url) = match self.config.read() {
+            Ok(cfg) => (
+                cfg.limits.clone(),
+                cfg.projects.clone(),
+                cfg.webhook_url.clone(),
+            ),
+            Err(_) => return LimitCheckResult::default(),
+        };
+
+        let mut result = LimitCheckResult::default();
+        for limit in &limits {
+            if !limit.enabled || limit.metric != LimitMetric::TimeSec {
+                continue;
+            }
+            if !limit_scope_matches(limit, provider_id, project_tag, &projects) {
+                continue;
+            }
+            if !is_limit_active(limit) {
+                continue;
+            }
+
+            let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
+            let current = duration_ms as f64 / 1000.0;
+            let total = persisted + current;
+            if limit.cap > 0.0 && total >= limit.cap {
+                audit_with_conn(
+                    &conn,
+                    "limit_hit",
+                    &format!(
+                        "limit={} metric={} action={} used={:.4} cap={:.4}",
+                        limit.name,
+                        limit.metric.as_db_str(),
+                        limit.action.as_db_str(),
+                        total,
+                        limit.cap
+                    ),
+                );
+                let should_notify = match limit.action {
+                    LimitAction::Warn => self.can_notify_warning(limit.id),
+                    _ => self.can_notify_block(limit.id),
+                };
+                if should_notify {
+                    if let Some(ref url) = webhook_url {
+                        webhook::send_limit_event(
+                            &self.client,
+                            url,
+                            "limit_hit",
+                            limit,
+                            total,
+                            limit.cap,
+                        );
+                    }
+                }
+                result.violations.push(LimitViolation {
+                    limit: limit.clone(),
+                    used: persisted,
+                    should_notify,
+                });
+                continue;
+            }
+
+            if limit.cap > 0.0
+                && limit.warning_threshold > 0.0
+                && persisted >= limit.warning_threshold * limit.cap
+                && self.can_notify_warning(limit.id)
+            {
+                audit_with_conn(
+                    &conn,
+                    "limit_warning",
+                    &format!(
+                        "limit={} metric={} used={:.4} cap={:.4} threshold={:.2}",
+                        limit.name,
+                        limit.metric.as_db_str(),
+                        persisted,
+                        limit.cap,
+                        limit.warning_threshold
+                    ),
+                );
+                notifications::limit_warning(&self.app, &limit.name, persisted, limit.cap);
+                if let Some(ref url) = webhook_url {
+                    webhook::send_limit_event(
+                        &self.client,
+                        url,
+                        "limit_warning",
+                        limit,
+                        persisted,
                         limit.cap,
                     );
                 }

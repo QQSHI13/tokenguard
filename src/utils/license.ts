@@ -10,8 +10,12 @@ export function normalizeLicenseKey(key: string): string {
 
 export function formatLicenseKey(key: string): string {
   const clean = normalizeLicenseKey(key);
-  if (clean.length !== 16) return clean;
-  return `${clean.slice(0, 4)}-${clean.slice(4, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}`;
+  if (clean.length === 0 || clean.length % 4 !== 0) return clean;
+  const parts = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    parts.push(clean.slice(i, i + 4));
+  }
+  return parts.join('-');
 }
 
 export type RegisteredDevice = {

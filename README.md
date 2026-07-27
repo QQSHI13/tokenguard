@@ -131,8 +131,9 @@ migrated to a global daily money limit.
 
 ## Status
 
-v0.1.0 — prototype. Core proxy + model routing + SSE passthrough + logging +
-tray. See `PRIVACY.md` for how user data is handled.
+v0.1.7 — active development. Core proxy + model routing + SSE passthrough + logging +
+tray + limits + projects + provider health + license/device management. See `PRIVACY.md`
+for how user data is handled.
 
 ## License
 
