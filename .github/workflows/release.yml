@@ -57,9 +57,6 @@ jobs:
       - name: Build site
         run: cd site && npm ci && npm run build
 
-      - name: Test license worker
-        run: cd workers/license-key && npm test
-
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 

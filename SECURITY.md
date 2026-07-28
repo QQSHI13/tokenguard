@@ -59,6 +59,23 @@ intended.
   outside the app.
 - Website/license-worker issues (key enumeration, webhook forgery, etc.).
 
+## Known upstream advisories
+
+Token Guard's Linux desktop shell is built on Tauri v2, which currently
+depends on the GTK3/gtk-rs 0.18 stack. The following advisories affect
+transitive dependencies and cannot be resolved in this repository until
+Tauri migrates to GTK4/gtk-rs 0.20 or later:
+
+| Advisory | Crate | Status |
+| -------- | ----- | ------ |
+| [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g) / [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429) | `glib` 0.18.x | Waiting for upstream Tauri/GTK4 migration |
+| [RUSTSEC-2024-0411](https://rustsec.org/advisories/RUSTSEC-2024-0411) through [RUSTSEC-2024-0420](https://rustsec.org/advisories/RUSTSEC-2024-0420) | GTK3 bindings (`gtk`, `gdk`, `atk`, etc.) | Unmaintained; resolved by same migration |
+
+We monitor `cargo audit` and Tauri's GTK4 tracking issues
+([tauri#7335](https://github.com/tauri-apps/tauri/issues/7335),
+[tauri#12561](https://github.com/tauri-apps/tauri/issues/12561)) and will
+update as soon as a compatible release is available.
+
 ## Hardening notes
 
 - Keep `expose_to_lan` **off** unless you specifically need LAN devices to
