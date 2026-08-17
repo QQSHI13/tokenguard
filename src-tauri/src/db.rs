@@ -1,5 +1,7 @@
 //! SQLite: schema, queries, config load.
 
+#![cfg_attr(not(any(feature = "gui", test)), allow(dead_code, unused_imports))]
+
 use crate::config::{
     AuthScheme, BudgetPeriod, Config, Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod,
     LimitScope, ModelMapping, Provider, ProviderFormat,
@@ -443,6 +445,7 @@ pub fn insert_audit_event(
 }
 
 /// List audit events from the last `days` days. `days = 0` means all.
+#[cfg(any(feature = "gui", test))]
 pub fn list_audit_events(
     conn: &Connection,
     days: u32,
@@ -492,6 +495,7 @@ pub fn cleanup_old_logs(conn: &Connection, days: u32) -> rusqlite::Result<usize>
 }
 
 /// Count logs matching the same filters (without pagination).
+#[cfg(any(feature = "gui", test))]
 pub fn count_logs_filtered(conn: &Connection, filter: &LogFilter) -> rusqlite::Result<u64> {
     let mut sql = String::from("SELECT COUNT(*) FROM logs WHERE 1=1");
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -540,6 +544,7 @@ pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<crate::config::P
     rows.collect()
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn insert_project(
     conn: &Connection,
     input: &crate::config::ProjectInput,
@@ -557,11 +562,13 @@ pub fn insert_project(
     Ok(conn.last_insert_rowid())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn delete_project(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
     Ok(())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn update_provider_models(
     conn: &Connection,
     id: i64,
@@ -575,6 +582,7 @@ pub fn update_provider_models(
     Ok(())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn update_provider(
     conn: &Connection,
     id: i64,
@@ -630,6 +638,7 @@ pub fn project_period_spend(
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg(any(feature = "gui", test))]
 pub struct DailyUsage {
     pub day: String,
     pub cost: f64,
@@ -638,6 +647,7 @@ pub struct DailyUsage {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg(any(feature = "gui", test))]
 pub struct MonthlyUsage {
     pub month: String,
     pub cost: f64,
@@ -646,6 +656,7 @@ pub struct MonthlyUsage {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg(any(feature = "gui", test))]
 pub struct AuditEvent {
     pub id: i64,
     pub ts: String,
@@ -655,6 +666,7 @@ pub struct AuditEvent {
 
 /// Aggregate usage per day for a given provider (by name) over the last `days`.
 /// `days = 0` means all history.
+#[cfg(any(feature = "gui", test))]
 pub fn provider_daily_usage(
     conn: &Connection,
     provider_name: &str,
@@ -686,6 +698,7 @@ pub fn provider_daily_usage(
 
 /// Aggregate usage per day for a given project tag over the last `days`.
 /// `days = 0` means all history. `project_tag = None` aggregates untagged requests.
+#[cfg(any(feature = "gui", test))]
 pub fn project_daily_usage(
     conn: &Connection,
     project_tag: Option<&str>,
@@ -716,6 +729,7 @@ pub fn project_daily_usage(
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg(any(feature = "gui", test))]
 pub struct ProjectTotal {
     pub project_tag: Option<String>,
     pub cost: f64,
@@ -725,6 +739,7 @@ pub struct ProjectTotal {
 
 /// Total usage per project over the last `days`. `days = 0` means all history.
 /// Untagged requests are reported under project_tag = null.
+#[cfg(any(feature = "gui", test))]
 pub fn project_totals(conn: &Connection, days: u64) -> rusqlite::Result<Vec<ProjectTotal>> {
     let mut sql = String::from(
         "SELECT project_tag, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
@@ -750,6 +765,7 @@ pub fn project_totals(conn: &Connection, days: u64) -> rusqlite::Result<Vec<Proj
 }
 
 /// Aggregate usage per month for the last `months` months (including the current month).
+#[cfg(any(feature = "gui", test))]
 pub fn monthly_usage(conn: &Connection, months: u32) -> rusqlite::Result<Vec<MonthlyUsage>> {
     let sql = "SELECT strftime('%Y-%m', ts) AS month, COALESCE(SUM(cost),0.0), COALESCE(SUM(prompt_tokens+completion_tokens),0), COUNT(*) \
                FROM logs WHERE ts >= ?1 \
@@ -831,6 +847,7 @@ fn parse_models(s: &str) -> Vec<ModelMapping> {
     Vec::new()
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn insert_provider(
     conn: &Connection,
     p: &crate::config::ProviderInput,
@@ -860,6 +877,7 @@ pub fn insert_provider(
     Ok(conn.last_insert_rowid())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn delete_provider(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM providers WHERE id = ?1", params![id])?;
     Ok(())
@@ -936,6 +954,7 @@ pub fn insert_limit(conn: &Connection, l: &LimitInput) -> rusqlite::Result<i64> 
     Ok(conn.last_insert_rowid())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Result<()> {
     let (period_str, period_value) = match l.period {
         LimitPeriod::CustomSec(s) => ("custom_sec", s as i64),
@@ -965,6 +984,7 @@ pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Res
     Ok(())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn delete_limit(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM limits WHERE id = ?1", params![id])?;
     Ok(())

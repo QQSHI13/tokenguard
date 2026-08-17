@@ -6,7 +6,6 @@ use crate::config::{
 use crate::db::{self, DbPool};
 use crate::health::{HealthCache, ProviderHealth};
 use crate::limits::LimitCounters;
-use crate::notifications;
 use crate::webhook;
 
 /// Pure routing logic, extracted for unit testing.
@@ -97,13 +96,21 @@ pub fn limit_scope_matches(
         }
     }
 }
+use crate::notifier::Notifier;
+#[cfg(feature = "gui")]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+#[cfg(feature = "gui")]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
+#[cfg(feature = "gui")]
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
+#[cfg(feature = "gui")]
 const ICON_GREEN: &[u8] = include_bytes!("../icons/icon_green.png");
+#[cfg(feature = "gui")]
 const ICON_YELLOW: &[u8] = include_bytes!("../icons/icon_yellow.png");
+#[cfg(feature = "gui")]
 const ICON_ORANGE: &[u8] = include_bytes!("../icons/icon_orange.png");
+#[cfg(feature = "gui")]
 const ICON_RED: &[u8] = include_bytes!("../icons/icon_red.png");
 
 #[derive(Debug, Clone)]
@@ -128,15 +135,15 @@ pub struct LimitCheckResult {
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
 
-pub struct AppState<R: Runtime = Wry> {
+pub struct AppState {
     pub db: DbPool,
     pub db_path: std::path::PathBuf,
     pub config: RwLock<Config>,
     pub paused: AtomicBool,
     pub client: reqwest::Client,
-    /// Optional Tauri handle. None in headless/CLI mode, where tray and
-    /// desktop notifications are unavailable.
-    pub app: Option<AppHandle<R>>,
+    /// Optional notifier. None in headless/CLI mode, where desktop
+    /// notifications are unavailable.
+    pub notifier: Option<Box<dyn Notifier + Send + Sync>>,
     /// Per-limit cooldown so warning notifications don't spam every request.
     last_warning: Mutex<HashMap<i64, Instant>>,
     /// Per-limit cooldown so block/pause notifications don't spam.
@@ -150,24 +157,26 @@ pub struct AppState<R: Runtime = Wry> {
     /// Monotonic request IDs for tracing.
     next_request_id: AtomicU64,
     /// Tracks left-clicks on the tray icon to distinguish single vs double clicks.
+    #[cfg(feature = "gui")]
     tray_click: Mutex<TrayClickState>,
     /// Cached provider health check results.
     provider_health: Arc<Mutex<HealthCache>>,
 }
 
 #[derive(Default)]
+#[cfg(feature = "gui")]
 struct TrayClickState {
     count: u32,
     last_ms: u64,
     timer_running: bool,
 }
 
-impl<R: Runtime> AppState<R> {
+impl AppState {
     pub fn new(
         pool: DbPool,
         db_path: std::path::PathBuf,
         config: Config,
-        app: Option<AppHandle<R>>,
+        notifier: Option<Box<dyn Notifier + Send + Sync>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -183,13 +192,14 @@ impl<R: Runtime> AppState<R> {
             config: RwLock::new(config),
             paused: AtomicBool::new(false),
             client,
-            app,
+            notifier,
             last_warning: Mutex::new(HashMap::new()),
             last_block_notify: Mutex::new(HashMap::new()),
             last_budget_warning: Mutex::new(HashMap::new()),
             shutdown_tx,
             limit_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
+            #[cfg(feature = "gui")]
             tray_click: Mutex::new(TrayClickState::default()),
             provider_health: Arc::new(Mutex::new(HealthCache::default())),
         })
@@ -246,28 +256,28 @@ impl<R: Runtime> AppState<R> {
     /// Desktop-notification helpers. No-ops when running headlessly (no
     /// Tauri handle), so the CLI binary does not need a GUI runtime.
     pub fn notify_limit_warning(&self, name: &str, used: f64, cap: f64) {
-        if let Some(app) = &self.app {
-            notifications::limit_warning(app, name, used, cap);
+        if let Some(n) = &self.notifier {
+            n.limit_warning(name, used, cap);
         }
     }
     pub fn notify_limit_blocked(&self, name: &str, used: f64, cap: f64) {
-        if let Some(app) = &self.app {
-            notifications::limit_blocked(app, name, used, cap);
+        if let Some(n) = &self.notifier {
+            n.limit_blocked(name, used, cap);
         }
     }
     pub fn notify_limit_paused(&self, name: &str, used: f64, cap: f64) {
-        if let Some(app) = &self.app {
-            notifications::limit_paused(app, name, used, cap);
+        if let Some(n) = &self.notifier {
+            n.limit_paused(name, used, cap);
         }
     }
     pub fn notify_proxy_paused(&self) {
-        if let Some(app) = &self.app {
-            notifications::proxy_paused(app);
+        if let Some(n) = &self.notifier {
+            n.proxy_paused();
         }
     }
     pub fn notify_proxy_resumed(&self) {
-        if let Some(app) = &self.app {
-            notifications::proxy_resumed(app);
+        if let Some(n) = &self.notifier {
+            n.proxy_resumed();
         }
     }
 
@@ -681,43 +691,61 @@ impl<R: Runtime> AppState<R> {
     }
 
     /// Rebuild the tray menu + tooltip + icon color from current state.
-    /// No-op in headless mode (no Tauri handle).
+    /// No-op in headless mode.
     pub fn refresh_tray(&self) {
-        let Some(app) = &self.app else {
-            return;
-        };
-        let spend = self.today_spend();
-        let (ratio, critical) = self.limit_status();
-        let paused = self.paused.load(Ordering::Relaxed);
+        #[cfg(feature = "gui")]
+        {
+            let spend = self.today_spend();
+            let (ratio, critical) = self.limit_status();
+            let paused = self.paused.load(Ordering::Relaxed);
 
-        let icon_bytes = if paused {
-            ICON_ORANGE
-        } else if ratio >= 1.0 {
-            ICON_RED
-        } else if ratio >= 0.8 {
-            ICON_YELLOW
-        } else {
-            ICON_GREEN
-        };
+            let icon_bytes = if paused {
+                ICON_ORANGE
+            } else if ratio >= 1.0 {
+                ICON_RED
+            } else if ratio >= 0.8 {
+                ICON_YELLOW
+            } else {
+                ICON_GREEN
+            };
 
-        let budget = self.config.read().map(|cfg| cfg.budget).unwrap_or(0.0);
-        let critical_deref = critical.as_deref();
-        let tooltip = format!(
-            "Token Guard — ${spend:.2} today{paused}{critical}",
-            paused = if paused { " (paused)" } else { "" },
-            critical = critical_deref
-                .map(|c| format!(" — limit: {c}"))
-                .unwrap_or_default(),
-        );
-        if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_tooltip(Some(&tooltip));
-            if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
-                let _ = tray.set_icon(Some(img));
-            }
-            if let Ok(menu) = build_tray_menu(app, spend, budget, paused, critical_deref) {
-                let _ = tray.set_menu(Some(menu));
+            let budget = self.config.read().map(|cfg| cfg.budget).unwrap_or(0.0);
+            let critical_deref = critical.as_deref();
+            let tooltip = format!(
+                "Token Guard — ${spend:.2} today{paused}{critical}",
+                paused = if paused { " (paused)" } else { "" },
+                critical = critical_deref
+                    .map(|c| format!(" — limit: {c}"))
+                    .unwrap_or_default(),
+            );
+            // The notifier is only present in GUI mode, but tray access still
+            // requires the original Tauri handle. Retrieve it from the notifier
+            // via the gui-only accessor.
+            if let Some(handle) = self.tauri_handle() {
+                if let Some(tray) = handle.tray_by_id("main") {
+                    let _ = tray.set_tooltip(Some(&tooltip));
+                    if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
+                        let _ = tray.set_icon(Some(img));
+                    }
+                    if let Ok(menu) =
+                        build_tray_menu(&handle, spend, budget, paused, critical_deref)
+                    {
+                        let _ = tray.set_menu(Some(menu));
+                    }
+                }
             }
         }
+    }
+
+    /// GUI-only accessor for the Tauri handle stored inside the notifier.
+    #[cfg(feature = "gui")]
+    fn tauri_handle(&self) -> Option<AppHandle<Wry>> {
+        use crate::notifications::TauriNotifier;
+        use std::any::Any;
+        self.notifier
+            .as_ref()
+            .and_then(|n| (n.as_ref() as &dyn Any).downcast_ref::<TauriNotifier>())
+            .map(|n| n.handle())
     }
 
     pub fn all_provider_health(&self) -> std::collections::HashMap<i64, ProviderHealth> {
@@ -826,13 +854,14 @@ pub fn is_limit_active(limit: &Limit) -> bool {
     true
 }
 
-fn build_tray_menu<R: Runtime>(
-    app: &AppHandle<R>,
+#[cfg(feature = "gui")]
+fn build_tray_menu(
+    app: &AppHandle<Wry>,
     spend: f64,
     budget: f64,
     paused: bool,
     critical: Option<&str>,
-) -> Result<Menu<R>, tauri::Error> {
+) -> Result<Menu<Wry>, tauri::Error> {
     let spend_item = MenuItem::with_id(
         app,
         "spend",
@@ -879,7 +908,7 @@ fn build_tray_menu<R: Runtime>(
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<R>> =
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
         vec![&spend_item, &budget_item, &status_item];
     if let Some(ref c) = critical_item {
         items.push(c);
@@ -895,7 +924,8 @@ fn build_tray_menu<R: Runtime>(
 }
 
 /// Build the tray icon at startup. Left-click toggles pause.
-pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri::Error> {
+#[cfg(feature = "gui")]
+pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
     let menu = build_tray_menu(app, 0.0, 0.0, false, None)?;
     let icon = tauri::image::Image::from_bytes(ICON_GREEN)?;
     TrayIconBuilder::with_id("main")
@@ -919,7 +949,8 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri::Error> {
 }
 
 /// Show the main window and tell the UI which tab to activate.
-fn show_tab<R: Runtime>(app: &AppHandle<R>, tab: &str) {
+#[cfg(feature = "gui")]
+fn show_tab(app: &AppHandle<Wry>, tab: &str) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -927,6 +958,7 @@ fn show_tab<R: Runtime>(app: &AppHandle<R>, tab: &str) {
     let _ = app.emit("set_tab", tab);
 }
 
+#[cfg(feature = "gui")]
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -935,8 +967,9 @@ fn now_ms() -> u64 {
 }
 
 /// Single left-click pauses/resumes; two quick left-clicks open the dashboard.
-fn handle_tray_left_click<R: Runtime>(app: &AppHandle<R>) {
-    let Some(state) = app.try_state::<Arc<AppState<R>>>() else {
+#[cfg(feature = "gui")]
+fn handle_tray_left_click(app: &AppHandle<Wry>) {
+    let Some(state) = app.try_state::<Arc<AppState>>() else {
         return;
     };
     let t = now_ms();
@@ -958,13 +991,13 @@ fn handle_tray_left_click<R: Runtime>(app: &AppHandle<R>) {
         loop {
             tokio::time::sleep(Duration::from_millis(50)).await;
             let (stable, count) = {
-                let state = app2.state::<Arc<AppState<R>>>();
+                let state = app2.state::<Arc<AppState>>();
                 let tray = state.tray_click.lock().unwrap();
                 let elapsed = now_ms().saturating_sub(tray.last_ms);
                 (elapsed > 250, tray.count)
             };
             if stable {
-                let state = app2.state::<Arc<AppState<R>>>();
+                let state = app2.state::<Arc<AppState>>();
                 let mut tray = state.tray_click.lock().unwrap();
                 tray.timer_running = false;
                 tray.count = 0;
@@ -981,12 +1014,13 @@ fn handle_tray_left_click<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// Menu item click handler (registered in lib.rs).
-pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEvent) {
+#[cfg(feature = "gui")]
+pub fn handle_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         "open" => show_tab(app, "dashboard"),
         "settings" => show_tab(app, "settings"),
         "pause" => {
-            if let Some(state) = app.try_state::<Arc<AppState<R>>>() {
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
                 state.inner().toggle_pause();
             }
         }

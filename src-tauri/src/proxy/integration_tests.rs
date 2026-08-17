@@ -52,17 +52,10 @@ fn make_provider(
     }
 }
 
-async fn setup() -> (
-    Arc<AppState<tauri::test::MockRuntime>>,
-    Mocks,
-    tauri::App<tauri::test::MockRuntime>,
-) {
+async fn setup() -> (Arc<AppState>, Mocks) {
     let tmp = TempDir::new().unwrap();
     let db_path = tmp.path().join("test.db");
     let pool = db::build_pool(db_path.to_str().unwrap()).unwrap();
-
-    let app = tauri::test::mock_app();
-    let handle = app.handle().clone();
 
     let openai_mock = MockServer::start().await;
     let anthropic_mock = MockServer::start().await;
@@ -112,7 +105,7 @@ async fn setup() -> (
         ..Config::default()
     };
 
-    let state = Arc::new(AppState::new(pool, db_path, config, Some(handle)).unwrap());
+    let state = Arc::new(AppState::new(pool, db_path, config, None).unwrap());
     (
         state,
         Mocks {
@@ -121,7 +114,6 @@ async fn setup() -> (
             google: google_mock,
             responses: responses_mock,
         },
-        app,
     )
 }
 
@@ -232,10 +224,7 @@ fn mock_for(mocks: &Mocks, format: ProviderFormat) -> &MockServer {
     }
 }
 
-fn provider_by_format(
-    state: &AppState<tauri::test::MockRuntime>,
-    format: ProviderFormat,
-) -> Provider {
+fn provider_by_format(state: &AppState, format: ProviderFormat) -> Provider {
     let cfg = state.config.read().unwrap();
     cfg.providers
         .iter()
@@ -261,7 +250,7 @@ fn extract_text(format: ProviderFormat, body: &Value) -> Option<String> {
 
 #[tokio::test]
 async fn four_by_four_forward_matrix() {
-    let (state, mocks, _app) = setup().await;
+    let (state, mocks) = setup().await;
     let client_formats = [
         ProviderFormat::OpenAI,
         ProviderFormat::Anthropic,

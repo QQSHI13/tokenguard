@@ -16,14 +16,14 @@ wiremock = "0.6"
 tauri = { version = "2", features = ["test"] }
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-autostart = "2"
+tauri = { version = "2", optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -57,5 +57,15 @@ name = "tokenguard-cli"
 path = "src/bin/cli.rs"
 
 [features]
-default = ["custom-protocol"]
+default = ["gui", "custom-protocol"]
+gui = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-opener",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-notification",
+    "dep:tauri-plugin-autostart",
+    "tauri/tray-icon",
+    "tauri/image-png",
+]
 custom-protocol = ["tauri/custom-protocol"]

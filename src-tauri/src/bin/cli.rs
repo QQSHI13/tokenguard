@@ -40,7 +40,10 @@ async fn main() -> Result<()> {
         state,
         port: db_port,
         expose_to_lan: db_expose,
-    } = backend::init_backend(data_dir, None)?;
+    } = backend::init_backend(
+        data_dir,
+        None::<Box<dyn tokenguard_lib::notifier::Notifier + Send + Sync>>,
+    )?;
 
     let port = args.port.unwrap_or(db_port);
     let expose_to_lan = args.expose_to_lan || db_expose;

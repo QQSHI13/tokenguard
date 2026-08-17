@@ -1,5 +1,6 @@
 //! Tauri command handlers exposed to the frontend.
 
+use crate::backend;
 use crate::config::{
     Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod, LimitScope, Project, ProjectInput,
     ProviderDto, ProviderInput,
@@ -529,47 +530,6 @@ pub fn backup_database(state: State<'_, Arc<AppState>>, target_path: String) -> 
     Ok(())
 }
 
-/// Path of the marker file that schedules a database restore on next boot.
-fn restore_marker_path(db_path: &std::path::Path) -> std::path::PathBuf {
-    let mut s = db_path.as_os_str().to_os_string();
-    s.push(".restore-pending");
-    std::path::PathBuf::from(s)
-}
-
-/// Read-only check that `source` is a SQLite database with a schema.
-fn validate_sqlite_source(source: &std::path::Path) -> bool {
-    let Ok(test) =
-        rusqlite::Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-    else {
-        return false;
-    };
-    test.query_row("PRAGMA schema_version", [], |row| row.get::<_, bool>(0))
-        .unwrap_or(false)
-}
-
-/// Apply a restore scheduled by `restore_database`: while the database is
-/// still closed, copy the recorded source over it and drop stale WAL/SHM
-/// files. Any problem just removes the marker and lets the app boot normally.
-pub fn apply_pending_restore(db_path: &std::path::Path) {
-    let marker = restore_marker_path(db_path);
-    let Ok(recorded) = std::fs::read_to_string(&marker) else {
-        return;
-    };
-    let source = std::path::PathBuf::from(recorded.trim());
-    if source.exists() && validate_sqlite_source(&source) && std::fs::copy(&source, db_path).is_ok()
-    {
-        for suffix in ["-wal", "-shm"] {
-            let mut s = db_path.as_os_str().to_os_string();
-            s.push(suffix);
-            let _ = std::fs::remove_file(std::path::PathBuf::from(s));
-        }
-        tracing::info!("database restored from {}", source.display());
-    } else {
-        tracing::warn!("pending database restore skipped (bad marker or source)");
-    }
-    let _ = std::fs::remove_file(&marker);
-}
-
 #[tauri::command]
 pub async fn restore_database(
     state: State<'_, Arc<AppState>>,
@@ -594,7 +554,7 @@ pub async fn restore_database(
     // Never overwrite the live WAL database under open connections: record a
     // pending restore (applied on next boot by `apply_pending_restore`) and
     // shut down so the pool closes cleanly first.
-    let marker = restore_marker_path(&state.inner().db_path);
+    let marker = backend::restore_marker_path(&state.inner().db_path);
     let canonical = source.canonicalize().unwrap_or(source);
     std::fs::write(&marker, canonical.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
     crate::graceful_exit(&app).await;
@@ -625,101 +585,17 @@ pub fn set_auto_export(
     Ok(())
 }
 
-fn last_auto_export_at(
-    conn: &rusqlite::Connection,
-) -> Result<Option<chrono::DateTime<chrono::Utc>>, String> {
-    match db::get_setting(conn, "last_auto_export_at") {
-        Some(v) => chrono::DateTime::parse_from_rfc3339(&v)
-            .map(|dt| Some(dt.with_timezone(&chrono::Utc)))
-            .map_err(|e| e.to_string()),
-        None => Ok(None),
-    }
-}
-
-pub fn is_auto_export_due(state: &Arc<AppState>) -> Result<bool, String> {
-    let cfg = state.config.read().map_err(|e| e.to_string())?;
-    if cfg.auto_export_days == 0 {
-        return Ok(false);
-    }
-    let folder = match &cfg.auto_export_folder {
-        Some(f) if !f.is_empty() => f,
-        _ => return Ok(false),
-    };
-    let folder_path = std::path::PathBuf::from(folder);
-    if !folder_path.exists() {
-        return Ok(false);
-    }
-    let conn = state.db.get().map_err(|e| e.to_string())?;
-    let last = last_auto_export_at(&conn)?;
-    let due = match last {
-        Some(t) => {
-            let interval = chrono::Duration::days(cfg.auto_export_days as i64);
-            chrono::Utc::now() - t >= interval
-        }
-        None => true,
-    };
-    Ok(due)
-}
-
-pub fn run_auto_export_now(state: &Arc<AppState>) -> Result<String, String> {
-    let cfg = state.config.read().map_err(|e| e.to_string())?;
-    let folder = cfg
-        .auto_export_folder
-        .as_ref()
-        .ok_or("auto export folder not set")?;
-    if folder.is_empty() {
-        return Err("auto export folder not set".into());
-    }
-    std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-
-    let rows = {
-        let conn = state.db.get().map_err(|e| e.to_string())?;
-        db::list_logs(&conn, 100_000, None).map_err(|e| e.to_string())?
-    };
-    let filename = format!(
-        "tokenguard-usage-{}.csv",
-        chrono::Utc::now().format("%Y%m%d-%H%M%S")
-    );
-    let path = std::path::PathBuf::from(folder).join(&filename);
-
-    let mut w =
-        String::from("timestamp,provider,model,prompt_tokens,completion_tokens,cost,project\n");
-    for r in rows.iter().rev() {
-        w.push_str(&format!(
-            "{},{},{},{},{},{:.6},{}\n",
-            r.ts,
-            csv_escape(&r.provider),
-            csv_escape(&r.model),
-            r.prompt_tokens,
-            r.completion_tokens,
-            r.cost,
-            r.project_tag.as_deref().unwrap_or(""),
-        ));
-    }
-    std::fs::write(&path, w).map_err(|e| e.to_string())?;
-
-    let conn = state.db.get().map_err(|e| e.to_string())?;
-    db::set_setting(
-        &conn,
-        "last_auto_export_at",
-        &chrono::Utc::now().to_rfc3339(),
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(path.to_string_lossy().to_string())
-}
-
 #[tauri::command]
 pub fn maybe_run_auto_export(state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
-    if !is_auto_export_due(&state)? {
+    if !backend::is_auto_export_due(&state)? {
         return Ok(None);
     }
-    run_auto_export_now(&state).map(Some)
+    backend::run_auto_export_now(&state).map(Some)
 }
 
 #[tauri::command]
 pub fn run_auto_export_now_cmd(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    run_auto_export_now(&state)
+    backend::run_auto_export_now(&state)
 }
 
 #[tauri::command]
@@ -1042,8 +918,8 @@ pub fn export_logs(
                 w.push_str(&format!(
                     "{},{},{},{},{},{:.6},{}\n",
                     r.ts,
-                    csv_escape(&r.provider),
-                    csv_escape(&r.model),
+                    backend::csv_escape(&r.provider),
+                    backend::csv_escape(&r.model),
                     r.prompt_tokens,
                     r.completion_tokens,
                     r.cost,
@@ -1074,20 +950,12 @@ pub fn export_audit_logs(
                 w.push_str(&format!(
                     "{},{},{}\n",
                     r.ts,
-                    csv_escape(&r.event_type),
-                    csv_escape(&r.details),
+                    backend::csv_escape(&r.event_type),
+                    backend::csv_escape(&r.details),
                 ));
             }
             Ok(w)
         }
-    }
-}
-
-fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
     }
 }
 
@@ -1504,7 +1372,7 @@ pub fn get_monthly_usage(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::backend::{apply_pending_restore, restore_marker_path};
 
     fn make_sqlite_db(path: &std::path::Path, value: i64) {
         let conn = rusqlite::Connection::open(path).unwrap();

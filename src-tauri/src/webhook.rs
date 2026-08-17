@@ -47,7 +47,7 @@ pub fn send_limit_event(
 
     let client = client.clone();
     let url = url.to_string();
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let res = client
             .post(&url)
             .timeout(Duration::from_secs(15))
@@ -60,6 +60,7 @@ pub fn send_limit_event(
     });
 }
 
+#[cfg(feature = "gui")]
 #[derive(Debug, Clone, Serialize)]
 struct TestWebhookPayload {
     event: &'static str,
@@ -67,6 +68,7 @@ struct TestWebhookPayload {
     timestamp: String,
 }
 
+#[cfg(feature = "gui")]
 pub async fn send_test(client: &Client, url: &str) -> Result<(), String> {
     if url.is_empty() {
         return Err("webhook URL is empty".into());

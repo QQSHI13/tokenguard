@@ -1,21 +1,28 @@
 //! Token Guard — local LLM gateway.
 
 pub mod backend;
+#[cfg(feature = "gui")]
 mod commands;
 mod config;
 mod cost;
 mod db;
 mod health;
+#[cfg(feature = "gui")]
 mod license;
 mod limits;
+#[cfg(feature = "gui")]
 mod notifications;
+pub mod notifier;
 mod proxy;
 mod secrets;
 mod state;
+#[cfg(feature = "gui")]
 mod updater;
 mod webhook;
 
+#[cfg(feature = "gui")]
 use std::sync::Arc;
+#[cfg(feature = "gui")]
 use tauri::{AppHandle, Manager, Runtime};
 
 /// Close every webview window, wait briefly for WebView2 teardown, then exit.
@@ -23,8 +30,9 @@ use tauri::{AppHandle, Manager, Runtime};
 /// Calling `app.exit(0)` immediately can leave WebView2 mid-shutdown and print
 /// `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` on Windows.
 /// Closing windows first and sleeping a little lets the renderer clean up.
+#[cfg(feature = "gui")]
 pub async fn graceful_exit<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(state) = app.try_state::<Arc<crate::state::AppState<R>>>() {
+    if let Some(state) = app.try_state::<Arc<crate::state::AppState>>() {
         state.shutdown();
     }
     for (_label, window) in app.webview_windows() {
@@ -34,6 +42,7 @@ pub async fn graceful_exit<R: Runtime>(app: &AppHandle<R>) {
     app.exit(0);
 }
 
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -105,12 +114,14 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            let notifier = Some(Box::new(crate::notifications::TauriNotifier::new(handle))
+                as Box<dyn crate::notifier::Notifier + Send + Sync>);
             let dir = app.path().app_data_dir()?;
             let backend::BackendInit {
                 state,
                 port,
                 expose_to_lan,
-            } = backend::init_backend(dir, Some(handle))?;
+            } = backend::init_backend(dir, notifier)?;
 
             // Native tray (left-click toggles pause; menu items below).
             state::build_tray(app.handle())?;

@@ -1,9 +1,12 @@
 //! Provider health checks.
 
+#[cfg(any(feature = "gui", test))]
 use crate::config::{AuthScheme, Provider, ProviderFormat};
+#[cfg(any(feature = "gui", test))]
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
+#[cfg(any(feature = "gui", test))]
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +32,7 @@ impl HealthCache {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 pub async fn check_provider(client: &Client, provider: &Provider) -> ProviderHealth {
     let start = Instant::now();
     let base = provider.base_url.trim_end_matches('/');
