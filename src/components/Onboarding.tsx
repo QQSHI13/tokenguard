@@ -21,10 +21,14 @@ type ProviderInput = {
 
 function randomLabelKey() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  const count = 24;
+  const rejectLimit = 256 - (256 % chars.length);
   let s = "tg_";
-  for (let i = 0; i < 24; i++) {
-    s += chars.charAt(bytes[i] % chars.length);
+  while (s.length - 3 < count) {
+    const [byte] = crypto.getRandomValues(new Uint8Array(1));
+    if (byte < rejectLimit) {
+      s += chars.charAt(byte % chars.length);
+    }
   }
   return s;
 }
