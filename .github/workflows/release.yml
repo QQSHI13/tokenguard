@@ -66,6 +66,9 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Check headless CLI build
+        run: cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard-cli
+
   bump-version:
     needs: test
     runs-on: ubuntu-latest
@@ -117,10 +120,16 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: ''
+            target: ''
+            asset_suffix: 'macos-aarch64'
           - platform: 'windows-latest'
             args: '--target x86_64-pc-windows-msvc'
+            target: 'x86_64-pc-windows-msvc'
+            asset_suffix: 'windows-x86_64'
           - platform: 'ubuntu-latest'
             args: '--target x86_64-unknown-linux-gnu'
+            target: 'x86_64-unknown-linux-gnu'
+            asset_suffix: 'linux-x86_64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -171,3 +180,29 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Build CLI binary
+        shell: bash
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard-cli --release ${{ matrix.args }}
+
+      - name: Upload CLI binary to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          target="${{ matrix.target }}"
+          if [ -n "$target" ]; then
+            target_dir="src-tauri/target/$target/release"
+          else
+            target_dir="src-tauri/target/release"
+          fi
+          src="$target_dir/tokenguard-cli"
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            src="${src}.exe"
+            ext=".exe"
+          fi
+          asset="tokenguard-cli-${{ matrix.asset_suffix }}${ext}"
+          cp "$src" "$asset"
+          gh release upload "${{ github.event.inputs.tag }}" "$asset" --clobber
