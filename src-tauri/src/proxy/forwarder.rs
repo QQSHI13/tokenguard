@@ -426,6 +426,7 @@ struct SseConverter {
     pending_event: Option<String>,
     streaming_tools: std::collections::HashMap<usize, StreamingToolCall>,
     last_tool_index: Option<usize>,
+    responses_tool_started: std::collections::HashSet<usize>,
     anthropic_started: bool,
     anthropic_text_open: bool,
     anthropic_stopped: bool,
@@ -443,6 +444,7 @@ impl SseConverter {
             pending_event: None,
             streaming_tools: std::collections::HashMap::new(),
             last_tool_index: None,
+            responses_tool_started: std::collections::HashSet::new(),
             anthropic_started: false,
             anthropic_text_open: false,
             anthropic_stopped: false,
@@ -485,6 +487,29 @@ impl SseConverter {
                 serde_json::json!({"type": "message_stop"}),
             );
             self.anthropic_stopped = true;
+        }
+        // OpenAI -> Responses may end without an explicit finish_reason chunk
+        // (e.g. the upstream only sends [DONE]); synthesize response.completed
+        // and any pending tool-call terminal events so the client gets a clean
+        // close. If [DONE] was already processed, this is a no-op.
+        if self.from == ProviderFormat::OpenAI
+            && self.to == ProviderFormat::Responses
+            && !self.done_sent
+        {
+            self.emit_responses_tool_done_events(&mut out);
+            self.emit_responses_event(
+                &mut out,
+                "response.completed",
+                serde_json::json!({
+                    "type": "response.completed",
+                    "response": {
+                        "id": "resp_tokenguard",
+                        "object": "response",
+                        "status": "completed",
+                        "output": [],
+                    },
+                }),
+            );
         }
         Bytes::from(out)
     }
@@ -538,6 +563,24 @@ impl SseConverter {
                     serde_json::json!({"type": "message_stop"}),
                 );
                 self.anthropic_stopped = true;
+            } else if self.from == ProviderFormat::OpenAI && self.to == ProviderFormat::Responses {
+                // OpenAI streams terminate with [DONE]. Convert this into the
+                // Responses protocol's terminal event, including any pending
+                // tool-call cleanup.
+                self.emit_responses_tool_done_events(out);
+                self.emit_responses_event(
+                    out,
+                    "response.completed",
+                    serde_json::json!({
+                        "type": "response.completed",
+                        "response": {
+                            "id": "resp_tokenguard",
+                            "object": "response",
+                            "status": "completed",
+                            "output": [],
+                        },
+                    }),
+                );
             } else {
                 out.extend_from_slice(line);
             }
@@ -574,12 +617,42 @@ impl SseConverter {
             self.pending_event = None;
             return;
         }
+        if self.from == ProviderFormat::OpenAI
+            && self.to == ProviderFormat::Responses
+            && self.handle_openai_to_responses_tool_chunk(&value, out)
+        {
+            self.pending_event = None;
+            return;
+        }
+        if self.from == ProviderFormat::Responses
+            && self.to == ProviderFormat::OpenAI
+            && self.handle_responses_tool_chunk(&value, out)
+        {
+            self.pending_event = None;
+            return;
+        }
         if self.from == ProviderFormat::Anthropic
             && self.to == ProviderFormat::OpenAI
             && self.handle_anthropic_tool_chunk(&value, out)
         {
             self.pending_event = None;
             return;
+        }
+
+        // For OpenAI -> Responses, emit terminal tool-call events before the
+        // final response.completed so ordering matches the Responses protocol.
+        if self.from == ProviderFormat::OpenAI && self.to == ProviderFormat::Responses {
+            if let Some(finish) = value
+                .get("choices")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|c| c.get("finish_reason"))
+                .and_then(|v| v.as_str())
+            {
+                if !finish.is_empty() {
+                    self.emit_responses_tool_done_events(out);
+                }
+            }
         }
 
         match convert::convert_sse_data(self.from, self.to, self.pending_event.as_deref(), &value) {
@@ -843,6 +916,216 @@ impl SseConverter {
             _ => false,
         }
     }
+
+    /// Convert OpenAI streaming tool-call deltas into Responses API streaming
+    /// events. The OpenAI format sends id/name on the first chunk and argument
+    /// deltas on subsequent chunks, so we track which indices have already
+    /// emitted their `response.output_item.added` event.
+    fn handle_openai_to_responses_tool_chunk(&mut self, value: &Value, out: &mut Vec<u8>) -> bool {
+        let delta = value
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|c| c.get("delta"));
+        let tool_calls = match delta
+            .and_then(|d| d.get("tool_calls"))
+            .and_then(|v| v.as_array())
+        {
+            Some(tcs) => tcs,
+            None => return false,
+        };
+
+        for tc in tool_calls {
+            let idx = match tc.get("index").and_then(|v| v.as_u64()).map(|u| u as usize) {
+                Some(i) => i,
+                None => continue,
+            };
+            {
+                let entry = self.streaming_tools.entry(idx).or_default();
+                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                    entry.id = Some(id.to_string());
+                }
+                if let Some(name) = tc
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+                {
+                    entry.name = Some(name.to_string());
+                }
+            }
+
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+            {
+                let id = self
+                    .streaming_tools
+                    .get(&idx)
+                    .and_then(|e| e.id.clone())
+                    .unwrap_or_else(|| format!("call_{idx}"));
+                self.responses_tool_started.insert(idx);
+                self.emit_responses_event(
+                    out,
+                    "response.output_item.added",
+                    serde_json::json!({
+                        "type": "response.output_item.added",
+                        "output_index": idx,
+                        "item": {
+                            "type": "function_call",
+                            "id": id,
+                            "call_id": id,
+                            "name": name,
+                            "arguments": "",
+                            "status": "in_progress",
+                        },
+                    }),
+                );
+            }
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+            {
+                {
+                    let entry = self.streaming_tools.entry(idx).or_default();
+                    entry.arguments.push_str(args);
+                }
+                let id = self
+                    .streaming_tools
+                    .get(&idx)
+                    .and_then(|e| e.id.clone())
+                    .unwrap_or_else(|| format!("call_{idx}"));
+                self.emit_responses_event(
+                    out,
+                    "response.function_call_arguments.delta",
+                    serde_json::json!({
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": id,
+                        "output_index": idx,
+                        "delta": args,
+                    }),
+                );
+            }
+        }
+        true
+    }
+
+    /// Convert Responses API streaming tool-call events into OpenAI streaming
+    /// tool-call deltas. We record function_call output items when they are
+    /// added and emit OpenAI-style tool_calls deltas when argument deltas
+    /// arrive.
+    fn handle_responses_tool_chunk(&mut self, value: &Value, out: &mut Vec<u8>) -> bool {
+        let event_type = match value.get("type").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => return false,
+        };
+        match event_type {
+            "response.output_item.added" => {
+                let item = match value.get("item") {
+                    Some(i) => i,
+                    None => return false,
+                };
+                if item.get("type").and_then(|v| v.as_str()) != Some("function_call") {
+                    return false;
+                }
+                let idx = value
+                    .get("output_index")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let id = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let entry = self.streaming_tools.entry(idx).or_default();
+                entry.id = Some(id);
+                entry.name = Some(name);
+                true
+            }
+            "response.function_call_arguments.delta" => {
+                let idx = value
+                    .get("output_index")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let args = match value.get("delta").and_then(|v| v.as_str()) {
+                    Some(a) => a,
+                    None => return false,
+                };
+                let entry = self.streaming_tools.entry(idx).or_default();
+                entry.arguments.push_str(args);
+                let id = entry.id.clone().unwrap_or_else(|| format!("call_{idx}"));
+                let name = entry.name.clone().unwrap_or_default();
+                let openai = serde_json::json!({
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [{
+                                "index": idx,
+                                "id": id,
+                                "type": "function",
+                                "function": {"name": name, "arguments": args},
+                            }],
+                        },
+                    }],
+                });
+                if let Ok(json) = serde_json::to_string(&openai) {
+                    out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn emit_responses_event(&self, out: &mut Vec<u8>, event: &str, data: Value) {
+        out.extend_from_slice(format!("event: {}\n", event).as_bytes());
+        if let Ok(json) = serde_json::to_string(&data) {
+            out.extend_from_slice(format!("data: {}\n", json).as_bytes());
+        }
+    }
+
+    fn emit_responses_tool_done_events(&mut self, out: &mut Vec<u8>) {
+        let mut indices: Vec<usize> = self.streaming_tools.keys().copied().collect();
+        indices.sort_unstable();
+        for idx in indices {
+            if let Some(entry) = self.streaming_tools.get(&idx) {
+                let id = entry.id.clone().unwrap_or_else(|| format!("call_{idx}"));
+                let args = entry.arguments.clone();
+                self.emit_responses_event(
+                    out,
+                    "response.function_call_arguments.done",
+                    serde_json::json!({
+                        "type": "response.function_call_arguments.done",
+                        "item_id": id,
+                        "output_index": idx,
+                        "arguments": args,
+                    }),
+                );
+                self.emit_responses_event(
+                    out,
+                    "response.output_item.done",
+                    serde_json::json!({
+                        "type": "response.output_item.done",
+                        "output_index": idx,
+                        "item": {
+                            "type": "function_call",
+                            "id": id,
+                            "call_id": id,
+                            "arguments": args,
+                            "status": "completed",
+                        },
+                    }),
+                );
+            }
+        }
+        self.streaming_tools.clear();
+    }
 }
 
 #[cfg(test)]
@@ -936,5 +1219,56 @@ mod tests {
             .collect();
         let last = chunks.last().unwrap();
         assert_eq!(last["choices"][0]["delta"]["tool_calls"][0]["index"], 0);
+    }
+
+    #[test]
+    fn responses_to_openai_sse_text() {
+        let input = b"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hi\"}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"total_tokens\":5}}}\n\n";
+        let mut c = converter(ProviderFormat::Responses, ProviderFormat::OpenAI);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("\"content\":\"Hi\""));
+        assert!(s.contains("data: [DONE]"));
+        assert_eq!(c.usage.prompt, 3);
+        assert_eq!(c.usage.completion, 2);
+    }
+
+    #[test]
+    fn openai_to_responses_sse_text() {
+        let input = b"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\ndata: [DONE]\n\n";
+        let mut c = converter(ProviderFormat::OpenAI, ProviderFormat::Responses);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("event: response.output_text.delta"));
+        assert!(s.contains("event: response.completed"));
+        assert!(!s.contains("data: [DONE]"));
+    }
+
+    #[test]
+    fn responses_to_openai_sse_tool_call() {
+        let input = b"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"get_weather\"}}\n\nevent: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"output_index\":0,\"delta\":\"{}\"}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"total_tokens\":15}}}\n\n";
+        let mut c = converter(ProviderFormat::Responses, ProviderFormat::OpenAI);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("\"tool_calls\""));
+        assert!(s.contains("\"name\":\"get_weather\""));
+        assert!(s.contains("data: [DONE]"));
+    }
+
+    #[test]
+    fn openai_to_responses_sse_tool_call() {
+        let input = b"data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\"}}]}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
+        let mut c = converter(ProviderFormat::OpenAI, ProviderFormat::Responses);
+        let mut out = c.feed(input).to_vec();
+        out.extend_from_slice(&c.finish());
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("event: response.output_item.added"));
+        assert!(s.contains("event: response.function_call_arguments.delta"));
+        assert!(s.contains("event: response.function_call_arguments.done"));
+        assert!(s.contains("event: response.output_item.done"));
+        assert!(s.contains("event: response.completed"));
     }
 }

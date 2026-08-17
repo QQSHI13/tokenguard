@@ -178,7 +178,10 @@ pub fn convert_sse_data(
             openai_to_google_sse_data(data).map(|v| (None, v))
         }
         (ProviderFormat::OpenAI, ProviderFormat::Responses) => {
-            openai_to_responses_sse_data(data).map(|v| (None, v))
+            openai_to_responses_sse_data(data).map(|v| {
+                let event = v.get("type").and_then(|t| t.as_str()).map(str::to_string);
+                (event, v)
+            })
         }
         (ProviderFormat::Anthropic, ProviderFormat::OpenAI) => {
             anthropic_to_openai_sse_data(event, data)
@@ -188,7 +191,12 @@ pub fn convert_sse_data(
                 .and_then(|(_, openai)| openai_to_google_sse_data(&openai).map(|v| (None, v)))
         }
         (ProviderFormat::Anthropic, ProviderFormat::Responses) => anthropic_to_openai_sse_data(event, data)
-            .and_then(|(_, openai)| openai_to_responses_sse_data(&openai).map(|v| (None, v))),
+            .and_then(|(_, openai)| {
+                openai_to_responses_sse_data(&openai).map(|v| {
+                    let event = v.get("type").and_then(|t| t.as_str()).map(str::to_string);
+                    (event, v)
+                })
+            }),
         (ProviderFormat::Google, ProviderFormat::OpenAI) => {
             google_to_openai_sse_data(data).map(|v| (None, v))
         }
@@ -196,7 +204,12 @@ pub fn convert_sse_data(
             google_to_openai_sse_data(data).and_then(|openai| openai_to_anthropic_sse_data(&openai))
         }
         (ProviderFormat::Google, ProviderFormat::Responses) => google_to_openai_sse_data(data)
-            .and_then(|openai| openai_to_responses_sse_data(&openai).map(|v| (None, v))),
+            .and_then(|openai| {
+                openai_to_responses_sse_data(&openai).map(|v| {
+                    let event = v.get("type").and_then(|t| t.as_str()).map(str::to_string);
+                    (event, v)
+                })
+            }),
         (ProviderFormat::Responses, ProviderFormat::OpenAI) => {
             responses_to_openai_sse_data(data).map(|v| (None, v))
         }
@@ -573,6 +586,76 @@ fn parts_to_google(parts: &[ContentPart]) -> Vec<Value> {
         .collect()
 }
 
+fn responses_content_to_parts(content: &Value) -> Vec<ContentPart> {
+    match content {
+        Value::String(s) => vec![ContentPart::Text(s.clone())],
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|p| {
+                match p.get("type").and_then(|t| t.as_str()) {
+                    Some("input_text") | Some("output_text") => p
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| ContentPart::Text(s.to_string())),
+                    Some("input_image") => {
+                        let url = p.get("image_url").and_then(|u| {
+                            if let Some(s) = u.as_str() {
+                                Some(s.to_string())
+                            } else {
+                                u.get("url").and_then(|v| v.as_str()).map(str::to_string)
+                            }
+                        })?;
+                        let mime = if url.starts_with("data:") {
+                            parse_data_url(&url).map(|(m, _)| m)
+                        } else {
+                            None
+                        };
+                        Some(ContentPart::Image {
+                            mime,
+                            data: ImageData::Url(url),
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn parts_to_responses(parts: &[ContentPart], is_input: bool) -> Value {
+    let text_type = if is_input { "input_text" } else { "output_text" };
+    let arr: Vec<Value> = parts
+        .iter()
+        .map(|p| match p {
+            ContentPart::Text(s) => serde_json::json!({"type": text_type, "text": s}),
+            ContentPart::Image { mime, data } => match data {
+                ImageData::Base64(d) => {
+                    let url = mime
+                        .as_ref()
+                        .map(|m| to_data_url(m, d))
+                        .unwrap_or_else(|| d.clone());
+                    serde_json::json!({"type": "input_image", "image_url": {"url": url}})
+                }
+                ImageData::Url(u) => {
+                    serde_json::json!({"type": "input_image", "image_url": {"url": u}})
+                }
+            },
+        })
+        .collect();
+    if arr.len() == 1 {
+        if let Value::Object(o) = &arr[0] {
+            if o.get("type").and_then(|t| t.as_str()) == Some(text_type) {
+                return o
+                    .get("text")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(String::new()));
+            }
+        }
+    }
+    Value::Array(arr)
+}
+
 fn convert_message_content(content: &Value, from: ProviderFormat, to: ProviderFormat) -> Value {
     if from == to {
         return content.clone();
@@ -581,11 +664,13 @@ fn convert_message_content(content: &Value, from: ProviderFormat, to: ProviderFo
         ProviderFormat::OpenAI => openai_content_to_parts(content),
         ProviderFormat::Anthropic => anthropic_content_to_parts(content),
         ProviderFormat::Google => google_content_to_parts(content),
+        ProviderFormat::Responses => responses_content_to_parts(content),
     };
     match to {
         ProviderFormat::OpenAI => parts_to_openai(&parts),
         ProviderFormat::Anthropic => parts_to_anthropic(&parts),
         ProviderFormat::Google => Value::Array(parts_to_google(&parts)),
+        ProviderFormat::Responses => parts_to_responses(&parts, true),
     }
 }
 
@@ -825,6 +910,555 @@ fn google_tools_to_openai(tools: &[Value]) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Responses API helpers and conversions
+// ---------------------------------------------------------------------------
+
+fn responses_content_part_to_openai(part: &Value) -> Option<Value> {
+    match part.get("type").and_then(|v| v.as_str()) {
+        Some("input_text") | Some("output_text") => part
+            .get("text")
+            .map(|t| Value::String(t.as_str().unwrap_or("").to_string())),
+        Some("input_image") => {
+            let url = part
+                .get("image_url")
+                .and_then(|u| {
+                    if let Some(s) = u.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        u.get("url").and_then(|v| v.as_str()).map(str::to_string)
+                    }
+                })
+                .unwrap_or_default();
+            let detail = part.get("image_url").and_then(|u| u.get("detail")).cloned();
+            let mut image_url = serde_json::Map::new();
+            image_url.insert("url".to_string(), Value::String(url));
+            if let Some(d) = detail {
+                image_url.insert("detail".to_string(), d);
+            }
+            Some(serde_json::json!({"type": "image_url", "image_url": image_url}))
+        }
+        // input_file and unknown parts have no direct OpenAI equivalent; pass
+        // them through so the caller can decide what to do with them.
+        _ => Some(part.clone()),
+    }
+}
+
+fn openai_content_part_to_responses(part: &Value) -> Value {
+    match part.get("type").and_then(|v| v.as_str()) {
+        Some("text") => serde_json::json!({
+            "type": "input_text",
+            "text": part.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+        }),
+        Some("image_url") => {
+            let url = part
+                .get("image_url")
+                .and_then(|u| {
+                    if let Some(s) = u.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        u.get("url").and_then(|v| v.as_str()).map(str::to_string)
+                    }
+                })
+                .unwrap_or_default();
+            let detail = part.get("image_url").and_then(|u| u.get("detail")).cloned();
+            let mut image_url = serde_json::Map::new();
+            image_url.insert("url".to_string(), Value::String(url));
+            if let Some(d) = detail {
+                image_url.insert("detail".to_string(), d);
+            }
+            serde_json::json!({"type": "input_image", "image_url": image_url})
+        }
+        _ => part.clone(),
+    }
+}
+
+fn responses_input_item_to_openai_message(item: &Value) -> Option<Value> {
+    match item.get("type").and_then(|v| v.as_str()) {
+        Some("message") => {
+            let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+            let role = if role == "developer" { "system" } else { role };
+            let content = item
+                .get("content")
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new()));
+            let converted = match content {
+                Value::String(s) => Value::String(s),
+                Value::Array(parts) => Value::Array(
+                    parts
+                        .iter()
+                        .filter_map(responses_content_part_to_openai)
+                        .collect(),
+                ),
+                _ => content.clone(),
+            };
+            Some(serde_json::json!({"role": role, "content": converted}))
+        }
+        Some("function_call_output") => {
+            let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let output = item
+                .get("output")
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new()));
+            let output_str = match output {
+                Value::String(s) => s,
+                _ => output.to_string(),
+            };
+            Some(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": output_str,
+            }))
+        }
+        _ => None,
+    }
+}
+
+fn openai_message_to_responses_input_item(msg: &Value) -> Option<Value> {
+    let role = msg.get("role").and_then(|v| v.as_str())?;
+    let content = msg
+        .get("content")
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()));
+    let converted = match content {
+        Value::String(s) => Value::String(s),
+        Value::Array(parts) => {
+            Value::Array(parts.iter().map(openai_content_part_to_responses).collect())
+        }
+        _ => content.clone(),
+    };
+    match role {
+        "system" | "developer" => Some(serde_json::json!({
+            "type": "message",
+            "role": "system",
+            "content": converted,
+        })),
+        "user" => Some(serde_json::json!({
+            "type": "message",
+            "role": "user",
+            "content": converted,
+        })),
+        "assistant" => Some(serde_json::json!({
+            "type": "message",
+            "role": "assistant",
+            "content": converted,
+        })),
+        "tool" => {
+            let call_id = msg.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+            Some(serde_json::json!({
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": converted,
+            }))
+        }
+        _ => None,
+    }
+}
+
+fn responses_tool_to_openai(tool: &Value) -> Option<Value> {
+    if tool.get("type").and_then(|v| v.as_str()) != Some("function") {
+        return None;
+    }
+    let name = tool.get("name").and_then(|v| v.as_str())?;
+    let mut function = serde_json::Map::new();
+    function.insert("name".to_string(), Value::String(name.to_string()));
+    if let Some(desc) = tool.get("description").cloned() {
+        function.insert("description".to_string(), desc);
+    }
+    function.insert(
+        "parameters".to_string(),
+        tool.get("parameters")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new())),
+    );
+    Some(serde_json::json!({"type": "function", "function": function}))
+}
+
+fn openai_tool_to_responses(tool: &Value) -> Option<Value> {
+    if tool.get("type").and_then(|v| v.as_str()) != Some("function") {
+        return None;
+    }
+    let function = tool.get("function")?;
+    let name = function.get("name").and_then(|v| v.as_str())?;
+    let mut out = serde_json::Map::new();
+    out.insert("type".to_string(), Value::String("function".to_string()));
+    out.insert("name".to_string(), Value::String(name.to_string()));
+    if let Some(desc) = function.get("description").cloned() {
+        out.insert("description".to_string(), desc);
+    }
+    out.insert(
+        "parameters".to_string(),
+        function
+            .get("parameters")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new())),
+    );
+    out.insert("strict".to_string(), Value::Bool(false));
+    Some(Value::Object(out))
+}
+
+fn responses_tool_choice_to_openai(tc: &Value) -> Option<Value> {
+    match tc {
+        Value::String(s) if s == "auto" || s == "none" => Some(Value::String(s.clone())),
+        Value::Object(o) if o.get("type").and_then(|v| v.as_str()) == Some("function") => {
+            let name = o
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())?;
+            Some(serde_json::json!({"type": "function", "function": {"name": name}}))
+        }
+        _ => None,
+    }
+}
+
+fn openai_tool_choice_to_responses(tc: &Value) -> Option<Value> {
+    match tc {
+        Value::String(s) if s == "auto" || s == "none" => Some(Value::String(s.clone())),
+        Value::Object(o) if o.get("type").and_then(|v| v.as_str()) == Some("function") => {
+            let name = o
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())?;
+            Some(serde_json::json!({"type": "function", "function": {"name": name}}))
+        }
+        _ => None,
+    }
+}
+
+fn responses_to_openai_request(body: &Value, remote_model: &str) -> Value {
+    let obj = body.as_object().cloned().unwrap_or_default();
+    let mut messages = Vec::new();
+
+    if let Some(instructions) = obj.get("instructions").and_then(|v| v.as_str()) {
+        if !instructions.is_empty() {
+            messages.push(serde_json::json!({"role": "system", "content": instructions}));
+        }
+    }
+
+    match obj
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()))
+    {
+        Value::String(s) if !s.is_empty() => {
+            messages.push(serde_json::json!({"role": "user", "content": s}));
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Some(msg) = responses_input_item_to_openai_message(&item) {
+                    messages.push(msg);
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let mut out = serde_json::Map::new();
+    out.insert("model".to_string(), Value::String(remote_model.to_string()));
+    out.insert("messages".to_string(), Value::Array(messages));
+
+    if let Some(v) = get_u64(&obj, "max_output_tokens") {
+        out.insert("max_tokens".to_string(), Value::Number(v.into()));
+    }
+    copy_f64(&mut out, &obj, "temperature");
+    copy_f64(&mut out, &obj, "top_p");
+    copy_stream(&mut out, &obj);
+
+    if let Some(tools) = obj.get("tools").and_then(|v| v.as_array()) {
+        let openai_tools: Vec<Value> = tools.iter().filter_map(responses_tool_to_openai).collect();
+        if !openai_tools.is_empty() {
+            out.insert("tools".to_string(), Value::Array(openai_tools));
+        }
+    }
+    if let Some(tc) = obj.get("tool_choice") {
+        if let Some(converted) = responses_tool_choice_to_openai(tc) {
+            out.insert("tool_choice".to_string(), converted);
+        }
+    }
+    Value::Object(out)
+}
+
+fn openai_to_responses_request(body: &Value, remote_model: &str) -> Value {
+    let obj = body.as_object().cloned().unwrap_or_default();
+    let mut input_items = Vec::new();
+
+    if let Some(messages) = obj.get("messages").and_then(|v| v.as_array()) {
+        for m in messages {
+            if let Some(item) = openai_message_to_responses_input_item(m) {
+                input_items.push(item);
+            }
+        }
+    }
+
+    let mut out = serde_json::Map::new();
+    out.insert("model".to_string(), Value::String(remote_model.to_string()));
+    out.insert("input".to_string(), Value::Array(input_items));
+
+    if let Some(v) = get_u64(&obj, "max_tokens") {
+        out.insert("max_output_tokens".to_string(), Value::Number(v.into()));
+    }
+    copy_f64(&mut out, &obj, "temperature");
+    copy_f64(&mut out, &obj, "top_p");
+    copy_stream(&mut out, &obj);
+
+    if let Some(tools) = obj.get("tools").and_then(|v| v.as_array()) {
+        let responses_tools: Vec<Value> =
+            tools.iter().filter_map(openai_tool_to_responses).collect();
+        if !responses_tools.is_empty() {
+            out.insert("tools".to_string(), Value::Array(responses_tools));
+        }
+    }
+    if let Some(tc) = obj.get("tool_choice") {
+        if let Some(converted) = openai_tool_choice_to_responses(tc) {
+            out.insert("tool_choice".to_string(), converted);
+        }
+    }
+    Value::Object(out)
+}
+
+fn responses_function_call_to_openai(fc: &Value) -> Option<Value> {
+    let obj = fc.as_object()?;
+    let id = obj.get("id").and_then(|v| v.as_str())?;
+    let name = obj.get("name").and_then(|v| v.as_str())?;
+    let arguments = obj.get("arguments").and_then(|v| v.as_str())?;
+    Some(serde_json::json!({
+        "id": id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }))
+}
+
+fn openai_tool_call_to_responses_function_call(tc: &Value) -> Option<Value> {
+    let obj = tc.as_object()?;
+    let id = obj.get("id").and_then(|v| v.as_str())?;
+    let function = obj.get("function")?;
+    let name = function.get("name").and_then(|v| v.as_str())?;
+    let arguments = function.get("arguments").and_then(|v| v.as_str())?;
+    Some(serde_json::json!({
+        "type": "function_call",
+        "id": id,
+        "call_id": id,
+        "name": name,
+        "arguments": arguments,
+        "status": "completed",
+    }))
+}
+
+fn extract_usage_responses(usage: &Value) -> Option<(u64, u64, u64)> {
+    let obj = usage.as_object()?;
+    let prompt = obj.get("input_tokens").and_then(|v| v.as_u64())?;
+    let completion = obj.get("output_tokens").and_then(|v| v.as_u64())?;
+    let total = obj
+        .get("total_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(prompt + completion);
+    Some((prompt, completion, total))
+}
+
+fn build_usage_responses(prompt: u64, completion: u64, total: u64) -> Value {
+    serde_json::json!({
+        "input_tokens": prompt,
+        "output_tokens": completion,
+        "total_tokens": total,
+        "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 0},
+    })
+}
+
+fn responses_to_openai_response(body: &Value) -> Value {
+    let obj = body.as_object().cloned().unwrap_or_default();
+    let mut text_parts = Vec::new();
+    let mut tool_calls = Vec::new();
+
+    if let Some(output) = obj.get("output").and_then(|v| v.as_array()) {
+        for item in output {
+            match item.get("type").and_then(|v| v.as_str()) {
+                Some("message") => {
+                    if let Some(content) = item.get("content").and_then(|v| v.as_array()) {
+                        for part in content {
+                            if part.get("type").and_then(|v| v.as_str()) == Some("output_text") {
+                                if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
+                                    text_parts.push(t);
+                                }
+                            }
+                        }
+                    }
+                }
+                Some("function_call") => {
+                    if let Some(tc) = responses_function_call_to_openai(item) {
+                        tool_calls.push(tc);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let finish_reason = if obj.get("error").is_some() {
+        "stop"
+    } else if obj.get("incomplete_details").is_some() {
+        "length"
+    } else if !tool_calls.is_empty() && text_parts.is_empty() {
+        "tool_calls"
+    } else {
+        "stop"
+    };
+
+    let mut message = serde_json::Map::new();
+    message.insert("role".to_string(), Value::String("assistant".to_string()));
+    message.insert("content".to_string(), Value::String(text_parts.join("")));
+    if !tool_calls.is_empty() {
+        message.insert("tool_calls".to_string(), Value::Array(tool_calls));
+    }
+
+    let mut out = serde_json::Map::new();
+    out.insert(
+        "choices".to_string(),
+        Value::Array(vec![serde_json::json!({
+            "index": 0,
+            "message": message,
+            "finish_reason": finish_reason,
+        })]),
+    );
+
+    if let Some(usage) = obj.get("usage") {
+        if let Some((prompt, completion, total)) = extract_usage_responses(usage) {
+            out.insert("usage".to_string(), build_usage_openai(prompt, completion, total));
+        }
+    }
+    Value::Object(out)
+}
+
+fn openai_to_responses_response(body: &Value) -> Value {
+    let obj = body.as_object().cloned().unwrap_or_default();
+    let choice = obj
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first());
+    let message = choice.and_then(|c| c.get("message"));
+
+    let mut output = Vec::new();
+    let mut text_parts = Vec::new();
+    if let Some(content) = message.and_then(|m| m.get("content")).map(text_content_to_string) {
+        if !content.is_empty() {
+            text_parts.push(content);
+        }
+    }
+    if !text_parts.is_empty() {
+        output.push(serde_json::json!({
+            "type": "message",
+            "id": "msg_tokenguard",
+            "role": "assistant",
+            "status": "completed",
+            "content": text_parts
+                .iter()
+                .map(|t| serde_json::json!({"type": "output_text", "text": t, "annotations": []}))
+                .collect::<Vec<_>>(),
+        }));
+    }
+
+    if let Some(tcs) = message
+        .and_then(|m| m.get("tool_calls"))
+        .and_then(|v| v.as_array())
+    {
+        for tc in tcs {
+            if let Some(fc) = openai_tool_call_to_responses_function_call(tc) {
+                output.push(fc);
+            }
+        }
+    }
+
+    let finish_reason = choice
+        .and_then(|c| c.get("finish_reason"))
+        .and_then(|v| v.as_str());
+    let status = match finish_reason {
+        Some("length") => "incomplete",
+        _ => "completed",
+    };
+
+    let mut out = serde_json::Map::new();
+    out.insert("id".to_string(), Value::String("resp_tokenguard".to_string()));
+    out.insert("object".to_string(), Value::String("response".to_string()));
+    out.insert("status".to_string(), Value::String(status.to_string()));
+    out.insert("output".to_string(), Value::Array(output));
+
+    if let Some(usage) = obj.get("usage") {
+        if let Some((prompt, completion, total)) = extract_usage_openai(usage) {
+            out.insert("usage".to_string(), build_usage_responses(prompt, completion, total));
+        }
+    }
+    Value::Object(out)
+}
+
+fn responses_to_openai_sse_data(data: &Value) -> Option<Value> {
+    let event_type = data.get("type").and_then(|v| v.as_str())?;
+    match event_type {
+        "response.output_text.delta" => {
+            let delta = data.get("delta").and_then(|v| v.as_str())?;
+            Some(serde_json::json!({
+                "choices": [{"index": 0, "delta": {"content": delta}}],
+            }))
+        }
+        "response.function_call_arguments.delta" => {
+            let delta = data.get("delta").and_then(|v| v.as_str())?;
+            Some(serde_json::json!({
+                "choices": [{
+                    "index": 0,
+                    "delta": {"tool_calls": [{"index": 0, "function": {"arguments": delta}}]},
+                }],
+            }))
+        }
+        "response.completed" => {
+            let mut out = serde_json::json!({"choices": [{"index": 0, "delta": {}}]});
+            if let Some(response) = data.get("response") {
+                if let Some(usage) = response.get("usage") {
+                    if let Some((prompt, completion, total)) = extract_usage_responses(usage) {
+                        out["usage"] = build_usage_openai(prompt, completion, total);
+                    }
+                }
+            }
+            Some(out)
+        }
+        "response.incomplete" => Some(serde_json::json!({
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "length"}],
+        })),
+        "response.failed" | "error" => Some(serde_json::json!({
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        })),
+        _ => None,
+    }
+}
+
+fn openai_to_responses_sse_data(data: &Value) -> Option<Value> {
+    let choice = data.get("choices")?.as_array()?.first()?;
+    let delta = choice.get("delta")?;
+
+    if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
+        return Some(serde_json::json!({
+            "type": "response.output_text.delta",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": text,
+        }));
+    }
+
+    if let Some(reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+        let status = if reason == "length" { "incomplete" } else { "completed" };
+        let mut out = serde_json::json!({
+            "type": "response.completed",
+            "response": {"id": "resp_tokenguard", "object": "response", "status": status, "output": []},
+        });
+        if let Some(usage) = data.get("usage") {
+            if let Some((prompt, completion, total)) = extract_usage_openai(usage) {
+                out["response"]["usage"] = build_usage_responses(prompt, completion, total);
+            }
+        }
+        return Some(out);
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -2215,5 +2849,347 @@ mod tests {
             .unwrap();
         assert_eq!(tcs[0]["id"], "call_f_0");
         assert_eq!(tcs[1]["id"], "call_f_1");
+    }
+
+    fn responses_body() -> Value {
+        serde_json::json!({
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "message", "role": "system", "content": "You are a helpful assistant."},
+                {"type": "message", "role": "user", "content": "Hello"},
+            ],
+            "max_output_tokens": 100,
+            "temperature": 0.5,
+        })
+    }
+
+    #[test]
+    fn responses_to_openai_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            &responses_body(),
+            "gpt-4o",
+        );
+        assert_eq!(out["model"], "gpt-4o");
+        let msgs = out["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[1]["role"], "user");
+        assert_eq!(out["max_tokens"], 100);
+    }
+
+    #[test]
+    fn responses_string_input_becomes_user_message() {
+        let body = serde_json::json!({
+            "model": "gpt-5.4",
+            "input": "Hello",
+            "instructions": "Be brief.",
+        });
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let msgs = out["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "Be brief.");
+        assert_eq!(msgs[1]["role"], "user");
+        assert_eq!(msgs[1]["content"], "Hello");
+    }
+
+    #[test]
+    fn responses_function_call_output_to_openai_tool_message() {
+        let body = serde_json::json!({
+            "model": "gpt-5.4",
+            "input": [
+                {"type": "function_call_output", "call_id": "call_1", "output": "sunny"},
+            ],
+        });
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let msgs = out["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "tool");
+        assert_eq!(msgs[0]["tool_call_id"], "call_1");
+        assert_eq!(msgs[0]["content"], "sunny");
+    }
+
+    #[test]
+    fn openai_to_responses_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::OpenAI,
+            ProviderFormat::Responses,
+            &openai_body(),
+            "gpt-5.4",
+        );
+        assert_eq!(out["model"], "gpt-5.4");
+        let input = out["input"].as_array().unwrap();
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["type"], "message");
+        assert_eq!(input[0]["role"], "system");
+        assert_eq!(input[1]["role"], "user");
+        assert_eq!(out["max_output_tokens"], 100);
+    }
+
+    #[test]
+    fn responses_to_anthropic_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::Anthropic,
+            &responses_body(),
+            "claude-3-5-sonnet",
+        );
+        assert_eq!(out["model"], "claude-3-5-sonnet");
+        assert_eq!(out["system"], "You are a helpful assistant.");
+        assert_eq!(out["messages"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn anthropic_to_responses_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::Anthropic,
+            ProviderFormat::Responses,
+            &anthropic_body(),
+            "gpt-5.4",
+        );
+        assert_eq!(out["model"], "gpt-5.4");
+        let input = out["input"].as_array().unwrap();
+        // Anthropic body has a system message plus one user message.
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["role"], "system");
+        assert_eq!(input[1]["role"], "user");
+    }
+
+    #[test]
+    fn responses_to_google_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::Google,
+            &responses_body(),
+            "gemini-1.5-pro",
+        );
+        assert!(out.get("model").is_none());
+        assert_eq!(
+            out["systemInstruction"]["parts"][0]["text"],
+            "You are a helpful assistant."
+        );
+        assert_eq!(out["contents"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn google_to_responses_request_round_trip() {
+        let out = convert_request(
+            ProviderFormat::Google,
+            ProviderFormat::Responses,
+            &google_body(),
+            "gpt-5.4",
+        );
+        assert_eq!(out["model"], "gpt-5.4");
+        let input = out["input"].as_array().unwrap();
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["role"], "system");
+        assert_eq!(input[1]["role"], "user");
+    }
+
+    #[test]
+    fn responses_tools_map_to_openai_tools() {
+        let body = serde_json::json!({
+            "model": "gpt-5.4",
+            "input": "What's the weather?",
+            "tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "description": "Get weather",
+                "parameters": {"type": "object", "properties": {}},
+                "strict": true,
+            }],
+            "tool_choice": "auto",
+        });
+        let out = convert_request(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            &body,
+            "gpt-4o",
+        );
+        let tools = out["tools"].as_array().unwrap();
+        assert_eq!(tools[0]["type"], "function");
+        assert_eq!(tools[0]["function"]["name"], "get_weather");
+        assert_eq!(out["tool_choice"], "auto");
+    }
+
+    #[test]
+    fn responses_to_openai_response_text() {
+        let body = serde_json::json!({
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "gpt-5.4",
+            "output": [{
+                "type": "message",
+                "id": "msg_1",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "Hi there!"}],
+            }],
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        });
+        let out = convert_response(ProviderFormat::Responses, ProviderFormat::OpenAI, &body);
+        assert_eq!(out["choices"][0]["message"]["content"], "Hi there!");
+        assert_eq!(out["choices"][0]["finish_reason"], "stop");
+        assert_eq!(out["usage"]["prompt_tokens"], 10);
+        assert_eq!(out["usage"]["completion_tokens"], 5);
+    }
+
+    #[test]
+    fn responses_to_openai_response_function_call() {
+        let body = serde_json::json!({
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "gpt-5.4",
+            "output": [{
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_1",
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Boston\"}",
+                "status": "completed",
+            }],
+            "usage": {"input_tokens": 20, "output_tokens": 8, "total_tokens": 28},
+        });
+        let out = convert_response(ProviderFormat::Responses, ProviderFormat::OpenAI, &body);
+        assert_eq!(out["choices"][0]["finish_reason"], "tool_calls");
+        let tcs = out["choices"][0]["message"]["tool_calls"].as_array().unwrap();
+        assert_eq!(tcs[0]["id"], "fc_1");
+        assert_eq!(tcs[0]["function"]["name"], "get_weather");
+    }
+
+    #[test]
+    fn openai_to_responses_response_round_trip() {
+        let body = serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        });
+        let out = convert_response(ProviderFormat::OpenAI, ProviderFormat::Responses, &body);
+        assert_eq!(out["status"], "completed");
+        assert_eq!(out["output"][0]["type"], "message");
+        assert_eq!(out["output"][0]["content"][0]["text"], "Hi");
+        assert_eq!(out["usage"]["input_tokens"], 10);
+    }
+
+    #[test]
+    fn responses_to_openai_sse_text_delta() {
+        let data = serde_json::json!({
+            "type": "response.output_text.delta",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "Hi",
+        });
+        let (event, out) = convert_sse_data(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            Some("response.output_text.delta"),
+            &data,
+        )
+        .unwrap();
+        assert!(event.is_none());
+        assert_eq!(out["choices"][0]["delta"]["content"], "Hi");
+    }
+
+    #[test]
+    fn responses_to_openai_sse_completed_with_usage() {
+        let data = serde_json::json!({
+            "type": "response.completed",
+            "response": {
+                "usage": {"input_tokens": 8, "output_tokens": 4, "total_tokens": 12},
+            },
+        });
+        let (event, out) = convert_sse_data(
+            ProviderFormat::Responses,
+            ProviderFormat::OpenAI,
+            Some("response.completed"),
+            &data,
+        )
+        .unwrap();
+        assert!(event.is_none());
+        assert_eq!(out["usage"]["prompt_tokens"], 8);
+        assert_eq!(out["usage"]["completion_tokens"], 4);
+    }
+
+    #[test]
+    fn openai_to_responses_sse_text_delta() {
+        let data = serde_json::json!({
+            "choices": [{"index": 0, "delta": {"content": "Hi"}}],
+        });
+        let (event, out) = convert_sse_data(
+            ProviderFormat::OpenAI,
+            ProviderFormat::Responses,
+            None,
+            &data,
+        )
+        .unwrap();
+        assert_eq!(event.as_deref(), Some("response.output_text.delta"));
+        assert_eq!(out["type"], "response.output_text.delta");
+        assert_eq!(out["delta"], "Hi");
+    }
+
+    #[test]
+    fn openai_to_responses_sse_finish_event() {
+        let data = serde_json::json!({
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
+        });
+        let (event, out) = convert_sse_data(
+            ProviderFormat::OpenAI,
+            ProviderFormat::Responses,
+            None,
+            &data,
+        )
+        .unwrap();
+        assert_eq!(event.as_deref(), Some("response.completed"));
+        assert_eq!(out["type"], "response.completed");
+        assert_eq!(out["response"]["usage"]["input_tokens"], 8);
+    }
+
+    #[test]
+    fn target_path_responses() {
+        assert_eq!(
+            target_path(
+                ProviderFormat::OpenAI,
+                ProviderFormat::Responses,
+                "gpt-5.4",
+                "/v1/chat/completions",
+                false,
+            ),
+            "/v1/responses"
+        );
+    }
+
+    #[test]
+    fn stream_detection_responses() {
+        assert!(is_stream_request(
+            ProviderFormat::Responses,
+            "/v1/responses",
+            &serde_json::json!({"stream": true})
+        ));
+        assert!(!is_stream_request(
+            ProviderFormat::Responses,
+            "/v1/responses",
+            &serde_json::json!({})
+        ));
+    }
+
+    #[test]
+    fn error_envelope_responses() {
+        let out = error_envelope(ProviderFormat::Responses, 429, br#"{"error":{"message":"rate limit"}}"#);
+        assert_eq!(out["error"]["message"], "rate limit");
+        assert_eq!(out["error"]["code"], 429);
     }
 }

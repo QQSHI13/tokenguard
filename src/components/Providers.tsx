@@ -356,6 +356,7 @@ export default function Providers({ onChange }: { onChange: () => void }) {
               <option value="openai">openai</option>
               <option value="anthropic">anthropic</option>
               <option value="google">google</option>
+              <option value="responses">responses</option>
             </select>
           </Field>
           <Field label={t("authHeader")}>

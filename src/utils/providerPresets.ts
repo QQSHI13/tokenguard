@@ -1,7 +1,7 @@
 // Shared provider types and one-click presets, used by both the Providers
 // tab and the onboarding flow.
 
-export type ProviderFormat = "openai" | "anthropic" | "google";
+export type ProviderFormat = "openai" | "anthropic" | "google" | "responses";
 export type AuthScheme = "bearer" | "x_api_key" | "api_key" | "x_goog_api_key";
 
 export type ModelMapping = {
@@ -68,6 +68,17 @@ export const PRESETS: ProviderPreset[] = [
     auth: "bearer",
     models: [],
   },
+  {
+    name: "OpenAI Responses",
+    base_url: "https://api.openai.com",
+    format: "responses",
+    auth: "bearer",
+    models: [
+      { local: "gpt-5.4", remote: "gpt-5.4", ...noCost },
+      { local: "gpt-4o", remote: "gpt-4o", ...noCost },
+      { local: "gpt-4o-mini", remote: "gpt-4o-mini", ...noCost },
+    ],
+  },
 ];
 
 /** Default auth header for a given API format. */
@@ -77,6 +88,7 @@ export function defaultAuthFor(format: ProviderFormat): AuthScheme {
       return "x_api_key";
     case "google":
       return "x_goog_api_key";
+    case "responses":
     default:
       return "bearer";
   }
