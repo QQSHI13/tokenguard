@@ -219,7 +219,7 @@ async fn finalize_forward<R: Runtime>(
         let (tx, rx) = tokio::sync::mpsc::channel::<
             Result<Bytes, Box<dyn std::error::Error + Send + Sync>>,
         >(32);
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             let mut s = resp.bytes_stream();
             let mut converter = SseConverter::new(prov.format, client_fmt, model_owned.clone());
             while let Some(chunk) = s.next().await {

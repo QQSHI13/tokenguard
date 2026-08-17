@@ -94,23 +94,59 @@ pub fn set(name: &str, key: &str) -> Result<(), String> {
     }
 }
 
+fn env_var_name(name: &str) -> String {
+    let safe = name
+        .to_uppercase()
+        .replace(|c: char| !c.is_alphanumeric(), "_");
+    format!("TOKENGUARD_KEY_{safe}")
+}
+
+fn env_key(name: &str) -> Option<String> {
+    std::env::var(env_var_name(name)).ok()
+}
+
 pub fn get(name: &str) -> Result<String, String> {
-    let entry = Entry::new(SERVICE, name).map_err(|e| keyring_err("Entry::new", e))?;
-    entry
-        .get_password()
-        .map_err(|e| keyring_err("get_password", e))
+    let entry = match Entry::new(SERVICE, name) {
+        Ok(e) => e,
+        Err(e) => {
+            if let Some(key) = env_key(name) {
+                return Ok(key);
+            }
+            return Err(keyring_err("Entry::new", e));
+        }
+    };
+    match entry.get_password() {
+        Ok(key) => Ok(key),
+        Err(e) => {
+            if let Some(key) = env_key(name) {
+                tracing::info!("keyring read failed for '{name}'; using env fallback");
+                return Ok(key);
+            }
+            Err(keyring_err("get_password", e))
+        }
+    }
 }
 
 /// (key_exists, error_if_any). NoEntry is the normal "no key yet" state.
+/// In headless/CLI mode keys may be supplied via env vars instead of the OS
+/// keychain, so env-backed keys are reported as present.
 pub fn status(name: &str) -> (bool, Option<String>) {
-    let Ok(entry) = Entry::new(SERVICE, name) else {
-        return (false, Some("Entry::new failed".into()));
-    };
-    match entry.get_password() {
-        Ok(_) => (true, None),
-        Err(keyring::Error::NoEntry) => (false, None),
-        Err(e) => (false, Some(keyring_err("status", e))),
+    if let Ok(entry) = Entry::new(SERVICE, name) {
+        match entry.get_password() {
+            Ok(_) => return (true, None),
+            Err(keyring::Error::NoEntry) => {}
+            Err(e) => {
+                if env_key(name).is_some() {
+                    return (true, None);
+                }
+                return (false, Some(keyring_err("status", e)));
+            }
+        }
     }
+    if env_key(name).is_some() {
+        return (true, None);
+    }
+    (false, None)
 }
 
 pub fn delete(name: &str) -> Result<(), String> {

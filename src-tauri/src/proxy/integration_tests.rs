@@ -112,7 +112,7 @@ async fn setup() -> (
         ..Config::default()
     };
 
-    let state = Arc::new(AppState::new(pool, db_path, config, handle).unwrap());
+    let state = Arc::new(AppState::new(pool, db_path, config, Some(handle)).unwrap());
     (
         state,
         Mocks {

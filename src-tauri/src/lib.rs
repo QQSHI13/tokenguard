@@ -1,5 +1,6 @@
 //! Token Guard — local LLM gateway.
 
+pub mod backend;
 mod commands;
 mod config;
 mod cost;
@@ -104,41 +105,12 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-
-            // Local-first SQLite in the per-user app data dir.
             let dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let db_path = dir.join("tokenguard.db");
-            // Apply a scheduled database restore before opening the pool,
-            // while no WAL connections exist yet.
-            commands::apply_pending_restore(&db_path);
-            let pool = db::build_pool(db_path.to_str().ok_or("invalid db path")?)?;
-            let conn = pool
-                .get()
-                .map_err(|e| format!("failed to get DB connection: {e}"))?;
-            let config = db::load_config(&conn)?;
-            let port = config.port;
-
-            // Delete old logs and audit events if a retention period is configured.
-            if config.log_retention_days > 0 {
-                match db::cleanup_old_logs(&conn, config.log_retention_days) {
-                    Ok(deleted) if deleted > 0 => {
-                        tracing::info!("deleted {deleted} old log rows");
-                    }
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!("log cleanup failed: {e}"),
-                }
-                match db::cleanup_old_audit_events(&conn, config.log_retention_days) {
-                    Ok(deleted) if deleted > 0 => {
-                        tracing::info!("deleted {deleted} old audit events");
-                    }
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!("audit cleanup failed: {e}"),
-                }
-            }
-
-            let expose_to_lan = config.expose_to_lan;
-            let state = Arc::new(state::AppState::new(pool, db_path, config, handle)?);
+            let backend::BackendInit {
+                state,
+                port,
+                expose_to_lan,
+            } = backend::init_backend(dir, Some(handle))?;
 
             // Native tray (left-click toggles pause; menu items below).
             state::build_tray(app.handle())?;
@@ -156,13 +128,6 @@ pub fn run() {
 
             state.refresh_tray();
             tracing::info!("Token Guard started — proxy on http://127.0.0.1:{port}");
-
-            // Run scheduled usage export if due.
-            if crate::commands::is_auto_export_due(&state).unwrap_or(false) {
-                if let Err(e) = crate::commands::run_auto_export_now(&state) {
-                    tracing::warn!("auto export failed: {e}");
-                }
-            }
 
             // Graceful Ctrl+C: close windows first so WebView2 can tear down
             // before the process exits (avoids the "Failed to unregister class" noise).

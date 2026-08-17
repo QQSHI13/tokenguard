@@ -134,7 +134,9 @@ pub struct AppState<R: Runtime = Wry> {
     pub config: RwLock<Config>,
     pub paused: AtomicBool,
     pub client: reqwest::Client,
-    pub app: AppHandle<R>,
+    /// Optional Tauri handle. None in headless/CLI mode, where tray and
+    /// desktop notifications are unavailable.
+    pub app: Option<AppHandle<R>>,
     /// Per-limit cooldown so warning notifications don't spam every request.
     last_warning: Mutex<HashMap<i64, Instant>>,
     /// Per-limit cooldown so block/pause notifications don't spam.
@@ -165,7 +167,7 @@ impl<R: Runtime> AppState<R> {
         pool: DbPool,
         db_path: std::path::PathBuf,
         config: Config,
-        app: AppHandle<R>,
+        app: Option<AppHandle<R>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -239,6 +241,34 @@ impl<R: Runtime> AppState<R> {
     /// Record that a budget warning notification was sent for this project.
     pub fn mark_budget_notified(&self, project_tag: &str) {
         cooldown_mark(&self.last_budget_warning, project_tag.to_string());
+    }
+
+    /// Desktop-notification helpers. No-ops when running headlessly (no
+    /// Tauri handle), so the CLI binary does not need a GUI runtime.
+    pub fn notify_limit_warning(&self, name: &str, used: f64, cap: f64) {
+        if let Some(app) = &self.app {
+            notifications::limit_warning(app, name, used, cap);
+        }
+    }
+    pub fn notify_limit_blocked(&self, name: &str, used: f64, cap: f64) {
+        if let Some(app) = &self.app {
+            notifications::limit_blocked(app, name, used, cap);
+        }
+    }
+    pub fn notify_limit_paused(&self, name: &str, used: f64, cap: f64) {
+        if let Some(app) = &self.app {
+            notifications::limit_paused(app, name, used, cap);
+        }
+    }
+    pub fn notify_proxy_paused(&self) {
+        if let Some(app) = &self.app {
+            notifications::proxy_paused(app);
+        }
+    }
+    pub fn notify_proxy_resumed(&self) {
+        if let Some(app) = &self.app {
+            notifications::proxy_resumed(app);
+        }
     }
 
     /// Route a request to a provider by (format family, model name).
@@ -448,7 +478,7 @@ impl<R: Runtime> AppState<R> {
                         limit.warning_threshold
                     ),
                 );
-                notifications::limit_warning(&self.app, &limit.name, used, limit.cap);
+                self.notify_limit_warning(&limit.name, used, limit.cap);
                 if let Some(ref url) = webhook_url {
                     webhook::send_limit_event(
                         &self.client,
@@ -557,7 +587,7 @@ impl<R: Runtime> AppState<R> {
                         limit.warning_threshold
                     ),
                 );
-                notifications::limit_warning(&self.app, &limit.name, persisted, limit.cap);
+                self.notify_limit_warning(&limit.name, persisted, limit.cap);
                 if let Some(ref url) = webhook_url {
                     webhook::send_limit_event(
                         &self.client,
@@ -651,7 +681,11 @@ impl<R: Runtime> AppState<R> {
     }
 
     /// Rebuild the tray menu + tooltip + icon color from current state.
+    /// No-op in headless mode (no Tauri handle).
     pub fn refresh_tray(&self) {
+        let Some(app) = &self.app else {
+            return;
+        };
         let spend = self.today_spend();
         let (ratio, critical) = self.limit_status();
         let paused = self.paused.load(Ordering::Relaxed);
@@ -675,12 +709,12 @@ impl<R: Runtime> AppState<R> {
                 .map(|c| format!(" — limit: {c}"))
                 .unwrap_or_default(),
         );
-        if let Some(tray) = self.app.tray_by_id("main") {
+        if let Some(tray) = app.tray_by_id("main") {
             let _ = tray.set_tooltip(Some(&tooltip));
             if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
                 let _ = tray.set_icon(Some(img));
             }
-            if let Ok(menu) = build_tray_menu(&self.app, spend, budget, paused, critical_deref) {
+            if let Ok(menu) = build_tray_menu(app, spend, budget, paused, critical_deref) {
                 let _ = tray.set_menu(Some(menu));
             }
         }
@@ -707,9 +741,9 @@ impl<R: Runtime> AppState<R> {
             return;
         }
         if paused {
-            notifications::proxy_paused(&self.app);
+            self.notify_proxy_paused();
         } else {
-            notifications::proxy_resumed(&self.app);
+            self.notify_proxy_resumed();
         }
         self.refresh_tray();
     }

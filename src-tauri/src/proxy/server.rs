@@ -11,7 +11,6 @@ use std::sync::Arc;
 use tracing::Instrument;
 
 use crate::config::{LimitAction, ProviderFormat};
-use crate::notifications;
 use crate::proxy::forwarder;
 use crate::state::{input_output_cost_per_1k, remote_model_name, AppState};
 
@@ -127,8 +126,7 @@ async fn handle(
         {
             match action {
                 LimitAction::Block => {
-                    notifications::limit_blocked(
-                        &state.app,
+                    state.notify_limit_blocked(
                         project_tag.as_deref().unwrap_or(""),
                         used,
                         budget,
@@ -141,8 +139,7 @@ async fn handle(
                     );
                 }
                 LimitAction::Pause => {
-                    notifications::limit_paused(
-                        &state.app,
+                    state.notify_limit_paused(
                         project_tag.as_deref().unwrap_or(""),
                         used,
                         budget,
@@ -155,8 +152,7 @@ async fn handle(
                 }
                 LimitAction::Warn => {
                     if should_notify {
-                        notifications::limit_warning(
-                            &state.app,
+                        state.notify_limit_warning(
                             project_tag.as_deref().unwrap_or(""),
                             used,
                             budget,
@@ -261,8 +257,7 @@ async fn handle(
             match v.limit.action {
                 LimitAction::Block => {
                     if v.should_notify {
-                        notifications::limit_blocked(
-                            &state.app,
+                        state.notify_limit_blocked(
                             &v.limit.name,
                             v.used,
                             v.limit.cap,
@@ -280,7 +275,7 @@ async fn handle(
                 }
                 LimitAction::Pause => {
                     if v.should_notify {
-                        notifications::limit_paused(&state.app, &v.limit.name, v.used, v.limit.cap);
+                        state.notify_limit_paused(&v.limit.name, v.used, v.limit.cap);
                         state.mark_block_notified(v.limit.id);
                     }
                     state.release_request_limits(&check.reservations);
@@ -292,7 +287,7 @@ async fn handle(
                 }
                 LimitAction::Warn => {
                     if v.should_notify {
-                        notifications::limit_warning(&state.app, &v.limit.name, v.used, v.limit.cap);
+                        state.notify_limit_warning(&v.limit.name, v.used, v.limit.cap);
                         state.mark_warning_notified(v.limit.id);
                     }
                     tracing::warn!(
@@ -336,8 +331,7 @@ async fn handle(
             match v.limit.action {
                 LimitAction::Block => {
                     if v.should_notify {
-                        notifications::limit_blocked(
-                            &state.app,
+                        state.notify_limit_blocked(
                             &v.limit.name,
                             v.used,
                             v.limit.cap,
@@ -347,8 +341,7 @@ async fn handle(
                 }
                 LimitAction::Pause => {
                     if v.should_notify {
-                        notifications::limit_paused(
-                            &state.app,
+                        state.notify_limit_paused(
                             &v.limit.name,
                             v.used,
                             v.limit.cap,
@@ -359,8 +352,7 @@ async fn handle(
                 }
                 LimitAction::Warn => {
                     if v.should_notify {
-                        notifications::limit_warning(
-                            &state.app,
+                        state.notify_limit_warning(
                             &v.limit.name,
                             v.used,
                             v.limit.cap,
