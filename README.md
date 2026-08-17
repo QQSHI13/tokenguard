@@ -155,7 +155,7 @@ migrated to a global daily money limit.
 
 ## Status
 
-v0.2.0-beta.1 — active development. Core proxy + 4 × 4 model routing + SSE passthrough +
+v0.2.0-beta.2 — active development. Core proxy + 4 × 4 model routing + SSE passthrough +
 logging + GUI tray app + headless CLI + limits + projects + provider health +
 license/device management. See `PRIVACY.md` for how user data is handled.
 
