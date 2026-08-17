@@ -1,6 +1,6 @@
 [package]
 name = "tokenguard-desktop"
-version = "0.2.0-beta.2"
+version = "0.2.0-beta.3"
 description = "Local LLM gateway — track every token, nothing leaves your machine."
 authors = ["QQSHI13"]
 edition = "2021"
