@@ -10,8 +10,9 @@
 > [!NOTE]
 > 🎁 **Launch offer:** the first 20 people to email **qingquanshi65@gmail.com** with feedback on Token Guard get a **free Pro license** (no banner, automatic updates, up to 2 devices).
 
-A cross-platform desktop app (Tauri v2 + Rust) that runs a local HTTP proxy to
-intercept and log LLM API calls, showing real-time cost in the system tray.
+A local LLM gateway (Tauri v2 + Rust) with a desktop GUI and a headless CLI.
+It runs a local HTTP proxy to intercept and log LLM API calls, converts between
+major SDK formats, and shows real-time cost in the system tray or terminal.
 
 **Docs:** [project wiki](https://github.com/QQSHI13/tokenguard/wiki) (English + 中文) · **Website:** [tokenguard.pages.dev](https://tokenguard.pages.dev) · **Community:** [Discussions](https://github.com/QQSHI13/tokenguard/discussions)
 
@@ -48,7 +49,11 @@ One base URL (`http://127.0.0.1:3742`). Requests are routed to a provider by the
 
 Falls back to the default provider for that family. `GET /v1/models` returns the
 merged local model list. Any client format can be routed to any provider format —
-requests, responses, and SSE streams are converted as needed (the "3 × 3").
+requests, responses, and SSE streams are converted as needed (the "4 × 4").
+
+**Universal provider support:** Token Guard ships with OpenAI, Anthropic, and Gemini
+formats, and will soon add a pluggable provider format so any OpenAI-compatible
+endpoint can be registered without code changes.
 
 ### Model aliases
 
@@ -150,9 +155,9 @@ migrated to a global daily money limit.
 
 ## Status
 
-v0.1.8 — active development. Core proxy + model routing + SSE passthrough + logging +
-tray + limits + projects + provider health + license/device management. See `PRIVACY.md`
-for how user data is handled.
+v0.2.0-beta.1 — active development. Core proxy + 4 × 4 model routing + SSE passthrough +
+logging + GUI tray app + headless CLI + limits + projects + provider health +
+license/device management. See `PRIVACY.md` for how user data is handled.
 
 ## License
 

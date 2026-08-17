@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Token Guard — local LLM gateway &amp; cost tracker</title>
-  <meta name="description" content="Token Guard is a free, open-source desktop app that tracks LLM spend and converts between OpenAI, Anthropic, and Gemini SDK formats — all locally.">
+  <meta name="description" content="Token Guard is a free, open-source LLM gateway. Use the GUI or CLI to convert between OpenAI, Anthropic, Gemini, and OpenAI Responses SDK formats — all locally. Universal provider support coming.">
   <meta property="og:title" content="Token Guard — local LLM gateway &amp; cost tracker">
-  <meta property="og:description" content="Track LLM spend and convert between OpenAI, Anthropic, and Gemini SDK formats — all locally. Free &amp; open source.">
+  <meta property="og:description" content="Local LLM gateway with GUI or CLI. 4 × 4 SDK conversion, universal provider support, budgets, and OS-keychain key storage — all on your machine.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tokenguard.pages.dev/">
   <meta property="og:image" content="https://tokenguard.pages.dev/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Token Guard — local LLM gateway &amp; cost tracker">
-  <meta name="twitter:description" content="Track LLM spend and convert between OpenAI, Anthropic, and Gemini SDK formats — all locally. Free &amp; open source.">
+  <meta name="twitter:description" content="Local LLM gateway with GUI or CLI. 4 × 4 SDK conversion, universal provider support, budgets, and OS-keychain key storage — all on your machine.">
   <meta name="twitter:image" content="https://tokenguard.pages.dev/og-image.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
@@ -70,7 +70,7 @@
           Stop leaking API keys and overspending on LLMs.
         </h1>
         <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-          A local gateway that converts between OpenAI, Anthropic, and Gemini SDK formats. Track spend per project, enforce budgets, and keep your prompts on your machine.
+          A local LLM gateway with a desktop GUI and a headless CLI. Convert between OpenAI, Anthropic, Gemini, and OpenAI Responses SDK formats — or plug in any provider. Track spend per project, enforce budgets, and keep your prompts on your machine.
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href="https://github.com/QQSHI13/tokenguard/releases" class="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-3 text-base font-semibold text-white shadow-lg transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">
@@ -139,8 +139,22 @@
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
             </div>
-            <h3 class="mt-4 text-lg font-bold">3 × 3 format conversion</h3>
-            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Use OpenAI, Anthropic, or Gemini SDKs against any configured provider.</p>
+            <h3 class="mt-4 text-lg font-bold">4 × 4 format conversion</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">OpenAI Chat, Anthropic Messages, Gemini, and OpenAI Responses SDKs — route any client shape to any supported provider.</p>
+          </div>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">GUI + CLI</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Desktop tray app for easy setup, or a headless binary for servers and containers. Same local engine.</p>
+          </div>
+          <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+            </div>
+            <h3 class="mt-4 text-lg font-bold">Universal providers</h3>
+            <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">OpenAI, Anthropic, Gemini, and any OpenAI-compatible endpoint today. Pluggable provider format coming soon.</p>
           </div>
           <div class="group rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-emerald-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-800">
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
