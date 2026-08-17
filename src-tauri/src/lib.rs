@@ -1,6 +1,7 @@
 //! Token Guard — local LLM gateway.
 
 pub mod backend;
+pub mod cli;
 #[cfg(feature = "gui")]
 mod commands;
 mod config;

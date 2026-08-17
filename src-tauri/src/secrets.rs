@@ -59,7 +59,6 @@ fn keyring_err(context: &str, e: keyring::Error) -> String {
     format!("{context}: {e} — {detail}")
 }
 
-#[cfg(any(feature = "gui", test))]
 pub fn set(name: &str, key: &str) -> Result<(), String> {
     if key.is_empty() {
         return Err("empty key".into());
@@ -131,7 +130,6 @@ pub fn get(name: &str) -> Result<String, String> {
 /// (key_exists, error_if_any). NoEntry is the normal "no key yet" state.
 /// In headless/CLI mode keys may be supplied via env vars instead of the OS
 /// keychain, so env-backed keys are reported as present.
-#[cfg(any(feature = "gui", test))]
 pub fn status(name: &str) -> (bool, Option<String>) {
     if let Ok(entry) = Entry::new(SERVICE, name) {
         match entry.get_password() {
@@ -151,7 +149,6 @@ pub fn status(name: &str) -> (bool, Option<String>) {
     (false, None)
 }
 
-#[cfg(any(feature = "gui", test))]
 pub fn delete(name: &str) -> Result<(), String> {
     let entry = Entry::new(SERVICE, name).map_err(|e| keyring_err("Entry::new", e))?;
     match entry.delete_credential() {
@@ -161,7 +158,6 @@ pub fn delete(name: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(any(feature = "gui", test))]
 pub fn selftest() -> String {
     let name = "__tokenguard_selftest__";
     let mut report = format!(

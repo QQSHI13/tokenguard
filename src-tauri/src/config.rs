@@ -93,7 +93,6 @@ pub struct Provider {
 }
 
 /// Frontend-facing provider with a flag indicating whether a key is stored.
-#[cfg(any(feature = "gui", test))]
 #[derive(Debug, Clone, Serialize)]
 pub struct ProviderDto {
     pub provider: Provider,
@@ -103,7 +102,6 @@ pub struct ProviderDto {
 }
 
 /// Input for creating a provider (includes the API key once, for storage).
-#[cfg(any(feature = "gui", test))]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderInput {
     pub name: String,
@@ -179,7 +177,6 @@ fn default_budget_action() -> LimitAction {
     LimitAction::Warn
 }
 
-#[cfg(any(feature = "gui", test))]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProjectInput {
     pub name: String,
