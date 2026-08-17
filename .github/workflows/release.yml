@@ -178,7 +178,7 @@ jobs:
           releaseName: ${{ github.event.inputs.releaseName || github.event.inputs.tag }}
           releaseBody: 'See the assets below to download Token Guard for your platform.'
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.event.inputs.tag, '-') }}
           args: ${{ matrix.args }}
 
       - name: Build CLI binary
