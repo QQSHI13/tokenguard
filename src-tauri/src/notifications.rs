@@ -1,9 +1,9 @@
 //! Desktop notifications for limit warnings, errors, and state changes.
 
-use tauri::{AppHandle, Wry};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
-fn show(app: &AppHandle<Wry>, title: String, body: String) {
+fn show<R: Runtime>(app: &AppHandle<R>, title: String, body: String) {
     let app_for_notif = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         let _ = app_for_notif
@@ -15,11 +15,11 @@ fn show(app: &AppHandle<Wry>, title: String, body: String) {
     });
 }
 
-pub fn notify(app: &AppHandle<Wry>, title: &str, body: &str) {
+pub fn notify<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
     show(app, title.to_string(), body.to_string());
 }
 
-pub fn limit_warning(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
+pub fn limit_warning<R: Runtime>(app: &AppHandle<R>, name: &str, used: f64, cap: f64) {
     notify(
         app,
         "Token Guard — Limit warning",
@@ -27,7 +27,7 @@ pub fn limit_warning(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
     );
 }
 
-pub fn limit_blocked(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
+pub fn limit_blocked<R: Runtime>(app: &AppHandle<R>, name: &str, used: f64, cap: f64) {
     notify(
         app,
         "Token Guard — Request blocked",
@@ -35,7 +35,7 @@ pub fn limit_blocked(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
     );
 }
 
-pub fn limit_paused(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
+pub fn limit_paused<R: Runtime>(app: &AppHandle<R>, name: &str, used: f64, cap: f64) {
     notify(
         app,
         "Token Guard — Proxy paused",
@@ -43,10 +43,10 @@ pub fn limit_paused(app: &AppHandle<Wry>, name: &str, used: f64, cap: f64) {
     );
 }
 
-pub fn proxy_paused(app: &AppHandle<Wry>) {
+pub fn proxy_paused<R: Runtime>(app: &AppHandle<R>) {
     notify(app, "Token Guard", "Proxy paused — requests are blocked.");
 }
 
-pub fn proxy_resumed(app: &AppHandle<Wry>) {
+pub fn proxy_resumed<R: Runtime>(app: &AppHandle<R>) {
     notify(app, "Token Guard", "Proxy resumed — requests are flowing.");
 }

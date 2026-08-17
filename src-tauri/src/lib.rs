@@ -15,15 +15,15 @@ mod updater;
 mod webhook;
 
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, Runtime};
 
 /// Close every webview window, wait briefly for WebView2 teardown, then exit.
 ///
 /// Calling `app.exit(0)` immediately can leave WebView2 mid-shutdown and print
 /// `Failed to unregister class Chrome_WidgetWin_0. Error = 1412` on Windows.
 /// Closing windows first and sleeping a little lets the renderer clean up.
-pub async fn graceful_exit(app: &AppHandle<Wry>) {
-    if let Some(state) = app.try_state::<Arc<crate::state::AppState>>() {
+pub async fn graceful_exit<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<Arc<crate::state::AppState<R>>>() {
         state.shutdown();
     }
     for (_label, window) in app.webview_windows() {

@@ -3,6 +3,9 @@ pub mod forwarder;
 pub mod server;
 pub mod sse;
 
+#[cfg(test)]
+mod integration_tests;
+
 /// Build a JSON error response (OpenAI-style shape for client compatibility).
 pub fn error_resp(code: axum::http::StatusCode, msg: &str) -> Response {
     let body = serde_json::json!({"error": {"message": msg, "type": "tokenguard"}});

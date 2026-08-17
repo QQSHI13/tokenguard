@@ -36,9 +36,10 @@ pub fn convert_request(
             anthropic_to_openai_request(body, remote_model)
         }
         (ProviderFormat::Anthropic, ProviderFormat::Google) => anthropic_to_google_request(body),
-        (ProviderFormat::Anthropic, ProviderFormat::Responses) => {
-            openai_to_responses_request(&anthropic_to_openai_request(body, remote_model), remote_model)
-        }
+        (ProviderFormat::Anthropic, ProviderFormat::Responses) => openai_to_responses_request(
+            &anthropic_to_openai_request(body, remote_model),
+            remote_model,
+        ),
         (ProviderFormat::Google, ProviderFormat::OpenAI) => {
             google_to_openai_request(body, remote_model)
         }
@@ -51,9 +52,10 @@ pub fn convert_request(
         (ProviderFormat::Responses, ProviderFormat::OpenAI) => {
             responses_to_openai_request(body, remote_model)
         }
-        (ProviderFormat::Responses, ProviderFormat::Anthropic) => {
-            openai_to_anthropic_request(&responses_to_openai_request(body, remote_model), remote_model)
-        }
+        (ProviderFormat::Responses, ProviderFormat::Anthropic) => openai_to_anthropic_request(
+            &responses_to_openai_request(body, remote_model),
+            remote_model,
+        ),
         (ProviderFormat::Responses, ProviderFormat::Google) => {
             openai_to_google_request(&responses_to_openai_request(body, remote_model))
         }
@@ -177,12 +179,11 @@ pub fn convert_sse_data(
         (ProviderFormat::OpenAI, ProviderFormat::Google) => {
             openai_to_google_sse_data(data).map(|v| (None, v))
         }
-        (ProviderFormat::OpenAI, ProviderFormat::Responses) => {
-            openai_to_responses_sse_data(data).map(|v| {
+        (ProviderFormat::OpenAI, ProviderFormat::Responses) => openai_to_responses_sse_data(data)
+            .map(|v| {
                 let event = v.get("type").and_then(|t| t.as_str()).map(str::to_string);
                 (event, v)
-            })
-        }
+            }),
         (ProviderFormat::Anthropic, ProviderFormat::OpenAI) => {
             anthropic_to_openai_sse_data(event, data)
         }
@@ -190,13 +191,14 @@ pub fn convert_sse_data(
             anthropic_to_openai_sse_data(event, data)
                 .and_then(|(_, openai)| openai_to_google_sse_data(&openai).map(|v| (None, v)))
         }
-        (ProviderFormat::Anthropic, ProviderFormat::Responses) => anthropic_to_openai_sse_data(event, data)
-            .and_then(|(_, openai)| {
+        (ProviderFormat::Anthropic, ProviderFormat::Responses) => {
+            anthropic_to_openai_sse_data(event, data).and_then(|(_, openai)| {
                 openai_to_responses_sse_data(&openai).map(|v| {
                     let event = v.get("type").and_then(|t| t.as_str()).map(str::to_string);
                     (event, v)
                 })
-            }),
+            })
+        }
         (ProviderFormat::Google, ProviderFormat::OpenAI) => {
             google_to_openai_sse_data(data).map(|v| (None, v))
         }
@@ -213,8 +215,10 @@ pub fn convert_sse_data(
         (ProviderFormat::Responses, ProviderFormat::OpenAI) => {
             responses_to_openai_sse_data(data).map(|v| (None, v))
         }
-        (ProviderFormat::Responses, ProviderFormat::Anthropic) => responses_to_openai_sse_data(data)
-            .and_then(|openai| openai_to_anthropic_sse_data(&openai)),
+        (ProviderFormat::Responses, ProviderFormat::Anthropic) => {
+            responses_to_openai_sse_data(data)
+                .and_then(|openai| openai_to_anthropic_sse_data(&openai))
+        }
         (ProviderFormat::Responses, ProviderFormat::Google) => responses_to_openai_sse_data(data)
             .and_then(|openai| openai_to_google_sse_data(&openai).map(|v| (None, v))),
         _ => Some((event.map(str::to_string), data.clone())),
@@ -591,32 +595,30 @@ fn responses_content_to_parts(content: &Value) -> Vec<ContentPart> {
         Value::String(s) => vec![ContentPart::Text(s.clone())],
         Value::Array(parts) => parts
             .iter()
-            .filter_map(|p| {
-                match p.get("type").and_then(|t| t.as_str()) {
-                    Some("input_text") | Some("output_text") => p
-                        .get("text")
-                        .and_then(|t| t.as_str())
-                        .map(|s| ContentPart::Text(s.to_string())),
-                    Some("input_image") => {
-                        let url = p.get("image_url").and_then(|u| {
-                            if let Some(s) = u.as_str() {
-                                Some(s.to_string())
-                            } else {
-                                u.get("url").and_then(|v| v.as_str()).map(str::to_string)
-                            }
-                        })?;
-                        let mime = if url.starts_with("data:") {
-                            parse_data_url(&url).map(|(m, _)| m)
+            .filter_map(|p| match p.get("type").and_then(|t| t.as_str()) {
+                Some("input_text") | Some("output_text") => p
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|s| ContentPart::Text(s.to_string())),
+                Some("input_image") => {
+                    let url = p.get("image_url").and_then(|u| {
+                        if let Some(s) = u.as_str() {
+                            Some(s.to_string())
                         } else {
-                            None
-                        };
-                        Some(ContentPart::Image {
-                            mime,
-                            data: ImageData::Url(url),
-                        })
-                    }
-                    _ => None,
+                            u.get("url").and_then(|v| v.as_str()).map(str::to_string)
+                        }
+                    })?;
+                    let mime = if url.starts_with("data:") {
+                        parse_data_url(&url).map(|(m, _)| m)
+                    } else {
+                        None
+                    };
+                    Some(ContentPart::Image {
+                        mime,
+                        data: ImageData::Url(url),
+                    })
                 }
+                _ => None,
             })
             .collect(),
         _ => Vec::new(),
@@ -624,7 +626,11 @@ fn responses_content_to_parts(content: &Value) -> Vec<ContentPart> {
 }
 
 fn parts_to_responses(parts: &[ContentPart], is_input: bool) -> Value {
-    let text_type = if is_input { "input_text" } else { "output_text" };
+    let text_type = if is_input {
+        "input_text"
+    } else {
+        "output_text"
+    };
     let arr: Vec<Value> = parts
         .iter()
         .map(|p| match p {
@@ -1046,7 +1052,10 @@ fn openai_message_to_responses_input_item(msg: &Value) -> Option<Value> {
             "content": converted,
         })),
         "tool" => {
-            let call_id = msg.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = msg
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             Some(serde_json::json!({
                 "type": "function_call_output",
                 "call_id": call_id,
@@ -1325,7 +1334,10 @@ fn responses_to_openai_response(body: &Value) -> Value {
 
     if let Some(usage) = obj.get("usage") {
         if let Some((prompt, completion, total)) = extract_usage_responses(usage) {
-            out.insert("usage".to_string(), build_usage_openai(prompt, completion, total));
+            out.insert(
+                "usage".to_string(),
+                build_usage_openai(prompt, completion, total),
+            );
         }
     }
     Value::Object(out)
@@ -1341,7 +1353,10 @@ fn openai_to_responses_response(body: &Value) -> Value {
 
     let mut output = Vec::new();
     let mut text_parts = Vec::new();
-    if let Some(content) = message.and_then(|m| m.get("content")).map(text_content_to_string) {
+    if let Some(content) = message
+        .and_then(|m| m.get("content"))
+        .map(text_content_to_string)
+    {
         if !content.is_empty() {
             text_parts.push(content);
         }
@@ -1379,14 +1394,20 @@ fn openai_to_responses_response(body: &Value) -> Value {
     };
 
     let mut out = serde_json::Map::new();
-    out.insert("id".to_string(), Value::String("resp_tokenguard".to_string()));
+    out.insert(
+        "id".to_string(),
+        Value::String("resp_tokenguard".to_string()),
+    );
     out.insert("object".to_string(), Value::String("response".to_string()));
     out.insert("status".to_string(), Value::String(status.to_string()));
     out.insert("output".to_string(), Value::Array(output));
 
     if let Some(usage) = obj.get("usage") {
         if let Some((prompt, completion, total)) = extract_usage_openai(usage) {
-            out.insert("usage".to_string(), build_usage_responses(prompt, completion, total));
+            out.insert(
+                "usage".to_string(),
+                build_usage_responses(prompt, completion, total),
+            );
         }
     }
     Value::Object(out)
@@ -1445,7 +1466,11 @@ fn openai_to_responses_sse_data(data: &Value) -> Option<Value> {
     }
 
     if let Some(reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
-        let status = if reason == "length" { "incomplete" } else { "completed" };
+        let status = if reason == "length" {
+            "incomplete"
+        } else {
+            "completed"
+        };
         let mut out = serde_json::json!({
             "type": "response.completed",
             "response": {"id": "resp_tokenguard", "object": "response", "status": status, "output": []},
@@ -3066,7 +3091,9 @@ mod tests {
         });
         let out = convert_response(ProviderFormat::Responses, ProviderFormat::OpenAI, &body);
         assert_eq!(out["choices"][0]["finish_reason"], "tool_calls");
-        let tcs = out["choices"][0]["message"]["tool_calls"].as_array().unwrap();
+        let tcs = out["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .unwrap();
         assert_eq!(tcs[0]["id"], "fc_1");
         assert_eq!(tcs[0]["function"]["name"], "get_weather");
     }
@@ -3188,7 +3215,11 @@ mod tests {
 
     #[test]
     fn error_envelope_responses() {
-        let out = error_envelope(ProviderFormat::Responses, 429, br#"{"error":{"message":"rate limit"}}"#);
+        let out = error_envelope(
+            ProviderFormat::Responses,
+            429,
+            br#"{"error":{"message":"rate limit"}}"#,
+        );
         assert_eq!(out["error"]["message"], "rate limit");
         assert_eq!(out["error"]["code"], 429);
     }

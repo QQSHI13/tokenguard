@@ -17,13 +17,14 @@ use crate::proxy::{convert, sse};
 use crate::state::{
     cached_input_cost_per_1k, input_output_cost_per_1k, remote_model_name, AppState,
 };
+use tauri::Runtime;
 
 /// Forward a request to the chosen provider, retrying transient failures with
 /// exponential backoff, then optionally falling back to another configured
 /// provider.
 #[allow(clippy::too_many_arguments)]
-pub async fn forward(
-    state: Arc<AppState>,
+pub async fn forward<R: Runtime>(
+    state: Arc<AppState<R>>,
     start: std::time::Instant,
     client_path: String,
     body: Bytes,
@@ -122,8 +123,8 @@ pub async fn forward(
 
 /// Send one attempt to a provider and return the raw upstream response.
 #[allow(clippy::too_many_arguments)]
-async fn attempt_forward(
-    state: &Arc<AppState>,
+async fn attempt_forward<R: Runtime>(
+    state: &Arc<AppState<R>>,
     client_path: &str,
     body: &Bytes,
     req_headers: &HeaderMap,
@@ -191,8 +192,8 @@ async fn attempt_forward(
 
 /// Stream the final upstream response back to the client and log usage.
 #[allow(clippy::too_many_arguments)]
-async fn finalize_forward(
-    state: Arc<AppState>,
+async fn finalize_forward<R: Runtime>(
+    state: Arc<AppState<R>>,
     start: std::time::Instant,
     resp: reqwest::Response,
     client_format: ProviderFormat,
@@ -345,8 +346,8 @@ fn build_response(status: reqwest::StatusCode, headers: HeaderMap, body: Body) -
 /// constraint because conversion is handled downstream. Honors the primary's
 /// configured `fallback_provider_id` first; otherwise picks the first *other*
 /// provider serving the model.
-fn find_fallback_provider(
-    state: &Arc<AppState>,
+fn find_fallback_provider<R: Runtime>(
+    state: &Arc<AppState<R>>,
     primary: &Provider,
     model: &str,
 ) -> Option<Provider> {

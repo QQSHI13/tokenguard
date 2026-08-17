@@ -99,7 +99,7 @@ pub fn limit_scope_matches(
 }
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
 const ICON_GREEN: &[u8] = include_bytes!("../icons/icon_green.png");
 const ICON_YELLOW: &[u8] = include_bytes!("../icons/icon_yellow.png");
@@ -128,13 +128,13 @@ pub struct LimitCheckResult {
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
 
-pub struct AppState {
+pub struct AppState<R: Runtime = Wry> {
     pub db: DbPool,
     pub db_path: std::path::PathBuf,
     pub config: RwLock<Config>,
     pub paused: AtomicBool,
     pub client: reqwest::Client,
-    pub app: AppHandle<Wry>,
+    pub app: AppHandle<R>,
     /// Per-limit cooldown so warning notifications don't spam every request.
     last_warning: Mutex<HashMap<i64, Instant>>,
     /// Per-limit cooldown so block/pause notifications don't spam.
@@ -160,12 +160,12 @@ struct TrayClickState {
     timer_running: bool,
 }
 
-impl AppState {
+impl<R: Runtime> AppState<R> {
     pub fn new(
         pool: DbPool,
         db_path: std::path::PathBuf,
         config: Config,
-        app: AppHandle<Wry>,
+        app: AppHandle<R>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -792,13 +792,13 @@ pub fn is_limit_active(limit: &Limit) -> bool {
     true
 }
 
-fn build_tray_menu(
-    app: &AppHandle<Wry>,
+fn build_tray_menu<R: Runtime>(
+    app: &AppHandle<R>,
     spend: f64,
     budget: f64,
     paused: bool,
     critical: Option<&str>,
-) -> Result<Menu<Wry>, tauri::Error> {
+) -> Result<Menu<R>, tauri::Error> {
     let spend_item = MenuItem::with_id(
         app,
         "spend",
@@ -845,7 +845,7 @@ fn build_tray_menu(
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<R>> =
         vec![&spend_item, &budget_item, &status_item];
     if let Some(ref c) = critical_item {
         items.push(c);
@@ -861,7 +861,7 @@ fn build_tray_menu(
 }
 
 /// Build the tray icon at startup. Left-click toggles pause.
-pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
+pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri::Error> {
     let menu = build_tray_menu(app, 0.0, 0.0, false, None)?;
     let icon = tauri::image::Image::from_bytes(ICON_GREEN)?;
     TrayIconBuilder::with_id("main")
@@ -885,7 +885,7 @@ pub fn build_tray(app: &AppHandle<Wry>) -> Result<(), tauri::Error> {
 }
 
 /// Show the main window and tell the UI which tab to activate.
-fn show_tab(app: &AppHandle<Wry>, tab: &str) {
+fn show_tab<R: Runtime>(app: &AppHandle<R>, tab: &str) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -901,8 +901,8 @@ fn now_ms() -> u64 {
 }
 
 /// Single left-click pauses/resumes; two quick left-clicks open the dashboard.
-fn handle_tray_left_click(app: &AppHandle<Wry>) {
-    let Some(state) = app.try_state::<Arc<AppState>>() else {
+fn handle_tray_left_click<R: Runtime>(app: &AppHandle<R>) {
+    let Some(state) = app.try_state::<Arc<AppState<R>>>() else {
         return;
     };
     let t = now_ms();
@@ -924,13 +924,13 @@ fn handle_tray_left_click(app: &AppHandle<Wry>) {
         loop {
             tokio::time::sleep(Duration::from_millis(50)).await;
             let (stable, count) = {
-                let state = app2.state::<Arc<AppState>>();
+                let state = app2.state::<Arc<AppState<R>>>();
                 let tray = state.tray_click.lock().unwrap();
                 let elapsed = now_ms().saturating_sub(tray.last_ms);
                 (elapsed > 250, tray.count)
             };
             if stable {
-                let state = app2.state::<Arc<AppState>>();
+                let state = app2.state::<Arc<AppState<R>>>();
                 let mut tray = state.tray_click.lock().unwrap();
                 tray.timer_running = false;
                 tray.count = 0;
@@ -947,12 +947,12 @@ fn handle_tray_left_click(app: &AppHandle<Wry>) {
 }
 
 /// Menu item click handler (registered in lib.rs).
-pub fn handle_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
+pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         "open" => show_tab(app, "dashboard"),
         "settings" => show_tab(app, "settings"),
         "pause" => {
-            if let Some(state) = app.try_state::<Arc<AppState>>() {
+            if let Some(state) = app.try_state::<Arc<AppState<R>>>() {
                 state.inner().toggle_pause();
             }
         }
