@@ -67,7 +67,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Check headless CLI build
-        run: cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard-cli
+        run: cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard
 
   bump-version:
     needs: test
@@ -184,7 +184,7 @@ jobs:
       - name: Build CLI binary
         shell: bash
         run: |
-          cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard-cli --release ${{ matrix.args }}
+          cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard --release ${{ matrix.args }}
 
       - name: Upload CLI binary to release
         shell: bash
@@ -197,12 +197,12 @@ jobs:
           else
             target_dir="src-tauri/target/release"
           fi
-          src="$target_dir/tokenguard-cli"
+          src="$target_dir/tokenguard"
           ext=""
           if [ "${{ runner.os }}" = "Windows" ]; then
             src="${src}.exe"
             ext=".exe"
           fi
-          asset="tokenguard-cli-${{ matrix.asset_suffix }}${ext}"
+          asset="tokenguard-${{ matrix.asset_suffix }}${ext}"
           cp "$src" "$asset"
           gh release upload "${{ github.event.inputs.tag }}" "$asset" --clobber

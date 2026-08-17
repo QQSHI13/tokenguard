@@ -1,5 +1,5 @@
 [package]
-name = "tokenguard"
+name = "tokenguard-desktop"
 version = "0.1.8"
 description = "Local LLM gateway — track every token, nothing leaves your machine."
 authors = ["QQSHI13"]
@@ -49,11 +49,11 @@ dirs = "5"
 anyhow = "1"
 
 [[bin]]
-name = "tokenguard"
+name = "tokenguard-desktop"
 path = "src/main.rs"
 
 [[bin]]
-name = "tokenguard-cli"
+name = "tokenguard"
 path = "src/bin/cli.rs"
 
 [features]

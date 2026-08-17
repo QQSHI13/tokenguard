@@ -9,6 +9,6 @@ fn main() {
 #[cfg(not(feature = "gui"))]
 fn main() {
     eprintln!("Token Guard was built without the GUI feature.");
-    eprintln!("Use the tokenguard-cli binary for headless operation.");
+    eprintln!("Use the tokenguard binary for headless operation.");
     std::process::exit(1);
 }

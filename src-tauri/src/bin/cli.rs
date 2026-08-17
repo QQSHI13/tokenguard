@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tokenguard_lib::backend;
 
 #[derive(Parser, Debug)]
-#[command(name = "tokenguard-cli")]
+#[command(name = "tokenguard")]
 #[command(about = "Headless Token Guard proxy server")]
 struct Args {
     /// Data directory for the SQLite database and exports.

@@ -75,6 +75,25 @@ OPENAI_BASE_URL=http://localhost:3742/v1
 OPENAI_API_KEY=<your-project-label-key>   # set this to a project's label key from Token Guard
 ```
 
+### Headless CLI
+
+You can run Token Guard without the GUI as a headless proxy:
+
+**macOS / Linux**
+```bash
+curl -fsSL https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cli.sh | bash
+```
+
+**Windows (PowerShell)**
+```powershell
+irm https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cli.ps1 | iex
+```
+
+Start the proxy:
+```bash
+tokenguard
+```
+
 ### Keychain note
 
 Token Guard stores API keys in the OS keychain:

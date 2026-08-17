@@ -58,11 +58,11 @@ case "$ARCH" in
 esac
 
 if [[ "$OS" == "windows" ]]; then
-  ASSET="tokenguard-cli-windows-${ARCH_SUFFIX}.exe"
-  BINARY="tokenguard-cli.exe"
+  ASSET="tokenguard-windows-${ARCH_SUFFIX}.exe"
+  BINARY="tokenguard.exe"
 else
-  ASSET="tokenguard-cli-${OS}-${ARCH_SUFFIX}"
-  BINARY="tokenguard-cli"
+  ASSET="tokenguard-${OS}-${ARCH_SUFFIX}"
+  BINARY="tokenguard"
 fi
 
 if [[ -z "$VERSION" ]]; then
