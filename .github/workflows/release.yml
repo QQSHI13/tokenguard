@@ -184,7 +184,12 @@ jobs:
       - name: Build CLI binary
         shell: bash
         run: |
-          cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard --release ${{ matrix.args }}
+          target="${{ matrix.target }}"
+          if [ -n "$target" ]; then
+            cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard --release --target "$target"
+          else
+            cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard --release
+          fi
 
       - name: Upload CLI binary to release
         shell: bash
