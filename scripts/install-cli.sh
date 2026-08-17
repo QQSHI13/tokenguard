@@ -66,7 +66,7 @@ else
 fi
 
 if [[ -z "$VERSION" ]]; then
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep -oP '"tag_name":\s*"\K[^"]+')
+  VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
   if [[ -z "$VERSION" ]]; then
     echo "Could not determine latest release" >&2
     exit 1
