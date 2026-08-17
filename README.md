@@ -72,7 +72,7 @@ client at `http://localhost:3742`:
 
 ```bash
 OPENAI_BASE_URL=http://localhost:3742/v1
-OPENAI_API_KEY=dummy   # ignored; the proxy injects your stored key
+OPENAI_API_KEY=<your-project-label-key>   # set this to a project's label key from Token Guard
 ```
 
 ### Keychain note
@@ -131,7 +131,7 @@ migrated to a global daily money limit.
 
 ## Status
 
-v0.1.7 — active development. Core proxy + model routing + SSE passthrough + logging +
+v0.1.8 — active development. Core proxy + model routing + SSE passthrough + logging +
 tray + limits + projects + provider health + license/device management. See `PRIVACY.md`
 for how user data is handled.
 

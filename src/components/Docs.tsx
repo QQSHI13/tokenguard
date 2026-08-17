@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useI18n } from "../i18n";
@@ -8,29 +8,30 @@ const DOCS_LANG: Record<string, string> = {
   "zh-CN": "zh",
 };
 
-// Import all markdown source files for each book.
-const enModules = import.meta.glob("../../docs/book-en/*.md", {
-  eager: true,
-  query: "?raw",
-  import: "default",
-}) as Record<string, string>;
-const zhModules = import.meta.glob("../../docs/book-zh/*.md", {
-  eager: true,
-  query: "?raw",
-  import: "default",
-}) as Record<string, string>;
+// Lazy module loaders for each language. Only the active language's chunks are
+// fetched at runtime, keeping the main bundle small.
+const enModules = import.meta.glob(
+  ["../../docs/book-en/*.md", "!**/SUMMARY.md"],
+  { query: "?raw", import: "default" },
+) as Record<string, () => Promise<string>>;
+const zhModules = import.meta.glob(
+  ["../../docs/book-zh/*.md", "!**/SUMMARY.md"],
+  { query: "?raw", import: "default" },
+) as Record<string, () => Promise<string>>;
+
+const moduleLoaders: Record<string, Record<string, () => Promise<string>>> = {
+  en: enModules,
+  zh: zhModules,
+};
 
 function modulesByFileName(modules: Record<string, string>) {
   return Object.fromEntries(
     Object.entries(modules).map(([path, content]) => {
       const name = path.split("/").pop() ?? path;
       return [name, content];
-    })
+    }),
   );
 }
-
-const enByName = modulesByFileName(enModules);
-const zhByName = modulesByFileName(zhModules);
 
 // SUMMARY.md files drive the table of contents.
 import summaryEnRaw from "../../docs/book-en/SUMMARY.md?raw";
@@ -59,14 +60,40 @@ export default function DocsTab({ onClose }: { onClose: () => void }) {
   const { lang, t } = useI18n();
   const docsLang = DOCS_LANG[lang] ?? "en";
   const summary = summaries[lang] ?? summaries.en;
-  const byName = docsLang === "zh" ? zhByName : enByName;
 
+  const [modules, setModules] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string>(summary[0]?.file ?? "");
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const loaders = moduleLoaders[docsLang] ?? moduleLoaders.en;
+    Promise.all(
+      Object.entries(loaders).map(async ([path, loader]) => {
+        const content = await loader();
+        return [path, content] as [string, string];
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setModules(Object.fromEntries(entries));
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [docsLang]);
+
+  const byName = useMemo(
+    () => modulesByFileName(modules),
+    [modules],
+  );
+
   const content = useMemo(() => {
+    if (loading) return t("working");
     if (!selected) return "";
     return byName[selected] ?? `*${t("noDataToChart")}*`;
-  }, [byName, selected, t]);
+  }, [byName, selected, loading, t]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/40">

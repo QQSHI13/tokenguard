@@ -34,13 +34,13 @@ impl LimitCounters {
         atomic_f64_add(entry.value(), delta)
     }
 
-    /// Release one previously reserved unit, clamping at zero so a double
+    /// Release a previously reserved amount, clamping at zero so a double
     /// release can never drive the counter negative. Returns the new value.
-    pub fn release(&self, limit_id: i64) -> f64 {
+    pub fn release(&self, limit_id: i64, amount: f64) -> f64 {
         let Some(entry) = self.counters.get(&limit_id) else {
             return 0.0;
         };
-        atomic_f64_sub_clamped(entry.value(), 1.0)
+        atomic_f64_sub_clamped(entry.value(), amount)
     }
 
     /// Read the current in-flight counter for a limit without modifying it.
@@ -119,7 +119,7 @@ mod tests {
         // (by the DB), never twice.
         let counters = LimitCounters::new();
         assert_eq!(counters.increment(1, 1.0), 1.0);
-        assert_eq!(counters.release(1), 0.0);
+        assert_eq!(counters.release(1, 1.0), 0.0);
         assert_eq!(counters.get(1), 0.0);
     }
 
@@ -130,7 +130,7 @@ mod tests {
         let counters = LimitCounters::new();
         for _ in 0..10 {
             counters.increment(1, 1.0);
-            counters.release(1);
+            counters.release(1, 1.0);
         }
         assert_eq!(counters.get(1), 0.0);
     }
@@ -139,11 +139,19 @@ mod tests {
     fn release_clamps_at_zero() {
         let counters = LimitCounters::new();
         // Release with no reservation at all.
-        assert_eq!(counters.release(1), 0.0);
+        assert_eq!(counters.release(1, 1.0), 0.0);
         // Double release after a single reservation.
         counters.increment(1, 1.0);
-        counters.release(1);
-        assert_eq!(counters.release(1), 0.0);
+        counters.release(1, 1.0);
+        assert_eq!(counters.release(1, 1.0), 0.0);
+        assert_eq!(counters.get(1), 0.0);
+    }
+
+    #[test]
+    fn token_rate_reservation_roundtrips_to_zero() {
+        let counters = LimitCounters::new();
+        assert_eq!(counters.increment(1, 150.0), 150.0);
+        assert_eq!(counters.release(1, 150.0), 0.0);
         assert_eq!(counters.get(1), 0.0);
     }
 

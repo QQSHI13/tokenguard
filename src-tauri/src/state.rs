@@ -122,8 +122,8 @@ pub struct LimitViolation {
 #[derive(Debug, Default)]
 pub struct LimitCheckResult {
     pub violations: Vec<LimitViolation>,
-    /// Limit ids reserved in the in-flight counters (keyed by limit id only).
-    pub reservations: Vec<i64>,
+    /// Limit ids and the amounts reserved in the in-flight counters.
+    pub reservations: Vec<(i64, f64)>,
 }
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
@@ -363,23 +363,29 @@ impl AppState {
 
             let persisted = db::usage_for_limit(&conn, limit).unwrap_or(0.0);
 
-            // For request-based limits, reserve one in the atomic counter first so
-            // concurrent requests see each other. The counter is keyed by limit id
-            // only and holds just in-flight reservations; the persisted DB count
-            // handles the time window. The caller releases the reservation exactly
-            // once per terminal outcome.
+            // For request-based limits and tokens-per-minute, reserve the expected
+            // amount in the atomic counter first so concurrent requests see each
+            // other. The counter is keyed by limit id only and holds just in-flight
+            // reservations; the persisted DB count handles the time window. The
+            // caller releases the reservation exactly once per terminal outcome.
             let (current, used) = if limit.metric == LimitMetric::Requests
                 || limit.metric == LimitMetric::RequestsPerMinute
             {
                 let reserved = self.limit_counters.increment(limit.id, 1.0);
-                result.reservations.push(limit.id);
+                result.reservations.push((limit.id, 1.0));
                 (1.0, persisted + reserved - 1.0)
+            } else if limit.metric == LimitMetric::TokensPerMinute {
+                let reserved = self.limit_counters.increment(limit.id, tokens as f64);
+                result.reservations.push((limit.id, tokens as f64));
+                (tokens as f64, persisted + reserved - tokens as f64)
             } else {
                 let current = match limit.metric {
                     LimitMetric::Money => cost,
-                    LimitMetric::Tokens | LimitMetric::TokensPerMinute => tokens as f64,
+                    LimitMetric::Tokens => tokens as f64,
                     LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
-                    LimitMetric::Requests | LimitMetric::RequestsPerMinute => unreachable!(),
+                    LimitMetric::Requests
+                    | LimitMetric::RequestsPerMinute
+                    | LimitMetric::TokensPerMinute => unreachable!(),
                 };
                 (current, persisted)
             };
@@ -573,9 +579,9 @@ impl AppState {
     /// the request is blocked/paused, or after the request is logged on
     /// success (the DB count then includes it, so the reservation is
     /// redundant). Releasing clamps at zero, never going negative.
-    pub fn release_request_limits(&self, reservations: &[i64]) {
-        for id in reservations {
-            self.limit_counters.release(*id);
+    pub fn release_request_limits(&self, reservations: &[(i64, f64)]) {
+        for (id, amount) in reservations {
+            self.limit_counters.release(*id, *amount);
         }
     }
 

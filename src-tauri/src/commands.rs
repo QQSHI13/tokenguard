@@ -370,8 +370,10 @@ fn preferred_lan_ip() -> Option<String> {
         })
         .collect();
 
-    // Prefer RFC1918 private addresses when multiple non-VPN interfaces exist.
-    candidates.sort_by_key(|(_, ip)| !is_private_lan(*ip));
+    // Only RFC1918 private addresses are suitable for LAN exposure. Fail closed
+    // (return None) if no private address is available, so the proxy URL falls
+    // back to 127.0.0.1 instead of advertising a public IP.
+    candidates.retain(|(_, ip)| is_private_lan(*ip));
 
     candidates.first().map(|(_, ip)| ip.to_string())
 }
@@ -949,19 +951,58 @@ pub fn get_logs_filtered(
 pub fn write_text_file(app: AppHandle, path: String, content: String) -> Result<(), String> {
     // The frontend only passes save-dialog paths; refuse anything outside the
     // user's home directory so the webview cannot overwrite arbitrary files.
+    // Also reject any symlink in the path so an in-home path cannot be
+    // redirected to a sensitive system file.
     let target = std::path::PathBuf::from(&path);
     let parent = target.parent().ok_or("invalid target path")?;
-    let canonical_parent = parent.canonicalize().map_err(|e| e.to_string())?;
+    if !parent.exists() {
+        return Err("target directory does not exist".into());
+    }
+    reject_symlink_components(&target)?;
+
     let home = app
         .path()
         .home_dir()
         .map_err(|e| e.to_string())?
         .canonicalize()
         .map_err(|e| e.to_string())?;
+    let canonical_parent = parent.canonicalize().map_err(|e| e.to_string())?;
     if !canonical_parent.starts_with(&home) {
         return Err("refusing to write outside the home directory".into());
     }
     std::fs::write(&target, content).map_err(|e| e.to_string())
+}
+
+/// Walk the supplied path without following symlinks. Reject it if any
+/// existing component is a symlink, which could re-point an in-home path to
+/// a file outside the home directory.
+fn reject_symlink_components(path: &std::path::Path) -> Result<(), String> {
+    let mut buf = std::path::PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::Prefix(p) => {
+                buf = std::path::PathBuf::from(p.as_os_str());
+                continue;
+            }
+            std::path::Component::RootDir => {
+                buf = std::path::PathBuf::from(std::path::MAIN_SEPARATOR_STR);
+                continue;
+            }
+            std::path::Component::CurDir => continue,
+            std::path::Component::ParentDir => {
+                buf.pop();
+                continue;
+            }
+            std::path::Component::Normal(name) => buf.push(name),
+        }
+        if buf.exists() {
+            let meta = std::fs::symlink_metadata(&buf).map_err(|e| e.to_string())?;
+            if meta.file_type().is_symlink() {
+                return Err(format!("path contains symlink: {}", buf.display()));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

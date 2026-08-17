@@ -665,7 +665,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     key: keyof typeof translations.en,
     vars?: Record<string, string | number>,
   ) => {
-    let s: string = translations[lang][key];
+    // Fall back to English when the current language is missing a key so the UI
+    // never crashes on a translation gap.
+    let s: string = (translations[lang][key] ?? translations.en[key]) as string;
     if (vars) {
       for (const [k, v] of Object.entries(vars)) {
         s = s.replaceAll(`{${k}}`, String(v));

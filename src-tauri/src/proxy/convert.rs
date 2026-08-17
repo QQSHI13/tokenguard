@@ -29,15 +29,33 @@ pub fn convert_request(
             openai_to_anthropic_request(body, remote_model)
         }
         (ProviderFormat::OpenAI, ProviderFormat::Google) => openai_to_google_request(body),
+        (ProviderFormat::OpenAI, ProviderFormat::Responses) => {
+            openai_to_responses_request(body, remote_model)
+        }
         (ProviderFormat::Anthropic, ProviderFormat::OpenAI) => {
             anthropic_to_openai_request(body, remote_model)
         }
         (ProviderFormat::Anthropic, ProviderFormat::Google) => anthropic_to_google_request(body),
+        (ProviderFormat::Anthropic, ProviderFormat::Responses) => {
+            openai_to_responses_request(&anthropic_to_openai_request(body, remote_model), remote_model)
+        }
         (ProviderFormat::Google, ProviderFormat::OpenAI) => {
             google_to_openai_request(body, remote_model)
         }
         (ProviderFormat::Google, ProviderFormat::Anthropic) => {
             google_to_anthropic_request(body, remote_model)
+        }
+        (ProviderFormat::Google, ProviderFormat::Responses) => {
+            openai_to_responses_request(&google_to_openai_request(body, remote_model), remote_model)
+        }
+        (ProviderFormat::Responses, ProviderFormat::OpenAI) => {
+            responses_to_openai_request(body, remote_model)
+        }
+        (ProviderFormat::Responses, ProviderFormat::Anthropic) => {
+            openai_to_anthropic_request(&responses_to_openai_request(body, remote_model), remote_model)
+        }
+        (ProviderFormat::Responses, ProviderFormat::Google) => {
+            openai_to_google_request(&responses_to_openai_request(body, remote_model))
         }
         _ => {
             let mut out = body.clone();
@@ -57,10 +75,24 @@ pub fn convert_response(from: ProviderFormat, to: ProviderFormat, body: &Value) 
     match (from, to) {
         (ProviderFormat::OpenAI, ProviderFormat::Anthropic) => openai_to_anthropic_response(body),
         (ProviderFormat::OpenAI, ProviderFormat::Google) => openai_to_google_response(body),
+        (ProviderFormat::OpenAI, ProviderFormat::Responses) => openai_to_responses_response(body),
         (ProviderFormat::Anthropic, ProviderFormat::OpenAI) => anthropic_to_openai_response(body),
         (ProviderFormat::Anthropic, ProviderFormat::Google) => anthropic_to_google_response(body),
+        (ProviderFormat::Anthropic, ProviderFormat::Responses) => {
+            openai_to_responses_response(&anthropic_to_openai_response(body))
+        }
         (ProviderFormat::Google, ProviderFormat::OpenAI) => google_to_openai_response(body),
         (ProviderFormat::Google, ProviderFormat::Anthropic) => google_to_anthropic_response(body),
+        (ProviderFormat::Google, ProviderFormat::Responses) => {
+            openai_to_responses_response(&google_to_openai_response(body))
+        }
+        (ProviderFormat::Responses, ProviderFormat::OpenAI) => responses_to_openai_response(body),
+        (ProviderFormat::Responses, ProviderFormat::Anthropic) => {
+            openai_to_anthropic_response(&responses_to_openai_response(body))
+        }
+        (ProviderFormat::Responses, ProviderFormat::Google) => {
+            openai_to_google_response(&responses_to_openai_response(body))
+        }
         _ => body.clone(),
     }
 }
@@ -80,6 +112,9 @@ pub fn error_envelope(format: ProviderFormat, status: u16, body: &[u8]) -> Value
         }),
         ProviderFormat::Google => serde_json::json!({
             "error": {"code": status, "message": message, "status": "UNKNOWN"},
+        }),
+        ProviderFormat::Responses => serde_json::json!({
+            "error": {"message": message, "type": "upstream_error", "code": status}
         }),
     }
 }
@@ -139,22 +174,36 @@ pub fn convert_sse_data(
 
     match (from, to) {
         (ProviderFormat::OpenAI, ProviderFormat::Anthropic) => openai_to_anthropic_sse_data(data),
+        (ProviderFormat::OpenAI, ProviderFormat::Google) => {
+            openai_to_google_sse_data(data).map(|v| (None, v))
+        }
+        (ProviderFormat::OpenAI, ProviderFormat::Responses) => {
+            openai_to_responses_sse_data(data).map(|v| (None, v))
+        }
         (ProviderFormat::Anthropic, ProviderFormat::OpenAI) => {
             anthropic_to_openai_sse_data(event, data)
         }
+        (ProviderFormat::Anthropic, ProviderFormat::Google) => {
+            anthropic_to_openai_sse_data(event, data)
+                .and_then(|(_, openai)| openai_to_google_sse_data(&openai).map(|v| (None, v)))
+        }
+        (ProviderFormat::Anthropic, ProviderFormat::Responses) => anthropic_to_openai_sse_data(event, data)
+            .and_then(|(_, openai)| openai_to_responses_sse_data(&openai).map(|v| (None, v))),
         (ProviderFormat::Google, ProviderFormat::OpenAI) => {
             google_to_openai_sse_data(data).map(|v| (None, v))
         }
         (ProviderFormat::Google, ProviderFormat::Anthropic) => {
             google_to_openai_sse_data(data).and_then(|openai| openai_to_anthropic_sse_data(&openai))
         }
-        (ProviderFormat::OpenAI, ProviderFormat::Google) => {
-            openai_to_google_sse_data(data).map(|v| (None, v))
+        (ProviderFormat::Google, ProviderFormat::Responses) => google_to_openai_sse_data(data)
+            .and_then(|openai| openai_to_responses_sse_data(&openai).map(|v| (None, v))),
+        (ProviderFormat::Responses, ProviderFormat::OpenAI) => {
+            responses_to_openai_sse_data(data).map(|v| (None, v))
         }
-        (ProviderFormat::Anthropic, ProviderFormat::Google) => {
-            anthropic_to_openai_sse_data(event, data)
-                .and_then(|(_, openai)| openai_to_google_sse_data(&openai).map(|v| (None, v)))
-        }
+        (ProviderFormat::Responses, ProviderFormat::Anthropic) => responses_to_openai_sse_data(data)
+            .and_then(|openai| openai_to_anthropic_sse_data(&openai)),
+        (ProviderFormat::Responses, ProviderFormat::Google) => responses_to_openai_sse_data(data)
+            .and_then(|openai| openai_to_google_sse_data(&openai).map(|v| (None, v))),
         _ => Some((event.map(str::to_string), data.clone())),
     }
 }
@@ -178,6 +227,7 @@ pub fn target_path(
     match to {
         ProviderFormat::OpenAI => "/v1/chat/completions".to_string(),
         ProviderFormat::Anthropic => "/v1/messages".to_string(),
+        ProviderFormat::Responses => "/v1/responses".to_string(),
         ProviderFormat::Google => {
             let suffix = if stream {
                 "streamGenerateContent"

@@ -10,6 +10,8 @@ pub enum ProviderFormat {
     Anthropic,
     #[serde(rename = "google")]
     Google,
+    #[serde(rename = "responses")]
+    Responses,
 }
 
 impl ProviderFormat {
@@ -18,12 +20,14 @@ impl ProviderFormat {
             Self::OpenAI => "openai",
             Self::Anthropic => "anthropic",
             Self::Google => "google",
+            Self::Responses => "responses",
         }
     }
     pub fn from_db_str(s: &str) -> Self {
         match s {
             "anthropic" => Self::Anthropic,
             "google" => Self::Google,
+            "responses" => Self::Responses,
             _ => Self::OpenAI,
         }
     }

@@ -45,7 +45,7 @@ fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/v1/chat/completions", post(handle_openai))
         .route("/v1/completions", post(handle_openai))
-        .route("/v1/responses", post(handle_openai))
+        .route("/v1/responses", post(handle_responses))
         .route("/v1/messages", post(handle_anthropic))
         .route("/v1beta/{*path}", get(handle_google))
         .route("/v1beta/{*path}", post(handle_google))
@@ -55,6 +55,10 @@ fn router(state: Arc<AppState>) -> Router {
 
 async fn handle_openai(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
     handle(ProviderFormat::OpenAI, state, req, None).await
+}
+
+async fn handle_responses(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
+    handle(ProviderFormat::Responses, state, req, None).await
 }
 
 async fn handle_anthropic(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {
