@@ -82,21 +82,63 @@ OPENAI_API_KEY=<your-project-label-key>   # set this to a project's label key fr
 
 ### Headless CLI
 
-You can run Token Guard without the GUI as a headless proxy:
+Token Guard also ships as a full command-line tool. Install it without the GUI:
 
 **macOS / Linux**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cli.sh | bash
+# latest beta:
+curl -fsSL .../install-cli.sh | bash -s -- --beta
 ```
 
 **Windows (PowerShell)**
 ```powershell
 irm https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cli.ps1 | iex
+# latest beta:
+irm .../install-cli.ps1 | iex "& { $() } -Beta"
 ```
 
 Start the proxy:
 ```bash
 tokenguard
+```
+
+Administer providers, projects, limits, and settings from the terminal:
+
+```bash
+# status
+tokenguard status
+
+# providers
+tokenguard provider list
+tokenguard provider add openai https://api.openai.com/v1 openai --key $OPENAI_KEY --default
+tokenguard provider update 1 --base-url https://new-endpoint.example/v1
+tokenguard provider key openai set $OPENAI_KEY
+tokenguard provider health
+
+# projects
+tokenguard project list
+tokenguard project add my-app tg-myapp
+
+# limits
+tokenguard limit list
+tokenguard limit add "daily-tokens" tokens 1000000 --action pause
+tokenguard limit update 1 --cap 2000000 --enabled true
+
+# settings
+tokenguard settings show
+tokenguard settings set-port 3742
+tokenguard settings set-expose-to-lan true
+
+# license
+tokenguard license show
+tokenguard license activate XXXX-XXXX-XXXX-XXXX
+
+# usage, logs, backup
+tokenguard usage monthly
+tokenguard usage provider openai --days 7
+tokenguard logs export --output usage.csv
+tokenguard backup create ./tokenguard-$(date +%F).db
 ```
 
 ### Keychain note
