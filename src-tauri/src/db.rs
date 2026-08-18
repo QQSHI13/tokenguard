@@ -1129,6 +1129,9 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
             })
         })
         .unwrap_or(240);
+    let beta_channel = get_setting(conn, "beta_channel")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     Ok(Config {
         providers,
         projects,
@@ -1142,6 +1145,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         log_retention_days,
         expose_to_lan,
         auto_update_interval_minutes,
+        beta_channel,
     })
 }
 

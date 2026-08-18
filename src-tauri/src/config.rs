@@ -380,6 +380,7 @@ pub struct Config {
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
     pub auto_update_interval_minutes: u32,
+    pub beta_channel: bool,
 }
 
 impl Default for Config {
@@ -397,6 +398,7 @@ impl Default for Config {
             log_retention_days: 0,
             expose_to_lan: false,
             auto_update_interval_minutes: 240,
+            beta_channel: false,
         }
     }
 }

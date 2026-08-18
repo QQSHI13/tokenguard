@@ -704,6 +704,23 @@ pub fn set_auto_update_interval_minutes(
 }
 
 #[tauri::command]
+pub fn set_beta_channel(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<bool, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "beta_channel", if enabled { "1" } else { "0" })
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .beta_channel = enabled;
+    Ok(enabled)
+}
+
+#[tauri::command]
 pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;

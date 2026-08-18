@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 const REPO: &str = "QQSHI13/tokenguard";
 
-pub async fn check() -> Result<()> {
-    let latest = latest_release(false).await?;
-    let latest_tag = latest["tag_name"].as_str().unwrap_or("unknown");
+pub async fn check(beta: bool) -> Result<()> {
+    let release = latest_release(beta).await?;
+    let latest_tag = release["tag_name"].as_str().unwrap_or("unknown");
     let current = env!("CARGO_PKG_VERSION");
     println!("Current version: v{current}");
     println!("Latest release:  {latest_tag}");
@@ -20,8 +20,8 @@ pub async fn check() -> Result<()> {
     Ok(())
 }
 
-pub async fn download(output: PathBuf) -> Result<()> {
-    let release = latest_release(true).await?;
+pub async fn download(output: PathBuf, beta: bool) -> Result<()> {
+    let release = latest_release(beta).await?;
     let tag = release["tag_name"].as_str().context("release tag_name")?;
     let asset = release["assets"]
         .as_array()
@@ -66,7 +66,6 @@ pub async fn download(output: PathBuf) -> Result<()> {
 async fn latest_release(include_prerelease: bool) -> Result<serde_json::Value> {
     let client = reqwest::Client::new();
     if include_prerelease {
-        // List releases and pick the newest (GitHub returns them newest-first).
         let releases = client
             .get(format!("https://api.github.com/repos/{REPO}/releases"))
             .header("User-Agent", "tokenguard-cli")
@@ -96,7 +95,6 @@ async fn latest_release(include_prerelease: bool) -> Result<serde_json::Value> {
 fn asset_name() -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
-    // Match naming convention used in .github/workflows/release.yml.
     format!("tokenguard-{}-{}", os, arch)
 }
 

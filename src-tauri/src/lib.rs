@@ -111,6 +111,7 @@ pub fn run() {
             commands::get_auto_start,
             commands::set_auto_start,
             commands::set_auto_update_interval_minutes,
+            commands::set_beta_channel,
             commands::set_onboarding_completed,
         ])
         .setup(|app| {

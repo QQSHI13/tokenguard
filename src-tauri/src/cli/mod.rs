@@ -3,12 +3,13 @@
 use crate::backend;
 use crate::notifier::Notifier;
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 mod backup;
 mod health;
+mod interactive;
 mod license;
 mod limits;
 mod logs;
@@ -43,7 +44,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
-    /// Start the local proxy gateway (default if no command is given).
+    /// Start the local proxy gateway.
     Start {
         /// Override the port stored in the database.
         #[arg(short, long, env = "TOKENGUARD_PORT")]
@@ -72,7 +73,7 @@ enum Commands {
     /// License activation.
     #[command(subcommand)]
     License(LicenseCommands),
-    /// Check for updates.
+    /// Check for updates (requires a license).
     Update {
         #[command(subcommand)]
         command: Option<UpdateCommands>,
@@ -114,25 +115,27 @@ enum ProxyCommands {
 enum ProviderCommands {
     /// List configured providers.
     List,
-    /// Add a new provider.
+    /// Add a new provider (interactive if options omitted).
     Add {
         /// Provider name.
-        name: String,
+        #[arg(short, long)]
+        name: Option<String>,
         /// Base URL, e.g. https://api.openai.com/v1.
-        base_url: String,
+        #[arg(short, long)]
+        base_url: Option<String>,
         /// API format: openai, anthropic, google, responses.
-        format: String,
+        #[arg(short, long)]
+        format: Option<String>,
         /// API key for the provider.
         #[arg(short, long)]
-        key: String,
+        key: Option<String>,
         /// Authentication scheme.
-        #[arg(short, long, default_value = "bearer")]
-        auth: String,
+        #[arg(short, long)]
+        auth: Option<String>,
         /// Make this the default provider for its format family.
         #[arg(long)]
         default: bool,
         /// Model mapping as local=remote:cost_in:cost_out:cost_cached.
-        /// Example: gpt-4o=gpt-4o:5.0:15.0:2.5
         #[arg(short, long = "model")]
         models: Vec<String>,
         /// Fallback provider ID.
@@ -152,7 +155,7 @@ enum ProviderCommands {
         /// Provider name.
         name: String,
         /// API key.
-        key: String,
+        key: Option<String>,
     },
     /// Delete the stored API key for a provider.
     DeleteKey {
@@ -205,21 +208,23 @@ enum ProviderCommands {
 enum ProjectCommands {
     /// List configured projects.
     List,
-    /// Add a new project.
+    /// Add a new project (interactive if options omitted).
     Add {
         /// Project name.
-        name: String,
+        #[arg(short, long)]
+        name: Option<String>,
         /// Label key used by clients.
-        label_key: String,
+        #[arg(short, long)]
+        label_key: Option<String>,
         /// Budget cap (0 disables).
-        #[arg(short, long, default_value = "0")]
-        budget: f64,
+        #[arg(short, long)]
+        budget: Option<f64>,
         /// Budget period: daily, weekly, monthly.
-        #[arg(long, default_value = "daily")]
-        budget_period: String,
+        #[arg(long)]
+        budget_period: Option<String>,
         /// Action when budget exceeded: warn, block, pause.
-        #[arg(long, default_value = "warn")]
-        budget_action: String,
+        #[arg(long)]
+        budget_action: Option<String>,
     },
     /// Delete a project by ID.
     Delete {
@@ -234,26 +239,29 @@ enum LimitCommands {
     List,
     /// Show current limit status (used vs cap).
     Status,
-    /// Add a new limit.
+    /// Add a new limit (interactive if options omitted).
     Add {
         /// Limit name.
-        name: String,
+        #[arg(short, long)]
+        name: Option<String>,
         /// Metric: money, tokens, requests, time, rpm, tpm.
-        metric: String,
+        #[arg(short, long)]
+        metric: Option<String>,
         /// Cap value.
-        cap: f64,
+        #[arg(short, long)]
+        cap: Option<f64>,
         /// Action when exceeded: warn, block, pause.
-        #[arg(default_value = "warn")]
-        action: String,
+        #[arg(short, long)]
+        action: Option<String>,
         /// Period: once, hourly, daily, weekly, monthly, or custom_sec:<seconds>.
-        #[arg(short, long, default_value = "daily")]
-        period: String,
+        #[arg(short, long)]
+        period: Option<String>,
         /// Warning threshold as a ratio (0.0-1.0).
-        #[arg(short, long, default_value = "0.8")]
-        warning_threshold: f64,
+        #[arg(long)]
+        warning_threshold: Option<f64>,
         /// Scope: global, provider, project.
-        #[arg(short, long, default_value = "global")]
-        scope: String,
+        #[arg(short, long)]
+        scope: Option<String>,
         /// Scope ID when scope is provider or project.
         #[arg(long)]
         scope_id: Option<i64>,
@@ -264,8 +272,8 @@ enum LimitCommands {
         #[arg(long)]
         active_hours_end: Option<String>,
         /// Active days bitmask (bit 0 = Monday .. bit 6 = Sunday). 127 = all days.
-        #[arg(long, default_value = "127")]
-        active_days: u8,
+        #[arg(long)]
+        active_days: Option<u8>,
         /// Disable the limit on creation.
         #[arg(long)]
         disabled: bool,
@@ -325,7 +333,10 @@ enum SettingsCommands {
     /// Set proxy port.
     SetPort { port: u16 },
     /// Expose proxy to LAN.
-    SetExposeToLan { expose: bool },
+    SetExposeToLan {
+        #[arg(value_name = "true|false", action = clap::ArgAction::Set)]
+        expose: bool,
+    },
     /// Set global budget.
     SetBudget { budget: f64 },
     /// Set log retention in days (0 disables cleanup).
@@ -343,6 +354,11 @@ enum SettingsCommands {
     CleanupLogs,
     /// Set auto-update check interval in minutes (0 disables).
     SetAutoUpdateInterval { minutes: u32 },
+    /// Opt into beta/pre-release updates.
+    SetBetaChannel {
+        #[arg(value_name = "true|false", action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     /// Mark onboarding as completed.
     CompleteOnboarding,
 }
@@ -359,8 +375,11 @@ enum AutoExportCommands {
 enum LicenseCommands {
     /// Show current license status.
     Show,
-    /// Activate with a license key.
-    Activate { key: String },
+    /// Activate with a license key (interactive if omitted).
+    Activate {
+        #[arg(short, long)]
+        key: Option<String>,
+    },
     /// Deactivate the current license.
     Deactivate,
     /// Print this device fingerprint.
@@ -372,12 +391,19 @@ enum LicenseCommands {
 #[derive(Subcommand, Debug)]
 enum UpdateCommands {
     /// Check for the latest release.
-    Check,
+    Check {
+        /// Include pre-releases / beta versions.
+        #[arg(long)]
+        beta: bool,
+    },
     /// Download the latest CLI binary for this platform.
     Download {
         /// Output path for the downloaded binary.
         #[arg(short, long, default_value = "tokenguard.new")]
         output: PathBuf,
+        /// Include pre-releases / beta versions.
+        #[arg(long)]
+        beta: bool,
     },
 }
 
@@ -492,29 +518,58 @@ pub async fn run() -> Result<()> {
         let _ = tracing_subscriber::fmt().try_init();
     }
 
-    match cli.command.unwrap_or(Commands::Start {
-        port: None,
-        expose_to_lan: false,
-    }) {
-        Commands::Start {
+    match cli.command {
+        Some(Commands::Start {
             port,
             expose_to_lan,
-        } => start(cli.data_dir, port, expose_to_lan).await,
-        Commands::Status => status(cli.data_dir).await,
-        Commands::Proxy(cmd) => proxy_cmd(cli.data_dir, cmd).await,
-        Commands::Provider(cmd) => provider(cli.data_dir, cmd).await,
-        Commands::Project(cmd) => project(cli.data_dir, cmd).await,
-        Commands::Limit(cmd) => limit(cli.data_dir, cmd).await,
-        Commands::Settings(cmd) => settings(cli.data_dir, cmd).await,
-        Commands::License(cmd) => license_cmd(cmd).await,
-        Commands::Update { command } => update_cmd(command).await,
-        Commands::Backup(cmd) => backup(cli.data_dir, cmd).await,
-        Commands::Logs(cmd) => logs(cli.data_dir, cmd).await,
-        Commands::Health { name } => health_check(cli.data_dir, name).await,
-        Commands::Usage(cmd) => usage(cli.data_dir, cmd).await,
-        Commands::Models => models_cmd(cli.data_dir).await,
-        Commands::Secrets { command } => secrets_cmd(command).await,
+        }) => start(cli.data_dir, port, expose_to_lan).await,
+        Some(Commands::Status) => status(cli.data_dir).await,
+        Some(Commands::Proxy(cmd)) => proxy_cmd(cli.data_dir, cmd).await,
+        Some(Commands::Provider(cmd)) => provider(cli.data_dir, cmd).await,
+        Some(Commands::Project(cmd)) => project(cli.data_dir, cmd).await,
+        Some(Commands::Limit(cmd)) => limit(cli.data_dir, cmd).await,
+        Some(Commands::Settings(cmd)) => settings(cli.data_dir, cmd).await,
+        Some(Commands::License(cmd)) => license_cmd(cmd).await,
+        Some(Commands::Update { command }) => update_cmd(command).await,
+        Some(Commands::Backup(cmd)) => backup(cli.data_dir, cmd).await,
+        Some(Commands::Logs(cmd)) => logs(cli.data_dir, cmd).await,
+        Some(Commands::Health { name }) => health_check(cli.data_dir, name).await,
+        Some(Commands::Usage(cmd)) => usage(cli.data_dir, cmd).await,
+        Some(Commands::Models) => models_cmd(cli.data_dir).await,
+        Some(Commands::Secrets { command }) => secrets_cmd(command).await,
+        None => {
+            show_help_and_banner();
+            Ok(())
+        }
     }
+}
+
+fn show_help_and_banner() {
+    print_banner();
+    let mut cmd = Cli::command();
+    cmd.print_help().unwrap();
+    println!();
+    println!();
+    println!("Quick start:");
+    println!("  tokenguard start              # launch the headless proxy");
+    println!("  tokenguard status             # show status");
+    println!("  tokenguard provider add       # interactive provider setup");
+    println!("  tokenguard license activate   # activate your license");
+}
+
+fn print_banner() {
+    let licensed = crate::secrets::get("license").is_ok();
+    println!("┌──────────────────────────────────────────────┐");
+    println!("│  Token Guard — local LLM gateway & tracker   │");
+    println!("│  v{:<43}│", env!("CARGO_PKG_VERSION"));
+    if !licensed {
+        println!("│                                              │");
+        println!("│  UNLICENSED — some features are restricted.  │");
+        println!("│  Run `tokenguard license activate` to unlock │");
+        println!("│  updates, device management, and more.       │");
+    }
+    println!("└──────────────────────────────────────────────┘");
+    println!();
 }
 
 async fn start(data_dir: Option<PathBuf>, port: Option<u16>, expose_to_lan: bool) -> Result<()> {
@@ -564,6 +619,7 @@ async fn status(data_dir: Option<PathBuf>) -> Result<()> {
     let spend = state.today_spend();
     let paused = state.paused.load(std::sync::atomic::Ordering::Relaxed);
     let cfg = state.config.read().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let licensed = crate::secrets::get("license").is_ok();
     println!("Token Guard status");
     println!("  version: {}", env!("CARGO_PKG_VERSION"));
     println!(
@@ -576,6 +632,7 @@ async fn status(data_dir: Option<PathBuf>) -> Result<()> {
     println!("  providers: {}", cfg.providers.len());
     println!("  projects: {}", cfg.projects.len());
     println!("  limits: {}", cfg.limits.len());
+    println!("  licensed: {}", licensed);
     Ok(())
 }
 
@@ -612,20 +669,27 @@ async fn provider(data_dir: Option<PathBuf>, cmd: ProviderCommands) -> Result<()
             models,
             fallback_id,
             extra_headers,
-        } => providers::add(
-            &state,
-            name,
-            base_url,
-            format,
-            key,
-            auth,
-            default,
-            models,
-            fallback_id,
-            extra_headers,
-        ),
+        } => {
+            let (name, base_url, format, key, auth) =
+                interactive::provider_prompt(name, base_url, format, key, auth)?;
+            providers::add(
+                &state,
+                name,
+                base_url,
+                format,
+                key,
+                auth,
+                default,
+                models,
+                fallback_id,
+                extra_headers,
+            )
+        }
         ProviderCommands::Delete { id } => providers::delete(&state, id),
-        ProviderCommands::SetKey { name, key } => providers::set_key(&state, name, key),
+        ProviderCommands::SetKey { name, key } => {
+            let key = interactive::prompt_optional_secret("API key", key)?;
+            providers::set_key(&state, name, key)
+        }
         ProviderCommands::DeleteKey { name } => providers::delete_key(&state, name),
         ProviderCommands::Update {
             id,
@@ -667,14 +731,18 @@ async fn project(data_dir: Option<PathBuf>, cmd: ProjectCommands) -> Result<()> 
             budget,
             budget_period,
             budget_action,
-        } => projects::add(
-            &state,
-            name,
-            label_key,
-            budget,
-            budget_period,
-            budget_action,
-        ),
+        } => {
+            let (name, label_key, budget, budget_period, budget_action) =
+                interactive::project_prompt(name, label_key, budget, budget_period, budget_action)?;
+            projects::add(
+                &state,
+                name,
+                label_key,
+                budget,
+                budget_period,
+                budget_action,
+            )
+        }
         ProjectCommands::Delete { id } => projects::delete(&state, id),
     }
 }
@@ -697,21 +765,48 @@ async fn limit(data_dir: Option<PathBuf>, cmd: LimitCommands) -> Result<()> {
             active_hours_end,
             active_days,
             disabled,
-        } => limits::add(
-            &state,
-            name,
-            metric,
-            cap,
-            action,
-            period,
-            warning_threshold,
-            scope,
-            scope_id,
-            active_hours_start,
-            active_hours_end,
-            active_days,
-            !disabled,
-        ),
+        } => {
+            let (
+                name,
+                metric,
+                cap,
+                action,
+                period,
+                warning_threshold,
+                scope,
+                scope_id,
+                active_hours_start,
+                active_hours_end,
+                active_days,
+            ) = interactive::limit_prompt(
+                name,
+                metric,
+                cap,
+                action,
+                period,
+                warning_threshold,
+                scope,
+                scope_id,
+                active_hours_start,
+                active_hours_end,
+                active_days,
+            )?;
+            limits::add(
+                &state,
+                name,
+                metric,
+                cap,
+                action,
+                period,
+                warning_threshold,
+                scope,
+                scope_id,
+                active_hours_start,
+                active_hours_end,
+                active_days,
+                !disabled,
+            )
+        }
         LimitCommands::Update {
             id,
             name,
@@ -766,6 +861,7 @@ async fn settings(data_dir: Option<PathBuf>, cmd: SettingsCommands) -> Result<()
         SettingsCommands::SetAutoUpdateInterval { minutes } => {
             settings::set_auto_update_interval(&state, minutes)
         }
+        SettingsCommands::SetBetaChannel { enabled } => settings::set_beta_channel(&state, enabled),
         SettingsCommands::CompleteOnboarding => settings::complete_onboarding(&state),
     }
 }
@@ -773,7 +869,10 @@ async fn settings(data_dir: Option<PathBuf>, cmd: SettingsCommands) -> Result<()
 async fn license_cmd(cmd: LicenseCommands) -> Result<()> {
     match cmd {
         LicenseCommands::Show => license::show(),
-        LicenseCommands::Activate { key } => license::activate(key),
+        LicenseCommands::Activate { key } => {
+            let key = interactive::prompt_optional_secret("License key", key)?;
+            license::activate(key)
+        }
         LicenseCommands::Deactivate => license::deactivate(),
         LicenseCommands::Fingerprint => license::fingerprint(),
         LicenseCommands::Devices => license::devices().await,
@@ -781,9 +880,20 @@ async fn license_cmd(cmd: LicenseCommands) -> Result<()> {
 }
 
 async fn update_cmd(command: Option<UpdateCommands>) -> Result<()> {
-    match command.unwrap_or(UpdateCommands::Check) {
-        UpdateCommands::Check => update::check().await,
-        UpdateCommands::Download { output } => update::download(output).await,
+    require_license()?;
+    match command.unwrap_or(UpdateCommands::Check { beta: false }) {
+        UpdateCommands::Check { beta } => update::check(beta).await,
+        UpdateCommands::Download { output, beta } => update::download(output, beta).await,
+    }
+}
+
+fn require_license() -> Result<()> {
+    match crate::secrets::get("license") {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            print_banner();
+            anyhow::bail!("update requires an active license. Run `tokenguard license activate`.");
+        }
     }
 }
 

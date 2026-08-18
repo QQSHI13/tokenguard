@@ -98,12 +98,13 @@ irm https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cl
 irm .../install-cli.ps1 | iex "& { $() } -Beta"
 ```
 
-Start the proxy:
+Run the proxy (or see help by running `tokenguard` alone):
 ```bash
-tokenguard
+tokenguard start
 ```
 
-Administer providers, projects, limits, and settings from the terminal:
+The CLI is interactive: run a command without the required options and it will
+prompt you. You can still script everything with explicit flags.
 
 ```bash
 # status
@@ -114,10 +115,9 @@ tokenguard proxy pause
 tokenguard proxy resume
 tokenguard proxy toggle
 
-# providers
-tokenguard provider list
-tokenguard provider add openai https://api.openai.com/v1 openai \
-  --key $OPENAI_KEY --auth bearer --default \
+# providers (interactive: tokenguard provider add)
+tokenguard provider add --name openai --base-url https://api.openai.com/v1 \
+  --format openai --key $OPENAI_KEY --auth bearer --default \
   --model gpt-4o=gpt-4o:5.0:15.0
 tokenguard provider update 1 --base-url https://new-endpoint.example/v1
 tokenguard provider set-key openai $OPENAI_KEY
@@ -125,21 +125,21 @@ tokenguard provider refresh-models 1
 tokenguard models
 tokenguard health
 
-# projects
-tokenguard project list
-tokenguard project add my-app tg-myapp --budget 10 --budget-period daily --budget-action pause
+# projects (interactive: tokenguard project add)
+tokenguard project add --name my-app --label-key tg-myapp \
+  --budget 10 --budget-period daily --budget-action pause
 
-# limits
-tokenguard limit list
+# limits (interactive: tokenguard limit add)
+tokenguard limit add --name "daily-tokens" --metric tokens --cap 1000000 \
+  --action pause --period daily --warning-threshold 0.9 --scope global
 tokenguard limit status
-tokenguard limit add "daily-tokens" tokens 1000000 pause \
-  --period daily --warning-threshold 0.9 --scope global
 tokenguard limit update 1 --cap 2000000 --enabled true
 
 # settings
 tokenguard settings show
 tokenguard settings set-port 3742
 tokenguard settings set-expose-to-lan true
+tokenguard settings set-beta-channel true
 tokenguard settings set-log-retention 30
 tokenguard settings cleanup-logs
 tokenguard settings auto-export set 7 /path/to/exports
@@ -152,9 +152,13 @@ tokenguard license activate XXXX-XXXX-XXXX-XXXX
 tokenguard license fingerprint
 tokenguard license devices
 
-# update, usage, logs, backup
+# update (requires license; --beta for pre-releases)
 tokenguard update check
+tokenguard update check --beta
 tokenguard update download --output ./tokenguard.new
+tokenguard update download --beta --output ./tokenguard.new
+
+# usage, logs, backup
 tokenguard usage monthly
 tokenguard usage provider openai --days 7
 tokenguard logs export --output usage.csv --days 30

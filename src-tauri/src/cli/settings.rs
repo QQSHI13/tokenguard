@@ -27,6 +27,7 @@ pub fn show(state: &Arc<AppState>) -> Result<()> {
         "  auto_update_interval_minutes: {}",
         cfg.auto_update_interval_minutes
     );
+    println!("  beta_channel: {}", cfg.beta_channel);
     println!(
         "  proxy_paused: {}",
         state.paused.load(std::sync::atomic::Ordering::Relaxed)
@@ -134,6 +135,15 @@ pub fn set_auto_update_interval(state: &Arc<AppState>, minutes: u32) -> Result<(
         |cfg| cfg.auto_update_interval_minutes = minutes,
     )?;
     println!("Set auto_update_interval_minutes to {}", minutes);
+    Ok(())
+}
+
+pub fn set_beta_channel(state: &Arc<AppState>, enabled: bool) -> Result<()> {
+    let value = if enabled { "1" } else { "0" };
+    set_and_update(state, "beta_channel", value, |cfg| {
+        cfg.beta_channel = enabled
+    })?;
+    println!("Set beta_channel to {}", enabled);
     Ok(())
 }
 

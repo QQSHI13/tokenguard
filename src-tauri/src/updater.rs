@@ -60,19 +60,42 @@ fn linux_package_family() -> &'static str {
 
 #[tauri::command]
 pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let beta_channel = app
+        .try_state::<std::sync::Arc<crate::state::AppState>>()
+        .and_then(|s| s.config.read().ok().map(|c| c.beta_channel))
+        .unwrap_or(false);
+
     let client = reqwest::Client::new();
-    let resp = client
-        .get(format!(
-            "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        ))
-        .header("User-Agent", "tokenguard")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned {}", resp.status()));
-    }
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let json = if beta_channel {
+        let releases = client
+            .get(format!(
+                "https://api.github.com/repos/{GITHUB_REPO}/releases"
+            ))
+            .header("User-Agent", "tokenguard")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| e.to_string())?;
+        releases
+            .as_array()
+            .and_then(|arr| arr.first().cloned())
+            .ok_or("no releases found")?
+    } else {
+        let resp = client
+            .get(format!(
+                "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            ))
+            .header("User-Agent", "tokenguard")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("GitHub API returned {}", resp.status()));
+        }
+        resp.json().await.map_err(|e| e.to_string())?
+    };
 
     let tag_name = json["tag_name"]
         .as_str()

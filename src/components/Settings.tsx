@@ -19,6 +19,7 @@ type Settings = {
   log_retention_days: number;
   expose_to_lan: boolean;
   auto_update_interval_minutes: number;
+  beta_channel: boolean;
 } | null;
 
 export default function SettingsTab({
@@ -48,6 +49,7 @@ export default function SettingsTab({
   const [retentionDays, setRetentionDays] = useState(String(settings?.log_retention_days ?? 0));
   const [retentionStatus, setRetentionStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [backupStatus, setBackupStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [betaChannel, setBetaChannel] = useState(settings?.beta_channel ?? false);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion(null));
@@ -76,6 +78,10 @@ export default function SettingsTab({
     setExposeToLan(settings?.expose_to_lan ?? false);
   }, [settings?.expose_to_lan]);
 
+  useEffect(() => {
+    setBetaChannel(settings?.beta_channel ?? false);
+  }, [settings?.beta_channel]);
+
   const handleExposeToLanChange = async (enabled: boolean) => {
     try {
       await invoke("set_expose_to_lan", { enabled });
@@ -93,6 +99,16 @@ export default function SettingsTab({
       setAutoStartStatus(t("autoStartSaved"));
     } catch (e) {
       setAutoStartStatus(String(e));
+    }
+  };
+
+  const handleBetaChannelChange = async (enabled: boolean) => {
+    try {
+      await invoke("set_beta_channel", { enabled });
+      setBetaChannel(enabled);
+      onChanged();
+    } catch (e) {
+      alert(String(e));
     }
   };
 
@@ -316,6 +332,19 @@ export default function SettingsTab({
             {autoStartStatus}
           </p>
         )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+        <h2 className="text-sm font-semibold">{t("updateChannel")}</h2>
+        <p className="mt-1 text-[11px] text-neutral-500">{t("updateChannelHelp")}</p>
+        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+          <input
+            type="checkbox"
+            checked={betaChannel}
+            onChange={(e) => handleBetaChannelChange(e.target.checked)}
+          />
+          {t("betaChannel")}
+        </label>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

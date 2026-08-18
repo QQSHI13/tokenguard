@@ -26,6 +26,7 @@ type Settings = {
   log_retention_days: number;
   expose_to_lan: boolean;
   auto_update_interval_minutes: number;
+  beta_channel: boolean;
 };
 type Spend = { today: number; budget: number };
 
