@@ -1,5 +1,6 @@
 //! Provider configuration & routing types.
 
+use crate::cost::PricingProfile;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,17 +64,14 @@ impl AuthScheme {
 
 /// Mapping between the model name the user sees/sends locally and the model
 /// name the remote provider expects. Both default to the same value when not
-/// explicitly configured.
+/// explicitly configured. All pricing dimensions are optional and override the
+/// built-in pricing table when set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMapping {
     pub local: String,
     pub remote: String,
-    #[serde(default)]
-    pub input_cost_per_1k: Option<f64>,
-    #[serde(default)]
-    pub output_cost_per_1k: Option<f64>,
-    #[serde(default)]
-    pub cached_input_cost_per_1k: Option<f64>,
+    #[serde(flatten)]
+    pub pricing: PricingProfile,
 }
 
 /// A configured LLM provider. The API key is *never* stored in this struct or

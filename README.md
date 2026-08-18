@@ -38,7 +38,9 @@ and records only metadata (tokens, model, cost) to a local SQLite database.
   days; choose warn, block, or pause on breach.
 - **Real-time cost tracking.** Per-project, per-provider, per-model spend with a
   local SQLite history. Built-in pricing table plus per-model overrides; no network
-  calls to look up prices.
+  calls to look up prices. Supports context-window tiers, UTC peak/off-peak
+  windows, cached-input discounts, reasoning-token pricing, batch discounts,
+  and flat request fees.
 - **GUI + CLI, same engine.** Configure everything in the desktop tray app or run
   headless with the `tokenguard` CLI. Both use the same Rust backend and the same
   local database.
@@ -227,10 +229,22 @@ from PowerShell or CMD on Windows.
 
 ## Cost accuracy
 
-Cost estimates use a small, built-in pricing table for common models. Provider
-pricing changes frequently, so the estimate may drift until you set the exact
-input/output price per provider in **Settings**. Token Guard never fetches
-pricing from the internet.
+Cost estimates use a built-in pricing table (`pricing.json`) that is embedded
+into the binary at build time. The table supports several real-world pricing
+dimensions:
+
+- **Context-window tiers** — e.g. Gemini Pro's cheaper rate for prompts up to
+  200K tokens and a higher rate above it.
+- **UTC peak / off-peak windows** — e.g. DeepSeek V4 Flash is 2× during peak
+  hours (01:00–04:00 and 06:00–10:00 UTC) and half price at other times.
+- **Cached-input discounts** and **reasoning-token pricing** extracted from
+  provider SSE streams.
+- **Batch discounts** and **flat request fees** for per-image or minimum
+  charges.
+
+Provider pricing changes frequently, so the estimate may drift until you set
+exact per-model prices in **Settings**. Token Guard never fetches pricing from
+the internet at runtime.
 
 ## Limits & subscriptions
 

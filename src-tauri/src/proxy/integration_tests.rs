@@ -42,9 +42,7 @@ fn make_provider(
         models: vec![ModelMapping {
             local: "test-model".to_string(),
             remote: remote_model.to_string(),
-            input_cost_per_1k: None,
-            output_cost_per_1k: None,
-            cached_input_cost_per_1k: None,
+            pricing: crate::cost::PricingProfile::default(),
         }],
         is_default: false,
         fallback_provider_id: None,

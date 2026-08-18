@@ -214,11 +214,11 @@ fn migration_003_provider_costs_into_models(conn: &Connection) -> rusqlite::Resu
         let mut models: Vec<crate::config::ModelMapping> =
             serde_json::from_str(&models_json).unwrap_or_default();
         for m in &mut models {
-            if m.input_cost_per_1k.is_none() {
-                m.input_cost_per_1k = input_cost;
+            if m.pricing.input_per_1k.is_none() {
+                m.pricing.input_per_1k = input_cost;
             }
-            if m.output_cost_per_1k.is_none() {
-                m.output_cost_per_1k = output_cost;
+            if m.pricing.output_per_1k.is_none() {
+                m.pricing.output_per_1k = output_cost;
             }
         }
         let new_json = serde_json::to_string(&models).unwrap_or_default();
@@ -822,9 +822,7 @@ fn parse_models(s: &str) -> Vec<ModelMapping> {
             .map(|name| ModelMapping {
                 local: name.clone(),
                 remote: name,
-                input_cost_per_1k: None,
-                output_cost_per_1k: None,
-                cached_input_cost_per_1k: None,
+                pricing: crate::cost::PricingProfile::default(),
             })
             .collect();
     }
@@ -1171,9 +1169,11 @@ mod tests {
             models: vec![ModelMapping {
                 local: "gpt-4o".to_string(),
                 remote: "gpt-4o".to_string(),
-                input_cost_per_1k: Some(1.0),
-                output_cost_per_1k: Some(2.0),
-                cached_input_cost_per_1k: None,
+                pricing: crate::cost::PricingProfile {
+                    input_per_1k: Some(1.0),
+                    output_per_1k: Some(2.0),
+                    ..Default::default()
+                },
             }],
             is_default: true,
             clear_key: false,

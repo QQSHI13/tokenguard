@@ -12,7 +12,7 @@ use tracing::Instrument;
 
 use crate::config::{LimitAction, ProviderFormat};
 use crate::proxy::forwarder;
-use crate::state::{input_output_cost_per_1k, remote_model_name, AppState};
+use crate::state::{pricing_profile, remote_model_name, AppState};
 
 /// Bind the loopback proxy and serve until the app exits.
 pub async fn serve(
@@ -235,13 +235,12 @@ async fn handle(
         // we only know the true cost after the response. Request limits are enforced
         // atomically via in-memory counters.
         let remote_model = remote_model_name(&provider, &model);
-        let (input_cost, output_cost) = input_output_cost_per_1k(&provider, &model);
+        let profile = pricing_profile(&provider, &model);
         let (estimated_cost, estimated_tokens) = crate::cost::estimate_request(
             &body_json,
             &model,
             &remote_model,
-            input_cost,
-            output_cost,
+            &profile,
         );
         // Pre-flight limit check uses estimated cost/tokens. Time limits are
         // checked after the request completes because the real duration is

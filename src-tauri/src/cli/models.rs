@@ -20,9 +20,9 @@ pub fn list(state: &Arc<AppState>) -> Result<()> {
                     "  {} -> {}  in={:?} out={:?} cached={:?}",
                     m.local,
                     m.remote,
-                    m.input_cost_per_1k,
-                    m.output_cost_per_1k,
-                    m.cached_input_cost_per_1k
+                    m.pricing.input_per_1k,
+                    m.pricing.output_per_1k,
+                    m.pricing.cached_input_per_1k
                 );
             }
         }

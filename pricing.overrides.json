@@ -1,0 +1,119 @@
+{
+  "$comment": "Manual pricing overrides merged on top of models.dev catalog data. Keys are (pattern, match_type); matching generated entries are replaced, new ones are appended.",
+  "models": [
+    {
+      "pattern": "deepseek-v4-flash",
+      "match_type": "prefix",
+      "provider": "deepseek",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing",
+      "updated": "2026-08-18",
+      "time_tiers": [
+        {
+          "name": "peak-1",
+          "days": [0, 1, 2, 3, 4, 5, 6],
+          "start": "01:00",
+          "end": "04:00",
+          "input_per_1k": 0.00044,
+          "output_per_1k": 0.00132,
+          "cached_input_per_1k": 0.000014
+        },
+        {
+          "name": "peak-2",
+          "days": [0, 1, 2, 3, 4, 5, 6],
+          "start": "06:00",
+          "end": "10:00",
+          "input_per_1k": 0.00044,
+          "output_per_1k": 0.00132,
+          "cached_input_per_1k": 0.000014
+        },
+        {
+          "name": "off-peak",
+          "days": [],
+          "start": "10:01",
+          "end": "00:59",
+          "input_per_1k": 0.00022,
+          "output_per_1k": 0.00066,
+          "cached_input_per_1k": 0.000007
+        }
+      ]
+    },
+    {
+      "pattern": "deepseek-v4-pro",
+      "match_type": "prefix",
+      "provider": "deepseek",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing",
+      "updated": "2026-08-18",
+      "time_tiers": [
+        {
+          "name": "peak-1",
+          "days": [0, 1, 2, 3, 4, 5, 6],
+          "start": "01:00",
+          "end": "04:00",
+          "input_per_1k": 0.00132,
+          "output_per_1k": 0.00396,
+          "cached_input_per_1k": 0.000044
+        },
+        {
+          "name": "peak-2",
+          "days": [0, 1, 2, 3, 4, 5, 6],
+          "start": "06:00",
+          "end": "10:00",
+          "input_per_1k": 0.00132,
+          "output_per_1k": 0.00396,
+          "cached_input_per_1k": 0.000044
+        },
+        {
+          "name": "off-peak",
+          "days": [],
+          "start": "10:01",
+          "end": "00:59",
+          "input_per_1k": 0.00066,
+          "output_per_1k": 0.00198,
+          "cached_input_per_1k": 0.000022
+        }
+      ]
+    },
+    {
+      "pattern": "gemini-3.1-pro",
+      "match_type": "prefix",
+      "provider": "google",
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "updated": "2026-08-18",
+      "context_tiers": [
+        {
+          "max_context_tokens": 200000,
+          "input_per_1k": 0.002,
+          "output_per_1k": 0.012,
+          "cached_input_per_1k": 0.0002
+        },
+        {
+          "max_context_tokens": null,
+          "input_per_1k": 0.004,
+          "output_per_1k": 0.018,
+          "cached_input_per_1k": 0.0004
+        }
+      ]
+    },
+    {
+      "pattern": "gemini-2.5-pro",
+      "match_type": "prefix",
+      "provider": "google",
+      "source": "https://ai.google.dev/gemini-api/docs/pricing",
+      "updated": "2026-08-18",
+      "context_tiers": [
+        {
+          "max_context_tokens": 200000,
+          "input_per_1k": 0.00125,
+          "output_per_1k": 0.01,
+          "cached_input_per_1k": 0.0002
+        },
+        {
+          "max_context_tokens": null,
+          "input_per_1k": 0.0025,
+          "output_per_1k": 0.015,
+          "cached_input_per_1k": 0.0004
+        }
+      ]
+    }
+  ]
+}

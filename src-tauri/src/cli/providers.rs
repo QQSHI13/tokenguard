@@ -280,9 +280,7 @@ async fn fetch_models(
                     models.push(crate::config::ModelMapping {
                         local: short.to_string(),
                         remote: name.to_string(),
-                        input_cost_per_1k: None,
-                        output_cost_per_1k: None,
-                        cached_input_cost_per_1k: None,
+                        pricing: crate::cost::PricingProfile::default(),
                     });
                 }
             }
@@ -295,9 +293,7 @@ async fn fetch_models(
                     models.push(crate::config::ModelMapping {
                         local: id.to_string(),
                         remote: id.to_string(),
-                        input_cost_per_1k: None,
-                        output_cost_per_1k: None,
-                        cached_input_cost_per_1k: None,
+                        pricing: crate::cost::PricingProfile::default(),
                     });
                 }
             }
@@ -344,9 +340,12 @@ fn parse_models(specs: &[String]) -> Result<Vec<ModelMapping>> {
         out.push(ModelMapping {
             local: local.to_string(),
             remote: remote.to_string(),
-            input_cost_per_1k: parse_cost(1),
-            output_cost_per_1k: parse_cost(2),
-            cached_input_cost_per_1k: parse_cost(3),
+            pricing: crate::cost::PricingProfile {
+                input_per_1k: parse_cost(1),
+                output_per_1k: parse_cost(2),
+                cached_input_per_1k: parse_cost(3),
+                ..Default::default()
+            },
         });
     }
     Ok(out)

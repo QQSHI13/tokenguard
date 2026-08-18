@@ -14,9 +14,7 @@ use tokio_stream::StreamExt;
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
 use crate::proxy::{convert, sse};
-use crate::state::{
-    cached_input_cost_per_1k, input_output_cost_per_1k, remote_model_name, AppState,
-};
+use crate::state::{pricing_profile, remote_model_name, AppState};
 
 /// Forward a request to the chosen provider, retrying transient failures with
 /// exponential backoff, then optionally falling back to another configured
@@ -244,17 +242,18 @@ async fn finalize_forward(
                 let _ = tx.send(Ok(tail)).await;
             }
             let usage = converter.usage;
-            let (input_cost, output_cost) = input_output_cost_per_1k(&prov, &model_owned);
-            let cached_cost = cached_input_cost_per_1k(&prov, &model_owned);
+            let profile = pricing_profile(&prov, &model_owned);
             let c = cost::estimate(
                 &model_owned,
                 &remote_model_owned,
-                usage.prompt,
-                usage.completion,
-                usage.cached,
-                input_cost,
-                output_cost,
-                cached_cost,
+                &cost::UsageBreakdown {
+                    prompt_tokens: usage.prompt,
+                    completion_tokens: usage.completion,
+                    cached_tokens: usage.cached,
+                    reasoning_tokens: usage.reasoning,
+                    timestamp: Some(chrono::Utc::now()),
+                },
+                &profile,
             );
             let duration_ms = start.elapsed().as_millis() as u64;
             st.log_request(
@@ -296,17 +295,18 @@ async fn finalize_forward(
             .unwrap_or(bytes);
 
         let usage = sse::extract_json(&client_bytes, client_format);
-        let (input_cost, output_cost) = input_output_cost_per_1k(&provider, model);
-        let cached_cost = cached_input_cost_per_1k(&provider, model);
+        let profile = pricing_profile(&provider, model);
         let c = cost::estimate(
             model,
             &remote_model,
-            usage.prompt,
-            usage.completion,
-            usage.cached,
-            input_cost,
-            output_cost,
-            cached_cost,
+            &cost::UsageBreakdown {
+                prompt_tokens: usage.prompt,
+                completion_tokens: usage.completion,
+                cached_tokens: usage.cached,
+                reasoning_tokens: usage.reasoning,
+                timestamp: Some(chrono::Utc::now()),
+            },
+            &profile,
         );
         let duration_ms = start.elapsed().as_millis() as u64;
         state

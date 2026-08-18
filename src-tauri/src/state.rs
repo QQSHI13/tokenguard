@@ -44,26 +44,15 @@ pub fn remote_model_name(provider: &Provider, local_name: &str) -> String {
         .unwrap_or_else(|| local_name.to_string())
 }
 
-/// Find the cached-input cost for a given local model name on a provider.
-pub fn cached_input_cost_per_1k(provider: &Provider, local_name: &str) -> Option<f64> {
+/// Return the full pricing profile override for a given local model name on a
+/// provider, or an empty profile if the model has no mapping.
+pub fn pricing_profile(provider: &Provider, local_name: &str) -> crate::cost::PricingProfile {
     provider
         .models
         .iter()
         .find(|m| m.local == local_name)
-        .and_then(|m| m.cached_input_cost_per_1k)
-}
-
-/// Find the input/output costs for a given local model name on a provider.
-pub fn input_output_cost_per_1k(
-    provider: &Provider,
-    local_name: &str,
-) -> (Option<f64>, Option<f64>) {
-    provider
-        .models
-        .iter()
-        .find(|m| m.local == local_name)
-        .map(|m| (m.input_cost_per_1k, m.output_cost_per_1k))
-        .unwrap_or((None, None))
+        .map(|m| m.pricing.clone())
+        .unwrap_or_default()
 }
 
 use chrono::{Datelike, Timelike};
@@ -1051,9 +1040,7 @@ mod tests {
                 .map(|s| crate::config::ModelMapping {
                     local: s.to_string(),
                     remote: s.to_string(),
-                    input_cost_per_1k: None,
-                    output_cost_per_1k: None,
-                    cached_input_cost_per_1k: None,
+                    pricing: crate::cost::PricingProfile::default(),
                 })
                 .collect(),
             is_default,

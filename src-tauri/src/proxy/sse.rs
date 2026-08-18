@@ -15,6 +15,7 @@ pub struct Usage {
     pub prompt: u64,
     pub completion: u64,
     pub cached: u64,
+    pub reasoning: u64,
 }
 
 pub fn extract_from_usage_object(u: &Value, into: &mut Usage) {
@@ -72,6 +73,18 @@ pub fn extract_from_usage_object(u: &Value, into: &mut Usage) {
             .sum::<u64>();
     }
     into.cached = cached;
+
+    // Reasoning tokens.
+    // OpenAI: usage.completion_tokens_details.reasoning_tokens
+    // DeepSeek-style: usage.reasoning_tokens
+    if let Some(details) = u.get("completion_tokens_details") {
+        if let Some(r) = details.get("reasoning_tokens").and_then(|x| x.as_u64()) {
+            into.reasoning = r;
+        }
+    }
+    if let Some(r) = u.get("reasoning_tokens").and_then(|x| x.as_u64()) {
+        into.reasoning = r;
+    }
 }
 
 /// Extract usage from a complete (non-streaming) JSON response body.
