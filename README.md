@@ -109,35 +109,56 @@ Administer providers, projects, limits, and settings from the terminal:
 # status
 tokenguard status
 
+# proxy control
+tokenguard proxy pause
+tokenguard proxy resume
+tokenguard proxy toggle
+
 # providers
 tokenguard provider list
-tokenguard provider add openai https://api.openai.com/v1 openai --key $OPENAI_KEY --default
+tokenguard provider add openai https://api.openai.com/v1 openai \
+  --key $OPENAI_KEY --auth bearer --default \
+  --model gpt-4o=gpt-4o:5.0:15.0
 tokenguard provider update 1 --base-url https://new-endpoint.example/v1
-tokenguard provider key openai set $OPENAI_KEY
-tokenguard provider health
+tokenguard provider set-key openai $OPENAI_KEY
+tokenguard provider refresh-models 1
+tokenguard models
+tokenguard health
 
 # projects
 tokenguard project list
-tokenguard project add my-app tg-myapp
+tokenguard project add my-app tg-myapp --budget 10 --budget-period daily --budget-action pause
 
 # limits
 tokenguard limit list
-tokenguard limit add "daily-tokens" tokens 1000000 --action pause
+tokenguard limit status
+tokenguard limit add "daily-tokens" tokens 1000000 pause \
+  --period daily --warning-threshold 0.9 --scope global
 tokenguard limit update 1 --cap 2000000 --enabled true
 
 # settings
 tokenguard settings show
 tokenguard settings set-port 3742
 tokenguard settings set-expose-to-lan true
+tokenguard settings set-log-retention 30
+tokenguard settings cleanup-logs
+tokenguard settings auto-export set 7 /path/to/exports
+tokenguard settings auto-export run-now
+tokenguard settings test-webhook
 
 # license
 tokenguard license show
 tokenguard license activate XXXX-XXXX-XXXX-XXXX
+tokenguard license fingerprint
+tokenguard license devices
 
-# usage, logs, backup
+# update, usage, logs, backup
+tokenguard update check
+tokenguard update download --output ./tokenguard.new
 tokenguard usage monthly
 tokenguard usage provider openai --days 7
-tokenguard logs export --output usage.csv
+tokenguard logs export --output usage.csv --days 30
+tokenguard logs query --provider openai --page 1 --page-size 20
 tokenguard backup create ./tokenguard-$(date +%F).db
 ```
 
