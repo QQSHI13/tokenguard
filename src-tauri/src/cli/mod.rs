@@ -518,6 +518,8 @@ pub async fn run() -> Result<()> {
         let _ = tracing_subscriber::fmt().try_init();
     }
 
+    print_banner();
+
     match cli.command {
         Some(Commands::Start {
             port,
@@ -545,7 +547,6 @@ pub async fn run() -> Result<()> {
 }
 
 fn show_help_and_banner() {
-    print_banner();
     let mut cmd = Cli::command();
     cmd.print_help().unwrap();
     println!();
@@ -891,7 +892,6 @@ fn require_license() -> Result<()> {
     match crate::secrets::get("license") {
         Ok(_) => Ok(()),
         Err(_) => {
-            print_banner();
             anyhow::bail!("update requires an active license. Run `tokenguard license activate`.");
         }
     }
