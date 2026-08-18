@@ -13,7 +13,10 @@ pub fn list(state: &Arc<AppState>) -> Result<()> {
         println!("No projects configured.");
         return Ok(());
     }
-    println!("{:<5} {:<20} {:<20} {:<10} PERIOD", "ID", "NAME", "LABEL KEY", "BUDGET");
+    println!(
+        "{:<5} {:<20} {:<20} {:<10} PERIOD",
+        "ID", "NAME", "LABEL KEY", "BUDGET"
+    );
     for p in projects {
         println!(
             "{:<5} {:<20} {:<20} {:<10.2} {:?}",
