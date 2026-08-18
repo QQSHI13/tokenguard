@@ -19,11 +19,29 @@ major SDK formats, and shows real-time cost in the system tray or terminal.
 **The only LLM cost monitor that *cannot* see your prompts.** No cloud, no
 account, no telemetry. The proxy forwards bytes to the provider you already call
 and records only metadata (tokens, model, cost) to a local SQLite database.
-API keys live in the OS keychain — never on disk, never in your code.
 
 <p align="center">
   <img src="site/screenshot.png" alt="Token Guard window showing the local proxy endpoint" width="720">
 </p>
+
+## What makes Token Guard different
+
+- **4 × 4 SDK conversion.** Use OpenAI Chat, OpenAI Responses, Anthropic Messages,
+  or Gemini client code, and route any of those four shapes to any supported
+  provider. Requests, responses, and SSE streams are translated on the fly.
+- **API keys in the OS keychain.** Provider keys are stored in Windows Credential
+  Manager, macOS Keychain, or Linux Secret Service — not in `~/.cursorrc`, not in
+  an `.env` file, and not in Token Guard's SQLite database.
+- **Projects, budgets, and smart limits.** Tag requests by project, set per-project
+  budgets, and enforce limits on money, tokens, requests, RPM, TPM, or elapsed time.
+  Scope limits globally, per provider, or per project; schedule active hours and
+  days; choose warn, block, or pause on breach.
+- **Real-time cost tracking.** Per-project, per-provider, per-model spend with a
+  local SQLite history. Built-in pricing table plus per-model overrides; no network
+  calls to look up prices.
+- **GUI + CLI, same engine.** Configure everything in the desktop tray app or run
+  headless with the `tokenguard` CLI. Both use the same Rust backend and the same
+  local database.
 
 ## Architecture
 
@@ -48,12 +66,27 @@ One base URL (`http://127.0.0.1:3742`). Requests are routed to a provider by the
   `/v1beta/models/{model}` also work)
 
 Falls back to the default provider for that family. `GET /v1/models` returns the
-merged local model list. Any client format can be routed to any provider format —
-requests, responses, and SSE streams are converted as needed (the "4 × 4").
+merged local model list.
 
-**Universal provider support:** Token Guard ships with OpenAI, Anthropic, and Gemini
-formats, and will soon add a pluggable provider format so any OpenAI-compatible
-endpoint can be registered without code changes.
+### 4 × 4 format conversion
+
+Send requests in any of the four supported SDK shapes; Token Guard routes and
+rewrites them for any configured provider in the matching format family:
+
+| Client shape → Provider format | OpenAI Chat | OpenAI Responses | Anthropic Messages | Gemini |
+|---|---|---|---|---|
+| **OpenAI Chat** provider | ✓ | converted | converted | converted |
+| **OpenAI Responses** provider | converted | ✓ | converted | converted |
+| **Anthropic Messages** provider | converted | converted | ✓ | converted |
+| **Gemini** provider | converted | converted | converted | ✓ |
+
+Requests, responses, and SSE streams are translated on the fly, including tool
+calls, images, and cached-token pricing metadata.
+
+**Universal provider support:** Token Guard ships with native OpenAI, Anthropic,
+Gemini, and OpenAI Responses formats. Any OpenAI-compatible endpoint (local
+models, OpenAI-compatible proxies, custom base URLs) can be registered as an
+OpenAI-format provider without code changes.
 
 ### Model aliases
 
