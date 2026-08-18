@@ -4,6 +4,7 @@ use crate::secrets;
 use anyhow::{Context, Result};
 
 const WORKER_URL: &str = "https://tokenguard-license.qingquanshi65.workers.dev";
+const BUY_URL: &str = "https://tokenguard.pages.dev/buy.html";
 
 pub fn show() -> Result<()> {
     match secrets::get("license") {
@@ -19,6 +20,8 @@ pub fn show() -> Result<()> {
             let lower = e.to_lowercase();
             if lower.contains("noentry") || lower.contains("no entry") {
                 println!("No license activated.");
+                println!("  Activate: tokenguard license activate <KEY>");
+                println!("  Buy:      {BUY_URL}");
             } else {
                 anyhow::bail!("read license key: {e}");
             }

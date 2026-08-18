@@ -558,18 +558,26 @@ fn show_help_and_banner() {
     println!("  tokenguard license activate   # activate your license");
 }
 
+const BUY_URL: &str = "https://tokenguard.pages.dev/buy.html";
+
 fn print_banner() {
     let licensed = crate::secrets::get("license").is_ok();
-    println!("┌──────────────────────────────────────────────┐");
-    println!("│  Token Guard — local LLM gateway & tracker   │");
-    println!("│  v{:<43}│", env!("CARGO_PKG_VERSION"));
-    if !licensed {
-        println!("│                                              │");
-        println!("│  UNLICENSED — some features are restricted.  │");
-        println!("│  Run `tokenguard license activate` to unlock │");
-        println!("│  updates, device management, and more.       │");
+    println!("┌─────────────────────────────────────────────────────────────┐");
+    println!("│  LICENSE STATUS                                             │");
+    if licensed {
+        println!("│  Token Guard v{:<46}│", env!("CARGO_PKG_VERSION"));
+        println!("│  Licensed. Thank you for your support.                      │");
+    } else {
+        println!("│  Token Guard v{:<46}│", env!("CARGO_PKG_VERSION"));
+        println!("│                                                             │");
+        println!("│  UNLICENSED                                                 │");
+        println!("│  Some features are restricted: updates, device management   │");
+        println!("│  and priority support require a license key.                │");
+        println!("│                                                             │");
+        println!("│  Activate:  tokenguard license activate <KEY>               │");
+        println!("│  Buy:       {:<48}│", BUY_URL);
     }
-    println!("└──────────────────────────────────────────────┘");
+    println!("└─────────────────────────────────────────────────────────────┘");
     println!();
 }
 
@@ -892,7 +900,9 @@ fn require_license() -> Result<()> {
     match crate::secrets::get("license") {
         Ok(_) => Ok(()),
         Err(_) => {
-            anyhow::bail!("update requires an active license. Run `tokenguard license activate`.");
+            anyhow::bail!(
+                "update requires an active license.\n  Activate: tokenguard license activate <KEY>\n  Buy:      {BUY_URL}"
+            );
         }
     }
 }
