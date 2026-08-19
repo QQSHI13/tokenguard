@@ -248,6 +248,7 @@ async fn handle(
         let check = state.check_limits(
             provider.id,
             project_tag.as_deref(),
+            Some(&model),
             estimated_cost,
             estimated_tokens,
             0,
@@ -298,6 +299,50 @@ async fn handle(
                 }
             }
         }
+        for v in &check.group_violations {
+            match v.group.action {
+                LimitAction::Block => {
+                    if v.should_notify {
+                        state.notify_limit_blocked(&v.group.name, v.used, v.group.cap);
+                        state.mark_block_notified(v.group.id);
+                    }
+                    state.release_request_limits(&check.reservations);
+                    state.release_group_limits(&check.group_reservations);
+                    return super::error_resp(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &format!(
+                            "limit group exceeded: {} ({:.0}/{:.0})",
+                            v.group.name, v.used, v.group.cap
+                        ),
+                    );
+                }
+                LimitAction::Pause => {
+                    if v.should_notify {
+                        state.notify_limit_paused(&v.group.name, v.used, v.group.cap);
+                        state.mark_block_notified(v.group.id);
+                    }
+                    state.release_request_limits(&check.reservations);
+                    state.release_group_limits(&check.group_reservations);
+                    state.set_paused(true);
+                    return super::error_resp(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        &format!("limit group exceeded: {} — proxy paused", v.group.name),
+                    );
+                }
+                LimitAction::Warn => {
+                    if v.should_notify {
+                        state.notify_limit_warning(&v.group.name, v.used, v.group.cap);
+                        state.mark_warning_notified(v.group.id);
+                    }
+                    tracing::warn!(
+                        "limit group warning: {} ({:.0}/{:.0})",
+                        v.group.name,
+                        v.used,
+                        v.group.cap
+                    );
+                }
+            }
+        }
 
         let provider_id = provider.id;
         let response = forwarder::forward(
@@ -316,6 +361,7 @@ async fn handle(
         // The request completed and its usage is persisted; release the
         // in-flight reservations so it isn't counted twice.
         state.release_request_limits(&check.reservations);
+        state.release_group_limits(&check.group_reservations);
 
         // Post-flight: time-based limits can only be evaluated now that the
         // real wall-clock duration is known. The current request is already
@@ -324,6 +370,7 @@ async fn handle(
         let time_check = state.check_time_limits(
             provider_id,
             project_tag.as_deref(),
+            Some(&model),
             duration_ms,
         );
         for v in &time_check.violations {
@@ -363,6 +410,35 @@ async fn handle(
                         v.limit.name,
                         v.used,
                         v.limit.cap
+                    );
+                }
+            }
+        }
+        for v in &time_check.group_violations {
+            match v.group.action {
+                LimitAction::Block => {
+                    if v.should_notify {
+                        state.notify_limit_blocked(&v.group.name, v.used, v.group.cap);
+                        state.mark_block_notified(v.group.id);
+                    }
+                }
+                LimitAction::Pause => {
+                    if v.should_notify {
+                        state.notify_limit_paused(&v.group.name, v.used, v.group.cap);
+                        state.mark_block_notified(v.group.id);
+                    }
+                    state.set_paused(true);
+                }
+                LimitAction::Warn => {
+                    if v.should_notify {
+                        state.notify_limit_warning(&v.group.name, v.used, v.group.cap);
+                        state.mark_warning_notified(v.group.id);
+                    }
+                    tracing::warn!(
+                        "time limit group warning: {} ({:.0}/{:.0})",
+                        v.group.name,
+                        v.used,
+                        v.group.cap
                     );
                 }
             }

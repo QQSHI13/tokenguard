@@ -2,12 +2,14 @@
 
 use crate::backend;
 use crate::notifier::Notifier;
+use crate::state::AppState;
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 mod backup;
+mod groups;
 mod health;
 mod interactive;
 mod license;
@@ -253,18 +255,21 @@ enum LimitCommands {
         /// Action when exceeded: warn, block, pause.
         #[arg(short, long)]
         action: Option<String>,
-        /// Period: once, hourly, daily, weekly, monthly, or custom_sec:<seconds>.
+        /// Period: once, hourly, daily, weekly, monthly, calendar_week, calendar_month, or custom_sec:<seconds>.
         #[arg(short, long)]
         period: Option<String>,
         /// Warning threshold as a ratio (0.0-1.0).
         #[arg(long)]
         warning_threshold: Option<f64>,
-        /// Scope: global, provider, project.
+        /// Scope: global, provider, project, model.
         #[arg(short, long)]
         scope: Option<String>,
         /// Scope ID when scope is provider or project.
         #[arg(long)]
         scope_id: Option<i64>,
+        /// Model pattern (substring, case-insensitive). Required when scope is model; optional filter otherwise.
+        #[arg(long)]
+        model_pattern: Option<String>,
         /// Active hours start (HH:MM).
         #[arg(long)]
         active_hours_start: Option<String>,
@@ -294,7 +299,7 @@ enum LimitCommands {
         /// New action: warn, block, pause.
         #[arg(short, long)]
         action: Option<String>,
-        /// New period.
+        /// New period: once, hourly, daily, weekly, monthly, calendar_week, calendar_month, or custom_sec:<seconds>.
         #[arg(short, long)]
         period: Option<String>,
         /// New warning threshold ratio.
@@ -309,6 +314,9 @@ enum LimitCommands {
         /// New scope ID.
         #[arg(long)]
         scope_id: Option<i64>,
+        /// New model pattern (substring, case-insensitive).
+        #[arg(long)]
+        model_pattern: Option<String>,
         /// Active hours start (HH:MM).
         #[arg(long)]
         active_hours_start: Option<String>,
@@ -322,6 +330,116 @@ enum LimitCommands {
     /// Delete a limit by ID.
     Delete {
         /// Limit ID.
+        id: i64,
+    },
+    /// Manage limit groups (shared caps across limits).
+    Group {
+        #[command(subcommand)]
+        command: LimitGroupCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum LimitGroupCommands {
+    /// List configured limit groups.
+    List,
+    /// Show current limit group status.
+    Status,
+    /// Add a new limit group.
+    Add {
+        /// Group name.
+        #[arg(short, long)]
+        name: String,
+        /// Metric: money, tokens, requests, time, rpm, tpm.
+        #[arg(short, long)]
+        metric: String,
+        /// Cap value.
+        #[arg(short, long)]
+        cap: f64,
+        /// Action when exceeded: warn, block, pause.
+        #[arg(short, long, default_value = "warn")]
+        action: String,
+        /// Period: once, hourly, daily, weekly, monthly, calendar_week, calendar_month, or custom_sec:<seconds>.
+        #[arg(short, long, default_value = "daily")]
+        period: String,
+        /// Warning threshold as a ratio (0.0-1.0).
+        #[arg(long, default_value = "0.8")]
+        warning_threshold: f64,
+        /// Scope: global, provider, project, model.
+        #[arg(short, long, default_value = "global")]
+        scope: String,
+        /// Scope ID when scope is provider or project.
+        #[arg(long)]
+        scope_id: Option<i64>,
+        /// Model pattern (substring, case-insensitive). Required when scope is model.
+        #[arg(long)]
+        model_pattern: Option<String>,
+        /// Active hours start (HH:MM).
+        #[arg(long)]
+        active_hours_start: Option<String>,
+        /// Active hours end (HH:MM).
+        #[arg(long)]
+        active_hours_end: Option<String>,
+        /// Active days bitmask (bit 0 = Monday .. bit 6 = Sunday). 127 = all days.
+        #[arg(long, default_value = "127")]
+        active_days: u8,
+        /// Comma-separated limit IDs that are members of this group.
+        #[arg(long, value_delimiter = ',')]
+        members: Vec<i64>,
+        /// Disable the group on creation.
+        #[arg(long)]
+        disabled: bool,
+    },
+    /// Update an existing limit group by ID.
+    Update {
+        /// Group ID.
+        id: i64,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New metric.
+        #[arg(short, long)]
+        metric: Option<String>,
+        /// New cap value.
+        #[arg(short, long)]
+        cap: Option<f64>,
+        /// New action.
+        #[arg(short, long)]
+        action: Option<String>,
+        /// New period.
+        #[arg(short, long)]
+        period: Option<String>,
+        /// New warning threshold ratio.
+        #[arg(long)]
+        warning_threshold: Option<f64>,
+        /// Enable or disable the group.
+        #[arg(short, long)]
+        enabled: Option<bool>,
+        /// New scope.
+        #[arg(short, long)]
+        scope: Option<String>,
+        /// New scope ID.
+        #[arg(long)]
+        scope_id: Option<i64>,
+        /// New model pattern.
+        #[arg(long)]
+        model_pattern: Option<String>,
+        /// Active hours start (HH:MM).
+        #[arg(long)]
+        active_hours_start: Option<String>,
+        /// Active hours end (HH:MM).
+        #[arg(long)]
+        active_hours_end: Option<String>,
+        /// Active days bitmask.
+        #[arg(long)]
+        active_days: Option<u8>,
+        /// Comma-separated member limit IDs (replaces existing members).
+        #[arg(long, value_delimiter = ',')]
+        members: Option<Vec<i64>>,
+    },
+    /// Delete a limit group by ID.
+    Delete {
+        /// Group ID.
         id: i64,
     },
 }
@@ -770,6 +888,7 @@ async fn limit(data_dir: Option<PathBuf>, cmd: LimitCommands) -> Result<()> {
             warning_threshold,
             scope,
             scope_id,
+            model_pattern,
             active_hours_start,
             active_hours_end,
             active_days,
@@ -810,6 +929,7 @@ async fn limit(data_dir: Option<PathBuf>, cmd: LimitCommands) -> Result<()> {
                 warning_threshold,
                 scope,
                 scope_id,
+                model_pattern,
                 active_hours_start,
                 active_hours_end,
                 active_days,
@@ -827,6 +947,7 @@ async fn limit(data_dir: Option<PathBuf>, cmd: LimitCommands) -> Result<()> {
             enabled,
             scope,
             scope_id,
+            model_pattern,
             active_hours_start,
             active_hours_end,
             active_days,
@@ -842,11 +963,87 @@ async fn limit(data_dir: Option<PathBuf>, cmd: LimitCommands) -> Result<()> {
             enabled,
             scope,
             scope_id,
+            model_pattern,
             active_hours_start,
             active_hours_end,
             active_days,
         ),
         LimitCommands::Delete { id } => limits::delete(&state, id),
+        LimitCommands::Group { command } => limit_group(&state, command),
+    }
+}
+
+fn limit_group(state: &Arc<AppState>, cmd: LimitGroupCommands) -> Result<()> {
+    match cmd {
+        LimitGroupCommands::List => groups::list(state),
+        LimitGroupCommands::Status => groups::status(state),
+        LimitGroupCommands::Add {
+            name,
+            metric,
+            cap,
+            action,
+            period,
+            warning_threshold,
+            scope,
+            scope_id,
+            model_pattern,
+            active_hours_start,
+            active_hours_end,
+            active_days,
+            members,
+            disabled,
+        } => groups::add(
+            state,
+            name,
+            metric,
+            cap,
+            action,
+            period,
+            warning_threshold,
+            scope,
+            scope_id,
+            model_pattern,
+            active_hours_start,
+            active_hours_end,
+            active_days,
+            members,
+            !disabled,
+        ),
+        LimitGroupCommands::Update {
+            id,
+            name,
+            metric,
+            cap,
+            action,
+            period,
+            warning_threshold,
+            enabled,
+            scope,
+            scope_id,
+            model_pattern,
+            active_hours_start,
+            active_hours_end,
+            active_days,
+            members,
+        } => groups::update(
+            state,
+            id,
+            name,
+            metric,
+            cap,
+            action,
+            period,
+            warning_threshold,
+            enabled,
+            scope,
+            scope_id,
+            model_pattern,
+            active_hours_start,
+            active_hours_end,
+            active_days,
+            members,
+        ),
+        LimitGroupCommands::Delete { id } => groups::delete(state, id),
     }
 }
 

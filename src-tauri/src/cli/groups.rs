@@ -1,6 +1,8 @@
-//! Limit management commands for the CLI.
+//! Limit group management commands for the CLI.
 
-use crate::config::{LimitAction, LimitInput, LimitMetric, LimitPeriod, LimitScope};
+use crate::config::{
+    LimitAction, LimitGroupInput, LimitMetric, LimitPeriod, LimitScope,
+};
 use crate::db;
 use crate::state::AppState;
 use anyhow::{Context, Result};
@@ -8,25 +10,30 @@ use std::sync::Arc;
 
 pub fn list(state: &Arc<AppState>) -> Result<()> {
     let conn = state.db.get().context("get DB connection")?;
-    let limits = db::list_limits(&conn).context("list limits")?;
-    if limits.is_empty() {
-        println!("No limits configured.");
+    let groups = db::list_limit_groups(&conn).context("list limit groups")?;
+    if groups.is_empty() {
+        println!("No limit groups configured.");
         return Ok(());
     }
     println!(
-        "{:<5} {:<20} {:<12} {:<12} {:<10} {:<8} ENABLED",
+        "{:<5} {:<20} {:<12} {:<12} {:<10} {:<8} ENABLED MEMBERS",
         "ID", "NAME", "METRIC", "PERIOD", "CAP", "ACTION"
     );
-    for l in limits {
+    for g in groups {
         println!(
-            "{:<5} {:<20} {:<12} {:<12} {:<10.2} {:<8} {}",
-            l.id,
-            l.name,
-            l.metric.as_db_str(),
-            period_str(&l.period),
-            l.cap,
-            l.action.as_db_str(),
-            l.enabled
+            "{:<5} {:<20} {:<12} {:<12} {:<10.2} {:<8} {}    {}",
+            g.id,
+            g.name,
+            g.metric.as_db_str(),
+            period_str(&g.period),
+            g.cap,
+            g.action.as_db_str(),
+            g.enabled,
+            g.member_limit_ids
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         );
     }
     Ok(())
@@ -34,34 +41,34 @@ pub fn list(state: &Arc<AppState>) -> Result<()> {
 
 pub fn status(state: &Arc<AppState>) -> Result<()> {
     let conn = state.db.get().context("get DB connection")?;
-    let limits = db::list_limits(&conn).context("list limits")?;
-    if limits.is_empty() {
-        println!("No limits configured.");
+    let groups = db::list_limit_groups(&conn).context("list limit groups")?;
+    if groups.is_empty() {
+        println!("No limit groups configured.");
         return Ok(());
     }
     println!(
         "{:<5} {:<20} {:<12} {:<14} {:<14} {:<6}",
         "ID", "NAME", "METRIC", "USED", "CAP", "RATIO"
     );
-    for l in limits {
-        if !l.enabled {
+    for g in groups {
+        if !g.enabled {
             println!(
                 "{:<5} {:<20} {:<12} (disabled)",
-                l.id,
-                l.name,
-                l.metric.as_db_str()
+                g.id,
+                g.name,
+                g.metric.as_db_str()
             );
             continue;
         }
-        let used = db::usage_for_limit(&conn, &l).unwrap_or(0.0);
-        let ratio = if l.cap > 0.0 { used / l.cap } else { 0.0 };
+        let used = db::usage_for_limit_group(&conn, &g).unwrap_or(0.0);
+        let ratio = if g.cap > 0.0 { used / g.cap } else { 0.0 };
         println!(
             "{:<5} {:<20} {:<12} {:<14.2} {:<14.2} {:<6.1}%",
-            l.id,
-            l.name,
-            l.metric.as_db_str(),
+            g.id,
+            g.name,
+            g.metric.as_db_str(),
             used,
-            l.cap,
+            g.cap,
             ratio * 100.0
         );
     }
@@ -83,9 +90,10 @@ pub fn add(
     active_hours_start: Option<String>,
     active_hours_end: Option<String>,
     active_days: u8,
+    members: Vec<i64>,
     enabled: bool,
 ) -> Result<()> {
-    let input = LimitInput {
+    let input = LimitGroupInput {
         name,
         metric: parse_metric(&metric)?,
         period: parse_period(&period)?,
@@ -99,28 +107,17 @@ pub fn add(
         active_hours_start,
         active_hours_end,
         model_pattern,
+        member_limit_ids: members,
     };
-    validate_limit_input(&input)?;
+    validate_group_input(&input)?;
     let conn = state.db.get().context("get DB connection")?;
-    let id = db::insert_limit(&conn, &input).context("insert limit")?;
+    let id = db::insert_limit_group(&conn, &input).context("insert limit group")?;
 
     let new_cfg = db::load_config(&conn).context("reload config")?;
     drop(conn);
     *state.config.write().map_err(|e| anyhow::anyhow!("{e}"))? = new_cfg;
 
-    println!("Added limit with ID {}", id);
-    Ok(())
-}
-
-pub fn delete(state: &Arc<AppState>, id: i64) -> Result<()> {
-    let conn = state.db.get().context("get DB connection")?;
-    db::delete_limit(&conn, id).context("delete limit")?;
-
-    let new_cfg = db::load_config(&conn).context("reload config")?;
-    drop(conn);
-    *state.config.write().map_err(|e| anyhow::anyhow!("{e}"))? = new_cfg;
-
-    println!("Deleted limit ID {}", id);
+    println!("Added limit group with ID {}", id);
     Ok(())
 }
 
@@ -141,13 +138,14 @@ pub fn update(
     active_hours_start: Option<String>,
     active_hours_end: Option<String>,
     active_days: Option<u8>,
+    members: Option<Vec<i64>>,
 ) -> Result<()> {
     let conn = state.db.get().context("get DB connection")?;
-    let limits = db::list_limits(&conn).context("list limits")?;
-    let mut existing = limits
+    let groups = db::list_limit_groups(&conn).context("list limit groups")?;
+    let mut existing = groups
         .into_iter()
-        .find(|l| l.id == id)
-        .context("limit not found")?;
+        .find(|g| g.id == id)
+        .context("limit group not found")?;
 
     if let Some(n) = name {
         existing.name = n;
@@ -188,8 +186,11 @@ pub fn update(
     if let Some(d) = active_days {
         existing.active_days = d;
     }
+    if let Some(m) = members {
+        existing.member_limit_ids = m;
+    }
 
-    let input = LimitInput {
+    let input = LimitGroupInput {
         name: existing.name,
         metric: existing.metric,
         period: existing.period,
@@ -203,15 +204,28 @@ pub fn update(
         active_hours_start: existing.active_hours_start,
         active_hours_end: existing.active_hours_end,
         model_pattern: existing.model_pattern,
+        member_limit_ids: existing.member_limit_ids,
     };
-    validate_limit_input(&input)?;
-    db::update_limit(&conn, id, &input).context("update limit")?;
+    validate_group_input(&input)?;
+    db::update_limit_group(&conn, id, &input).context("update limit group")?;
 
     let new_cfg = db::load_config(&conn).context("reload config")?;
     drop(conn);
     *state.config.write().map_err(|e| anyhow::anyhow!("{e}"))? = new_cfg;
 
-    println!("Updated limit ID {}", id);
+    println!("Updated limit group ID {}", id);
+    Ok(())
+}
+
+pub fn delete(state: &Arc<AppState>, id: i64) -> Result<()> {
+    let conn = state.db.get().context("get DB connection")?;
+    db::delete_limit_group(&conn, id).context("delete limit group")?;
+
+    let new_cfg = db::load_config(&conn).context("reload config")?;
+    drop(conn);
+    *state.config.write().map_err(|e| anyhow::anyhow!("{e}"))? = new_cfg;
+
+    println!("Deleted limit group ID {}", id);
     Ok(())
 }
 
@@ -272,9 +286,9 @@ fn parse_action(s: &str) -> Result<LimitAction> {
     }
 }
 
-fn validate_limit_input(input: &LimitInput) -> Result<()> {
+fn validate_group_input(input: &LimitGroupInput) -> Result<()> {
     if input.name.is_empty() {
-        anyhow::bail!("limit name cannot be empty");
+        anyhow::bail!("group name cannot be empty");
     }
     if input.cap < 0.0 {
         anyhow::bail!("cap cannot be negative");

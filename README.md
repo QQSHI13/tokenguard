@@ -34,8 +34,9 @@ and records only metadata (tokens, model, cost) to a local SQLite database.
   an `.env` file, and not in Token Guard's SQLite database.
 - **Projects, budgets, and smart limits.** Tag requests by project, set per-project
   budgets, and enforce limits on money, tokens, requests, RPM, TPM, or elapsed time.
-  Scope limits globally, per provider, or per project; schedule active hours and
-  days; choose warn, block, or pause on breach.
+  Scope limits globally, per provider, per project, or per model pattern; schedule
+  active hours and days; choose warn, block, or pause on breach. Calendar-aligned
+  weekly/monthly periods and shared-cap limit groups are also supported.
 - **Real-time cost tracking.** Per-project, per-provider, per-model spend with a
   local SQLite history. Built-in pricing table plus per-model overrides; no network
   calls to look up prices. Supports context-window tiers, UTC peak/off-peak

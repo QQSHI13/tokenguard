@@ -1,8 +1,8 @@
 //! SQLite: schema, queries, config load.
 
 use crate::config::{
-    AuthScheme, BudgetPeriod, Config, Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod,
-    LimitScope, ModelMapping, Provider, ProviderFormat,
+    AuthScheme, BudgetPeriod, Config, Limit, LimitAction, LimitGroup, LimitGroupInput, LimitInput,
+    LimitMetric, LimitPeriod, LimitScope, ModelMapping, Provider, ProviderFormat,
 };
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -66,6 +66,11 @@ const MIGRATIONS: &[Migration] = &[
         id: 10,
         name: "audit_events",
         apply: migration_010_audit_events,
+    },
+    Migration {
+        id: 11,
+        name: "limit_models_groups",
+        apply: migration_011_limit_models_groups,
     },
 ];
 
@@ -177,6 +182,37 @@ fn migration_010_audit_events(conn: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts);
         CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
+        ",
+    )
+}
+
+fn migration_011_limit_models_groups(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE limits ADD COLUMN model_pattern TEXT", []);
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS limit_groups (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          metric TEXT NOT NULL,
+          period TEXT NOT NULL,
+          period_value INTEGER NOT NULL DEFAULT 0,
+          cap REAL NOT NULL,
+          warning_threshold REAL NOT NULL DEFAULT 0.8,
+          scope TEXT NOT NULL DEFAULT 'global',
+          scope_id INTEGER,
+          action TEXT NOT NULL DEFAULT 'warn',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          active_hours_start TEXT,
+          active_hours_end TEXT,
+          active_days INTEGER NOT NULL DEFAULT 127,
+          model_pattern TEXT
+        );
+        CREATE TABLE IF NOT EXISTS limit_group_members (
+          group_id INTEGER NOT NULL,
+          limit_id INTEGER NOT NULL,
+          PRIMARY KEY (group_id, limit_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_limit_group_members_group ON limit_group_members(group_id);
         ",
     )
 }
@@ -894,13 +930,14 @@ fn row_to_limit(row: &rusqlite::Row) -> rusqlite::Result<Limit> {
         active_hours_start: row.get(11)?,
         active_hours_end: row.get(12)?,
         active_days: active_days as u8,
+        model_pattern: row.get(14)?,
     })
 }
 
 pub fn list_limits(conn: &Connection) -> rusqlite::Result<Vec<Limit>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
-         active_hours_start, active_hours_end, active_days FROM limits ORDER BY id",
+         active_hours_start, active_hours_end, active_days, model_pattern FROM limits ORDER BY id",
     )?;
     let rows = stmt.query_map([], row_to_limit)?;
     rows.collect()
@@ -913,8 +950,8 @@ pub fn insert_limit(conn: &Connection, l: &LimitInput) -> rusqlite::Result<i64> 
     };
     conn.execute(
         "INSERT INTO limits (name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
-         active_hours_start, active_hours_end, active_days) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         active_hours_start, active_hours_end, active_days, model_pattern) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             l.name,
             l.metric.as_db_str(),
@@ -929,6 +966,7 @@ pub fn insert_limit(conn: &Connection, l: &LimitInput) -> rusqlite::Result<i64> 
             l.active_hours_start,
             l.active_hours_end,
             l.active_days as i64,
+            l.model_pattern,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -942,7 +980,7 @@ pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Res
     conn.execute(
         "UPDATE limits SET name = ?1, metric = ?2, period = ?3, period_value = ?4, cap = ?5, \
          warning_threshold = ?6, scope = ?7, scope_id = ?8, action = ?9, enabled = ?10, \
-         active_hours_start = ?11, active_hours_end = ?12, active_days = ?13 WHERE id = ?14",
+         active_hours_start = ?11, active_hours_end = ?12, active_days = ?13, model_pattern = ?14 WHERE id = ?15",
         params![
             l.name,
             l.metric.as_db_str(),
@@ -957,6 +995,7 @@ pub fn update_limit(conn: &Connection, id: i64, l: &LimitInput) -> rusqlite::Res
             l.active_hours_start,
             l.active_hours_end,
             l.active_days as i64,
+            l.model_pattern,
             id,
         ],
     )?;
@@ -968,12 +1007,41 @@ pub fn delete_limit(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Sum the metric for a limit over its rolling period.
-/// For `Once` limits, sums over all history.
-/// Rate-based metrics (RPM/TPM) always use a 60-second rolling window.
-pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64> {
+fn scope_name_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<Option<String>> {
+    match limit.scope {
+        LimitScope::Provider => {
+            if let Some(id) = limit.scope_id {
+                return conn
+                    .query_row("SELECT name FROM providers WHERE id = ?1", params![id], |r| {
+                        r.get(0)
+                    })
+                    .map(Some);
+            }
+        }
+        LimitScope::Project => {
+            if let Some(id) = limit.scope_id {
+                return conn
+                    .query_row("SELECT name FROM projects WHERE id = ?1", params![id], |r| {
+                        r.get(0)
+                    })
+                    .map(Some);
+            }
+        }
+        LimitScope::Global | LimitScope::Model => {}
+    }
+    Ok(None)
+}
+
+fn usage_for_params(
+    conn: &Connection,
+    metric: LimitMetric,
+    period: LimitPeriod,
+    scope: LimitScope,
+    scope_name: Option<String>,
+    model_pattern: Option<&str>,
+) -> rusqlite::Result<f64> {
     let mut sql = String::from("SELECT COALESCE(SUM(");
-    let column = match limit.metric {
+    let column = match metric {
         LimitMetric::Money => "cost",
         LimitMetric::Tokens | LimitMetric::TokensPerMinute => "prompt_tokens + completion_tokens",
         LimitMetric::Requests | LimitMetric::RequestsPerMinute => "1",
@@ -984,55 +1052,226 @@ pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64
 
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-    let window_seconds = if limit.metric.is_rate() {
-        Some(60)
+    let now = chrono::Utc::now();
+    let cutoff: Option<chrono::DateTime<chrono::Utc>> = if metric.is_rate() {
+        Some(now - chrono::TimeDelta::seconds(60))
     } else {
-        limit.period.seconds()
+        match period {
+            LimitPeriod::Once => None,
+            LimitPeriod::CalendarWeek | LimitPeriod::CalendarMonth => period.calendar_start(now),
+            _ => period
+                .seconds()
+                .map(|s| now - chrono::TimeDelta::seconds(s as i64)),
+        }
     };
 
-    if let Some(seconds) = window_seconds {
-        // Compute the cutoff timestamp in Rust to keep the query parameterised.
-        let cutoff = chrono::Utc::now() - chrono::TimeDelta::seconds(seconds as i64);
+    if let Some(cutoff) = cutoff {
         sql.push_str(" AND ts >= ?");
         params.push(Box::new(cutoff.to_rfc3339()));
     }
 
-    match limit.scope {
+    match scope {
         LimitScope::Provider => {
-            if let Some(id) = limit.scope_id {
-                let name: Option<String> = conn
-                    .query_row(
-                        "SELECT name FROM providers WHERE id = ?1",
-                        params![id],
-                        |r| r.get(0),
-                    )
-                    .ok();
-                if let Some(name) = name {
-                    sql.push_str(" AND provider = ?");
-                    params.push(Box::new(name));
-                }
+            if let Some(name) = scope_name {
+                sql.push_str(" AND provider = ?");
+                params.push(Box::new(name));
             }
         }
         LimitScope::Project => {
-            if let Some(id) = limit.scope_id {
-                let name: Option<String> = conn
-                    .query_row(
-                        "SELECT name FROM projects WHERE id = ?1",
-                        params![id],
-                        |r| r.get(0),
-                    )
-                    .ok();
-                if let Some(name) = name {
-                    sql.push_str(" AND project_tag = ?");
-                    params.push(Box::new(name));
-                }
+            if let Some(name) = scope_name {
+                sql.push_str(" AND project_tag = ?");
+                params.push(Box::new(name));
             }
         }
-        LimitScope::Global => {}
+        LimitScope::Global | LimitScope::Model => {}
+    }
+
+    if let Some(pattern) = model_pattern {
+        sql.push_str(" AND LOWER(model) LIKE '%' || LOWER(?) || '%'");
+        params.push(Box::new(pattern.to_string()));
     }
 
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     conn.query_row(&sql, param_refs.as_slice(), |row| row.get(0))
+}
+
+/// Sum the metric for a limit over its period.
+/// For `Once` limits, sums over all history.
+/// Rate-based metrics (RPM/TPM) always use a 60-second rolling window.
+/// Calendar periods use UTC calendar boundaries (Monday for week, 1st for month).
+pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64> {
+    let scope_name = scope_name_for_limit(conn, limit).ok().flatten();
+    usage_for_params(
+        conn,
+        limit.metric,
+        limit.period,
+        limit.scope,
+        scope_name,
+        limit.model_pattern.as_deref(),
+    )
+}
+
+/// Sum the metric for a limit group over its period and filters.
+pub fn usage_for_limit_group(conn: &Connection, group: &LimitGroup) -> rusqlite::Result<f64> {
+    let scope_name = match group.scope {
+        LimitScope::Provider => group.scope_id.and_then(|id| {
+            conn.query_row("SELECT name FROM providers WHERE id = ?1", params![id], |r| r.get(0))
+                .ok()
+        }),
+        LimitScope::Project => group.scope_id.and_then(|id| {
+            conn.query_row("SELECT name FROM projects WHERE id = ?1", params![id], |r| r.get(0))
+                .ok()
+        }),
+        LimitScope::Global | LimitScope::Model => None,
+    };
+    usage_for_params(
+        conn,
+        group.metric,
+        group.period,
+        group.scope,
+        scope_name,
+        group.model_pattern.as_deref(),
+    )
+}
+
+// ---- limit groups ----
+
+fn row_to_limit_group(row: &rusqlite::Row) -> rusqlite::Result<LimitGroup> {
+    let metric_str: String = row.get(2)?;
+    let period_str: String = row.get(3)?;
+    let period_value: i64 = row.get(4)?;
+    let scope_str: String = row.get(7)?;
+    let action_str: String = row.get(9)?;
+    let enabled: i64 = row.get(10)?;
+    let active_days: i64 = row.get(13).unwrap_or(127);
+
+    let period = if period_str == "custom_sec" {
+        LimitPeriod::CustomSec(period_value as u64)
+    } else {
+        LimitPeriod::from_db_str(&period_str)
+    };
+
+    Ok(LimitGroup {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        metric: LimitMetric::from_db_str(&metric_str),
+        period,
+        cap: row.get(5)?,
+        warning_threshold: row.get(6)?,
+        scope: LimitScope::from_db_str(&scope_str),
+        scope_id: row.get(8)?,
+        action: LimitAction::from_db_str(&action_str),
+        enabled: enabled != 0,
+        active_hours_start: row.get(11)?,
+        active_hours_end: row.get(12)?,
+        active_days: active_days as u8,
+        model_pattern: row.get(14)?,
+        member_limit_ids: Vec::new(),
+    })
+}
+
+fn load_group_members(conn: &Connection, group_id: i64) -> rusqlite::Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT limit_id FROM limit_group_members WHERE group_id = ?1 ORDER BY limit_id",
+    )?;
+    let rows = stmt.query_map(params![group_id], |r| r.get::<_, i64>(0))?;
+    rows.collect()
+}
+
+pub fn list_limit_groups(conn: &Connection) -> rusqlite::Result<Vec<LimitGroup>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
+         active_hours_start, active_hours_end, active_days, model_pattern FROM limit_groups ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], row_to_limit_group)?;
+    rows.map(|g| {
+        let mut g = g?;
+        g.member_limit_ids = load_group_members(conn, g.id).unwrap_or_default();
+        Ok(g)
+    })
+    .collect()
+}
+
+fn set_group_members(conn: &Connection, group_id: i64, members: &[i64]) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM limit_group_members WHERE group_id = ?1",
+        params![group_id],
+    )?;
+    for limit_id in members {
+        conn.execute(
+            "INSERT INTO limit_group_members (group_id, limit_id) VALUES (?1, ?2)",
+            params![group_id, limit_id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn insert_limit_group(conn: &Connection, g: &LimitGroupInput) -> rusqlite::Result<i64> {
+    let (period_str, period_value) = match g.period {
+        LimitPeriod::CustomSec(s) => ("custom_sec", s as i64),
+        p => (p.as_db_str(), 0),
+    };
+    conn.execute(
+        "INSERT INTO limit_groups (name, metric, period, period_value, cap, warning_threshold, scope, scope_id, action, enabled, \
+         active_hours_start, active_hours_end, active_days, model_pattern) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        params![
+            g.name,
+            g.metric.as_db_str(),
+            period_str,
+            period_value,
+            g.cap,
+            g.warning_threshold,
+            g.scope.as_db_str(),
+            g.scope_id,
+            g.action.as_db_str(),
+            g.enabled as i64,
+            g.active_hours_start,
+            g.active_hours_end,
+            g.active_days as i64,
+            g.model_pattern,
+        ],
+    )?;
+    let id = conn.last_insert_rowid();
+    set_group_members(conn, id, &g.member_limit_ids)?;
+    Ok(id)
+}
+
+pub fn update_limit_group(conn: &Connection, id: i64, g: &LimitGroupInput) -> rusqlite::Result<()> {
+    let (period_str, period_value) = match g.period {
+        LimitPeriod::CustomSec(s) => ("custom_sec", s as i64),
+        p => (p.as_db_str(), 0),
+    };
+    conn.execute(
+        "UPDATE limit_groups SET name = ?1, metric = ?2, period = ?3, period_value = ?4, cap = ?5, \
+         warning_threshold = ?6, scope = ?7, scope_id = ?8, action = ?9, enabled = ?10, \
+         active_hours_start = ?11, active_hours_end = ?12, active_days = ?13, model_pattern = ?14 WHERE id = ?15",
+        params![
+            g.name,
+            g.metric.as_db_str(),
+            period_str,
+            period_value,
+            g.cap,
+            g.warning_threshold,
+            g.scope.as_db_str(),
+            g.scope_id,
+            g.action.as_db_str(),
+            g.enabled as i64,
+            g.active_hours_start,
+            g.active_hours_end,
+            g.active_days as i64,
+            g.model_pattern,
+            id,
+        ],
+    )?;
+    set_group_members(conn, id, &g.member_limit_ids)?;
+    Ok(())
+}
+
+pub fn delete_limit_group(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM limit_group_members WHERE group_id = ?1", params![id])?;
+    conn.execute("DELETE FROM limit_groups WHERE id = ?1", params![id])?;
+    Ok(())
 }
 
 /// Migrate the legacy `settings.budget` value into a global daily money limit.
@@ -1063,6 +1302,7 @@ pub fn migrate_legacy_budget(conn: &Connection) -> rusqlite::Result<()> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             };
             insert_limit(&tx, &limit)?;
         }
@@ -1094,6 +1334,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let projects = list_projects(conn)?;
     migrate_legacy_budget(conn)?;
     let limits = list_limits(conn)?;
+    let limit_groups = list_limit_groups(conn)?;
     let port = get_setting(conn, "port")
         .and_then(|v| v.parse().ok())
         .unwrap_or(3742);
@@ -1134,6 +1375,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         providers,
         projects,
         limits,
+        limit_groups,
         port,
         budget,
         auto_export_days,
@@ -1319,6 +1561,7 @@ mod tests {
             active_hours_start: None,
             active_hours_end: None,
             active_days: 0b1111111,
+            model_pattern: None,
         };
         let id = insert_limit(&conn, &limit).unwrap();
 
@@ -1371,6 +1614,7 @@ mod tests {
             active_hours_start: None,
             active_hours_end: None,
             active_days: 0b1111111,
+            model_pattern: None,
         };
         let limit_id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();
@@ -1413,6 +1657,7 @@ mod tests {
             active_hours_start: None,
             active_hours_end: None,
             active_days: 0b1111111,
+            model_pattern: None,
         };
         let limit_id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();
@@ -1452,11 +1697,113 @@ mod tests {
             active_hours_start: None,
             active_hours_end: None,
             active_days: 0b1111111,
+            model_pattern: None,
         };
         let id = insert_limit(&conn, &limit).unwrap();
         let limits = list_limits(&conn).unwrap();
         assert_eq!(limits[0].id, id);
         assert_eq!(limits[0].period.seconds(), Some(5 * 3600));
+    }
+
+    #[test]
+    fn limit_model_pattern_scope() {
+        let (conn, _path) = temp_db();
+        let limit = LimitInput {
+            name: "gpt-only".into(),
+            metric: LimitMetric::Tokens,
+            period: LimitPeriod::Daily,
+            cap: 100.0,
+            warning_threshold: 0.8,
+            scope: LimitScope::Model,
+            scope_id: None,
+            action: LimitAction::Warn,
+            enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
+            model_pattern: Some("gpt-4".into()),
+        };
+        let id = insert_limit(&conn, &limit).unwrap();
+        let limits = list_limits(&conn).unwrap();
+        let found = limits.iter().find(|l| l.id == id).unwrap();
+        assert_eq!(found.model_pattern.as_deref(), Some("gpt-4"));
+
+        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200)).unwrap();
+        insert_log(&conn, "OpenAI", "claude-sonnet", 100, 100, 0.0, 100, None, Some(200)).unwrap();
+        let used = usage_for_limit(&conn, found).unwrap();
+        assert_eq!(used, 50.0);
+    }
+
+    #[test]
+    fn limit_calendar_month_window() {
+        let (conn, _path) = temp_db();
+        let limit = LimitInput {
+            name: "Monthly calendar".into(),
+            metric: LimitMetric::Tokens,
+            period: LimitPeriod::CalendarMonth,
+            cap: 1000.0,
+            warning_threshold: 0.8,
+            scope: LimitScope::Global,
+            scope_id: None,
+            action: LimitAction::Warn,
+            enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
+            model_pattern: None,
+        };
+        let id = insert_limit(&conn, &limit).unwrap();
+        let limits = list_limits(&conn).unwrap();
+        let found = limits.iter().find(|l| l.id == id).unwrap();
+        assert_eq!(found.period, LimitPeriod::CalendarMonth);
+
+        // Old log from last month should not count.
+        let last_month = (chrono::Utc::now() - chrono::TimeDelta::days(35)).to_rfc3339();
+        insert_log_at(&conn, &last_month, "OpenAI");
+        // Current log counts.
+        insert_log(&conn, "OpenAI", "m", 30, 20, 0.001, 100, None, Some(200)).unwrap();
+        let used = usage_for_limit(&conn, found).unwrap();
+        assert_eq!(used, 50.0);
+    }
+
+    #[test]
+    fn limit_group_crud_and_usage() {
+        let (conn, _path) = temp_db();
+        let group = LimitGroupInput {
+            name: "Shared cap".into(),
+            metric: LimitMetric::Tokens,
+            period: LimitPeriod::Daily,
+            cap: 100.0,
+            warning_threshold: 0.8,
+            scope: LimitScope::Global,
+            scope_id: None,
+            action: LimitAction::Warn,
+            enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
+            model_pattern: None,
+            member_limit_ids: vec![1, 2],
+        };
+        let id = insert_limit_group(&conn, &group).unwrap();
+        let groups = list_limit_groups(&conn).unwrap();
+        let found = groups.iter().find(|g| g.id == id).unwrap();
+        assert_eq!(found.member_limit_ids, vec![1, 2]);
+
+        insert_log(&conn, "OpenAI", "m", 30, 20, 0.001, 100, None, Some(200)).unwrap();
+        let used = usage_for_limit_group(&conn, found).unwrap();
+        assert_eq!(used, 50.0);
+
+        let mut updated = group.clone();
+        updated.cap = 200.0;
+        updated.member_limit_ids = vec![3];
+        update_limit_group(&conn, id, &updated).unwrap();
+        let groups = list_limit_groups(&conn).unwrap();
+        assert_eq!(groups[0].cap, 200.0);
+        assert_eq!(groups[0].member_limit_ids, vec![3]);
+
+        delete_limit_group(&conn, id).unwrap();
+        assert!(list_limit_groups(&conn).unwrap().is_empty());
     }
 
     #[test]

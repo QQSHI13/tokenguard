@@ -1,7 +1,8 @@
 //! Global application state shared between the Tauri shell and the proxy.
 
 use crate::config::{
-    Config, Limit, LimitAction, LimitMetric, LimitScope, Project, Provider, ProviderFormat,
+    Config, Limit, LimitAction, LimitGroup, LimitMetric, LimitScope, Project, Provider,
+    ProviderFormat,
 };
 use crate::db::{self, DbPool};
 use crate::health::{HealthCache, ProviderHealth};
@@ -67,9 +68,10 @@ pub fn limit_scope_matches(
     limit: &Limit,
     provider_id: i64,
     project_tag: Option<&str>,
+    model: Option<&str>,
     projects: &[Project],
 ) -> bool {
-    match limit.scope {
+    let scope_ok = match limit.scope {
         LimitScope::Global => true,
         LimitScope::Provider => limit.scope_id == Some(provider_id),
         LimitScope::Project => {
@@ -83,7 +85,69 @@ pub fn limit_scope_matches(
                 false
             }
         }
+        LimitScope::Model => true,
+    };
+    if !scope_ok {
+        return false;
     }
+
+    // Model-scope limits only apply when the requested model matches.
+    if limit.scope == LimitScope::Model {
+        return model_pattern_matches(limit.model_pattern.as_deref(), model);
+    }
+
+    // Any scope can optionally be narrowed to a model pattern.
+    if let Some(pattern) = &limit.model_pattern {
+        return model_pattern_matches(Some(pattern), model);
+    }
+
+    true
+}
+
+fn model_pattern_matches(pattern: Option<&str>, model: Option<&str>) -> bool {
+    match (pattern, model) {
+        (None, _) => false,
+        (Some(_), None) => false,
+        (Some(p), Some(m)) => m.to_lowercase().contains(&p.to_lowercase()),
+    }
+}
+
+fn limit_scope_matches_group(
+    group: &LimitGroup,
+    provider_id: i64,
+    project_tag: Option<&str>,
+    model: Option<&str>,
+    projects: &[Project],
+) -> bool {
+    let scope_ok = match group.scope {
+        LimitScope::Global => true,
+        LimitScope::Provider => group.scope_id == Some(provider_id),
+        LimitScope::Project => {
+            if let Some(pid) = group.scope_id {
+                projects
+                    .iter()
+                    .find(|p| p.id == pid)
+                    .map(|p| project_tag == Some(p.name.as_str()))
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        }
+        LimitScope::Model => true,
+    };
+    if !scope_ok {
+        return false;
+    }
+
+    if group.scope == LimitScope::Model {
+        return model_pattern_matches(group.model_pattern.as_deref(), model);
+    }
+
+    if let Some(pattern) = &group.model_pattern {
+        return model_pattern_matches(Some(pattern), model);
+    }
+
+    true
 }
 use crate::notifier::Notifier;
 #[cfg(feature = "gui")]
@@ -112,14 +176,24 @@ pub struct LimitViolation {
     pub should_notify: bool,
 }
 
+#[derive(Debug)]
+pub struct GroupViolation {
+    pub group: LimitGroup,
+    pub used: f64,
+    pub should_notify: bool,
+}
+
 /// Result of a limit check. Reservations made in the in-flight counters are
 /// returned so the caller can release each exactly once per terminal outcome:
 /// immediately on block/pause, or after the request is logged on success.
 #[derive(Debug, Default)]
 pub struct LimitCheckResult {
     pub violations: Vec<LimitViolation>,
+    pub group_violations: Vec<GroupViolation>,
     /// Limit ids and the amounts reserved in the in-flight counters.
     pub reservations: Vec<(i64, f64)>,
+    /// Group ids and the amounts reserved in the in-flight group counters.
+    pub group_reservations: Vec<(i64, f64)>,
 }
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
@@ -143,6 +217,8 @@ pub struct AppState {
     shutdown_tx: watch::Sender<()>,
     /// In-flight request counters for atomic request-limit enforcement.
     limit_counters: LimitCounters,
+    /// In-flight request counters for atomic limit-group enforcement.
+    group_counters: LimitCounters,
     /// Monotonic request IDs for tracing.
     next_request_id: AtomicU64,
     /// Tracks left-clicks on the tray icon to distinguish single vs double clicks.
@@ -187,6 +263,7 @@ impl AppState {
             last_budget_warning: Mutex::new(HashMap::new()),
             shutdown_tx,
             limit_counters: LimitCounters::new(),
+            group_counters: LimitCounters::new(),
             next_request_id: AtomicU64::new(1),
             #[cfg(feature = "gui")]
             tray_click: Mutex::new(TrayClickState::default()),
@@ -360,6 +437,7 @@ impl AppState {
         &self,
         provider_id: i64,
         project_tag: Option<&str>,
+        model: Option<&str>,
         cost: f64,
         tokens: u64,
         duration_ms: u64,
@@ -369,9 +447,10 @@ impl AppState {
             return LimitCheckResult::default();
         };
         // Clone what we need and drop the read guard before any DB work.
-        let (limits, projects, webhook_url) = match self.config.read() {
+        let (limits, groups, projects, webhook_url) = match self.config.read() {
             Ok(cfg) => (
                 cfg.limits.clone(),
+                cfg.limit_groups.clone(),
                 cfg.projects.clone(),
                 cfg.webhook_url.clone(),
             ),
@@ -383,7 +462,7 @@ impl AppState {
             if !limit.enabled {
                 continue;
             }
-            if !limit_scope_matches(limit, provider_id, project_tag, &projects) {
+            if !limit_scope_matches(limit, provider_id, project_tag, model, &projects) {
                 continue;
             }
             if !is_limit_active(limit) {
@@ -491,6 +570,117 @@ impl AppState {
                 self.mark_warning_notified(limit.id);
             }
         }
+
+        // Check limit groups using the same semantics as individual limits.
+        for group in &groups {
+            if !group.enabled {
+                continue;
+            }
+            if !limit_scope_matches_group(group, provider_id, project_tag, model, &projects) {
+                continue;
+            }
+            if !is_schedule_active(
+                group.active_days,
+                group.active_hours_start.as_deref(),
+                group.active_hours_end.as_deref(),
+            ) {
+                continue;
+            }
+
+            let persisted = db::usage_for_limit_group(&conn, group).unwrap_or(0.0);
+
+            let (current, used) = if group.metric == LimitMetric::Requests
+                || group.metric == LimitMetric::RequestsPerMinute
+            {
+                let reserved = self.group_counters.increment(group.id, 1.0);
+                result.group_reservations.push((group.id, 1.0));
+                (1.0, persisted + reserved - 1.0)
+            } else if group.metric == LimitMetric::TokensPerMinute {
+                let reserved = self.group_counters.increment(group.id, tokens as f64);
+                result.group_reservations.push((group.id, tokens as f64));
+                (tokens as f64, persisted + reserved - tokens as f64)
+            } else {
+                let current = match group.metric {
+                    LimitMetric::Money => cost,
+                    LimitMetric::Tokens => tokens as f64,
+                    LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
+                    LimitMetric::Requests
+                    | LimitMetric::RequestsPerMinute
+                    | LimitMetric::TokensPerMinute => unreachable!(),
+                };
+                (current, persisted)
+            };
+
+            let total = used + current;
+            if group.cap > 0.0 && total >= group.cap {
+                audit_with_conn(
+                    &conn,
+                    "limit_group_hit",
+                    &format!(
+                        "group={} metric={} action={} used={:.4} cap={:.4}",
+                        group.name,
+                        group.metric.as_db_str(),
+                        group.action.as_db_str(),
+                        total,
+                        group.cap
+                    ),
+                );
+                let should_notify = match group.action {
+                    LimitAction::Warn => self.can_notify_warning(group.id),
+                    _ => self.can_notify_block(group.id),
+                };
+                if should_notify {
+                    if let Some(ref url) = webhook_url {
+                        webhook::send_limit_group_event(
+                            &self.client,
+                            url,
+                            "limit_group_hit",
+                            group,
+                            total,
+                            group.cap,
+                        );
+                    }
+                }
+                result.group_violations.push(GroupViolation {
+                    group: group.clone(),
+                    used,
+                    should_notify,
+                });
+                continue;
+            }
+
+            if group.cap > 0.0
+                && group.warning_threshold > 0.0
+                && used >= group.warning_threshold * group.cap
+                && self.can_notify_warning(group.id)
+            {
+                audit_with_conn(
+                    &conn,
+                    "limit_group_warning",
+                    &format!(
+                        "group={} metric={} used={:.4} cap={:.4} threshold={:.2}",
+                        group.name,
+                        group.metric.as_db_str(),
+                        used,
+                        group.cap,
+                        group.warning_threshold
+                    ),
+                );
+                self.notify_limit_warning(&group.name, used, group.cap);
+                if let Some(ref url) = webhook_url {
+                    webhook::send_limit_group_event(
+                        &self.client,
+                        url,
+                        "limit_group_warning",
+                        group,
+                        used,
+                        group.cap,
+                    );
+                }
+                self.mark_warning_notified(group.id);
+            }
+        }
+
         result
     }
 
@@ -502,15 +692,17 @@ impl AppState {
         &self,
         provider_id: i64,
         project_tag: Option<&str>,
+        model: Option<&str>,
         duration_ms: u64,
     ) -> LimitCheckResult {
         let Ok(conn) = self.db.get() else {
             tracing::error!("failed to get DB connection from pool for check_time_limits");
             return LimitCheckResult::default();
         };
-        let (limits, projects, webhook_url) = match self.config.read() {
+        let (limits, groups, projects, webhook_url) = match self.config.read() {
             Ok(cfg) => (
                 cfg.limits.clone(),
+                cfg.limit_groups.clone(),
                 cfg.projects.clone(),
                 cfg.webhook_url.clone(),
             ),
@@ -522,7 +714,7 @@ impl AppState {
             if !limit.enabled || limit.metric != LimitMetric::TimeSec {
                 continue;
             }
-            if !limit_scope_matches(limit, provider_id, project_tag, &projects) {
+            if !limit_scope_matches(limit, provider_id, project_tag, model, &projects) {
                 continue;
             }
             if !is_limit_active(limit) {
@@ -600,6 +792,95 @@ impl AppState {
                 self.mark_warning_notified(limit.id);
             }
         }
+
+        // Post-flight time check for limit groups.
+        for group in &groups {
+            if !group.enabled || group.metric != LimitMetric::TimeSec {
+                continue;
+            }
+            if !limit_scope_matches_group(group, provider_id, project_tag, model, &projects) {
+                continue;
+            }
+            if !is_schedule_active(
+                group.active_days,
+                group.active_hours_start.as_deref(),
+                group.active_hours_end.as_deref(),
+            ) {
+                continue;
+            }
+
+            let persisted = db::usage_for_limit_group(&conn, group).unwrap_or(0.0);
+            let current = duration_ms as f64 / 1000.0;
+            let total = persisted + current;
+            if group.cap > 0.0 && total >= group.cap {
+                audit_with_conn(
+                    &conn,
+                    "limit_group_hit",
+                    &format!(
+                        "group={} metric={} action={} used={:.4} cap={:.4}",
+                        group.name,
+                        group.metric.as_db_str(),
+                        group.action.as_db_str(),
+                        total,
+                        group.cap
+                    ),
+                );
+                let should_notify = match group.action {
+                    LimitAction::Warn => self.can_notify_warning(group.id),
+                    _ => self.can_notify_block(group.id),
+                };
+                if should_notify {
+                    if let Some(ref url) = webhook_url {
+                        webhook::send_limit_group_event(
+                            &self.client,
+                            url,
+                            "limit_group_hit",
+                            group,
+                            total,
+                            group.cap,
+                        );
+                    }
+                }
+                result.group_violations.push(GroupViolation {
+                    group: group.clone(),
+                    used: persisted,
+                    should_notify,
+                });
+                continue;
+            }
+
+            if group.cap > 0.0
+                && group.warning_threshold > 0.0
+                && persisted >= group.warning_threshold * group.cap
+                && self.can_notify_warning(group.id)
+            {
+                audit_with_conn(
+                    &conn,
+                    "limit_group_warning",
+                    &format!(
+                        "group={} metric={} used={:.4} cap={:.4} threshold={:.2}",
+                        group.name,
+                        group.metric.as_db_str(),
+                        persisted,
+                        group.cap,
+                        group.warning_threshold
+                    ),
+                );
+                self.notify_limit_warning(&group.name, persisted, group.cap);
+                if let Some(ref url) = webhook_url {
+                    webhook::send_limit_group_event(
+                        &self.client,
+                        url,
+                        "limit_group_warning",
+                        group,
+                        persisted,
+                        group.cap,
+                    );
+                }
+                self.mark_warning_notified(group.id);
+            }
+        }
+
         result
     }
 
@@ -611,6 +892,12 @@ impl AppState {
     pub fn release_request_limits(&self, reservations: &[(i64, f64)]) {
         for (id, amount) in reservations {
             self.limit_counters.release(*id, *amount);
+        }
+    }
+
+    pub fn release_group_limits(&self, reservations: &[(i64, f64)]) {
+        for (id, amount) in reservations {
+            self.group_counters.release(*id, *amount);
         }
     }
 
@@ -635,6 +922,17 @@ impl AppState {
             if ratio > max_ratio {
                 max_ratio = ratio;
                 critical = Some(limit.name.clone());
+            }
+        }
+        for group in &cfg.limit_groups {
+            if !group.enabled || group.cap <= 0.0 {
+                continue;
+            }
+            let used = db::usage_for_limit_group(&conn, group).unwrap_or(0.0);
+            let ratio = used / group.cap;
+            if ratio > max_ratio {
+                max_ratio = ratio;
+                critical = Some(format!("{} (group)", group.name));
             }
         }
         (max_ratio, critical)
@@ -819,17 +1117,25 @@ fn parse_minutes(s: &str) -> Option<u32> {
 /// Return true if the current UTC time falls inside the limit's optional
 /// schedule. A missing schedule means always active.
 pub fn is_limit_active(limit: &Limit) -> bool {
+    is_schedule_active(limit.active_days, limit.active_hours_start.as_deref(), limit.active_hours_end.as_deref())
+}
+
+fn is_schedule_active(
+    active_days: u8,
+    active_hours_start: Option<&str>,
+    active_hours_end: Option<&str>,
+) -> bool {
     let now = chrono::Utc::now();
 
-    if limit.active_days != 0b1111111 {
+    if active_days != 0b1111111 {
         // Bit 0 = Monday .. bit 6 = Sunday.
         let weekday = now.weekday().num_days_from_monday() as u8;
-        if limit.active_days & (1 << weekday) == 0 {
+        if active_days & (1 << weekday) == 0 {
             return false;
         }
     }
 
-    if let (Some(start), Some(end)) = (&limit.active_hours_start, &limit.active_hours_end) {
+    if let (Some(start), Some(end)) = (active_hours_start, active_hours_end) {
         if let (Some(start_min), Some(end_min)) = (parse_minutes(start), parse_minutes(end)) {
             let cur = now.hour() * 60 + now.minute();
             if start_min <= end_min {
@@ -1120,20 +1426,21 @@ mod tests {
             active_hours_start: None,
             active_hours_end: None,
             active_days: 0b1111111,
+            model_pattern: None,
         }
     }
 
     #[test]
     fn limit_global_scope_matches_anything() {
         let limit = mk_limit(LimitScope::Global, None);
-        assert!(limit_scope_matches(&limit, 99, Some("any"), &[]));
+        assert!(limit_scope_matches(&limit, 99, Some("any"), Some("m"), &[]));
     }
 
     #[test]
     fn limit_provider_scope_matches_id() {
         let limit = mk_limit(LimitScope::Provider, Some(7));
-        assert!(limit_scope_matches(&limit, 7, None, &[]));
-        assert!(!limit_scope_matches(&limit, 8, None, &[]));
+        assert!(limit_scope_matches(&limit, 7, None, Some("m"), &[]));
+        assert!(!limit_scope_matches(&limit, 8, None, Some("m"), &[]));
     }
 
     #[test]
@@ -1151,10 +1458,28 @@ mod tests {
             &limit,
             1,
             Some("cursor-app"),
+            Some("m"),
             &projects
         ));
-        assert!(!limit_scope_matches(&limit, 1, Some("other"), &projects));
-        assert!(!limit_scope_matches(&limit, 1, None, &projects));
+        assert!(!limit_scope_matches(&limit, 1, Some("other"), Some("m"), &projects));
+        assert!(!limit_scope_matches(&limit, 1, None, Some("m"), &projects));
+    }
+
+    #[test]
+    fn limit_model_scope_matches_pattern() {
+        let mut limit = mk_limit(LimitScope::Model, None);
+        limit.model_pattern = Some("gpt-4".into());
+        assert!(limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
+        assert!(!limit_scope_matches(&limit, 1, None, Some("claude"), &[]));
+        assert!(!limit_scope_matches(&limit, 1, None, None, &[]));
+    }
+
+    #[test]
+    fn limit_model_pattern_narrows_other_scopes() {
+        let mut limit = mk_limit(LimitScope::Global, None);
+        limit.model_pattern = Some("claude".into());
+        assert!(limit_scope_matches(&limit, 1, None, Some("claude-sonnet"), &[]));
+        assert!(!limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
     }
 
     #[test]

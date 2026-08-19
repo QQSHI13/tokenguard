@@ -1,6 +1,6 @@
 //! Webhook notifications for limit events.
 
-use crate::config::{Limit, LimitMetric, LimitScope};
+use crate::config::{Limit, LimitGroup, LimitMetric, LimitScope};
 use reqwest::Client;
 use serde::Serialize;
 use std::time::Duration;
@@ -56,6 +56,42 @@ pub fn send_limit_event(
             .await;
         if let Err(e) = res {
             tracing::warn!("webhook delivery failed: {e}");
+        }
+    });
+}
+
+pub fn send_limit_group_event(
+    client: &Client,
+    url: &str,
+    event: &'static str,
+    group: &LimitGroup,
+    used: f64,
+    cap: f64,
+) {
+    if url.is_empty() {
+        return;
+    }
+    let payload = WebhookPayload {
+        event,
+        limit_name: format!("{} (group)", group.name),
+        metric: metric_name(group.metric),
+        used,
+        cap,
+        scope: scope_name(group.scope),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let client = client.clone();
+    let url = url.to_string();
+    tokio::spawn(async move {
+        let res = client
+            .post(&url)
+            .timeout(Duration::from_secs(15))
+            .json(&payload)
+            .send()
+            .await;
+        if let Err(e) = res {
+            tracing::warn!("group webhook delivery failed: {e}");
         }
     });
 }

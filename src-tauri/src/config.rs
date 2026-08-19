@@ -1,6 +1,7 @@
 //! Provider configuration & routing types.
 
 use crate::cost::PricingProfile;
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -233,6 +234,8 @@ pub enum LimitPeriod {
     Daily,
     Weekly,
     Monthly,
+    CalendarWeek,
+    CalendarMonth,
     CustomSec(u64),
 }
 
@@ -244,6 +247,8 @@ impl LimitPeriod {
             Self::Daily => "daily",
             Self::Weekly => "weekly",
             Self::Monthly => "monthly",
+            Self::CalendarWeek => "calendar_week",
+            Self::CalendarMonth => "calendar_month",
             Self::CustomSec(_) => "custom_sec",
         }
     }
@@ -253,6 +258,8 @@ impl LimitPeriod {
             "hourly" => Self::Hourly,
             "weekly" => Self::Weekly,
             "monthly" => Self::Monthly,
+            "calendar_week" => Self::CalendarWeek,
+            "calendar_month" => Self::CalendarMonth,
             "custom_sec" => Self::CustomSec(0),
             _ => Self::Daily,
         }
@@ -267,6 +274,26 @@ impl LimitPeriod {
             // a more complex cutoff query.
             Self::Monthly => Some(2_592_000),
             Self::CustomSec(s) => Some(s),
+            // Calendar periods have a computed start.
+            Self::CalendarWeek | Self::CalendarMonth => None,
+        }
+    }
+
+    /// Calendar-aligned start of the current period, if applicable.
+    pub fn calendar_start(self, now: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+        match self {
+            Self::CalendarWeek => {
+                // ISO week starts on Monday.
+                let weekday = now.weekday().num_days_from_monday();
+                let days_back = chrono::TimeDelta::days(weekday as i64);
+                let start = (now - days_back).date_naive().and_hms_opt(0, 0, 0)?;
+                Some(start.and_utc())
+            }
+            Self::CalendarMonth => {
+                let start = now.date_naive().with_day(1)?.and_hms_opt(0, 0, 0)?;
+                Some(start.and_utc())
+            }
+            _ => None,
         }
     }
 }
@@ -277,6 +304,7 @@ pub enum LimitScope {
     Global,
     Provider,
     Project,
+    Model,
 }
 
 impl LimitScope {
@@ -285,12 +313,14 @@ impl LimitScope {
             Self::Global => "global",
             Self::Provider => "provider",
             Self::Project => "project",
+            Self::Model => "model",
         }
     }
     pub fn from_db_str(s: &str) -> Self {
         match s {
             "provider" => Self::Provider,
             "project" => Self::Project,
+            "model" => Self::Model,
             _ => Self::Global,
         }
     }
@@ -343,6 +373,8 @@ pub struct Limit {
     pub active_hours_end: Option<String>,
     #[serde(default = "all_days")]
     pub active_days: u8,
+    #[serde(default)]
+    pub model_pattern: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,6 +394,58 @@ pub struct LimitInput {
     pub active_hours_end: Option<String>,
     #[serde(default = "all_days")]
     pub active_days: u8,
+    #[serde(default)]
+    pub model_pattern: Option<String>,
+}
+
+/// A shared cap that applies across a set of limits. The group’s own metric,
+/// period, scope, and model pattern define what usage is counted; member IDs
+/// are stored for display and organisation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitGroup {
+    pub id: i64,
+    pub name: String,
+    pub metric: LimitMetric,
+    pub period: LimitPeriod,
+    pub cap: f64,
+    pub warning_threshold: f64,
+    pub scope: LimitScope,
+    pub scope_id: Option<i64>,
+    pub action: LimitAction,
+    pub enabled: bool,
+    #[serde(default)]
+    pub active_hours_start: Option<String>,
+    #[serde(default)]
+    pub active_hours_end: Option<String>,
+    #[serde(default = "all_days")]
+    pub active_days: u8,
+    #[serde(default)]
+    pub model_pattern: Option<String>,
+    #[serde(default)]
+    pub member_limit_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitGroupInput {
+    pub name: String,
+    pub metric: LimitMetric,
+    pub period: LimitPeriod,
+    pub cap: f64,
+    pub warning_threshold: f64,
+    pub scope: LimitScope,
+    pub scope_id: Option<i64>,
+    pub action: LimitAction,
+    pub enabled: bool,
+    #[serde(default)]
+    pub active_hours_start: Option<String>,
+    #[serde(default)]
+    pub active_hours_end: Option<String>,
+    #[serde(default = "all_days")]
+    pub active_days: u8,
+    #[serde(default)]
+    pub model_pattern: Option<String>,
+    #[serde(default)]
+    pub member_limit_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -369,6 +453,7 @@ pub struct Config {
     pub providers: Vec<Provider>,
     pub projects: Vec<Project>,
     pub limits: Vec<Limit>,
+    pub limit_groups: Vec<LimitGroup>,
     pub port: u16,
     pub budget: f64,
     pub auto_export_days: u32,
@@ -387,6 +472,7 @@ impl Default for Config {
             providers: Vec::new(),
             projects: Vec::new(),
             limits: Vec::new(),
+            limit_groups: Vec::new(),
             port: 3742,
             budget: 0.0,
             auto_export_days: 0,

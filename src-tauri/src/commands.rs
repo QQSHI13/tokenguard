@@ -2,8 +2,8 @@
 
 use crate::backend;
 use crate::config::{
-    Limit, LimitAction, LimitInput, LimitMetric, LimitPeriod, LimitScope, Project, ProjectInput,
-    ProviderDto, ProviderInput,
+    Limit, LimitAction, LimitGroup, LimitGroupInput, LimitInput, LimitMetric, LimitPeriod,
+    LimitScope, Project, ProjectInput, ProviderDto, ProviderInput,
 };
 use crate::db::{self, LogRow};
 use crate::health::{self, ProviderHealth};
@@ -47,6 +47,13 @@ pub struct ModelInfo {
 #[derive(Debug, serde::Serialize)]
 pub struct LimitStatusDto {
     pub limit: Limit,
+    pub used: f64,
+    pub ratio: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LimitGroupStatusDto {
+    pub group: LimitGroup,
     pub used: f64,
     pub ratio: f64,
 }
@@ -1187,6 +1194,97 @@ pub fn delete_limit(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), Stri
 }
 
 #[tauri::command]
+pub fn list_limit_groups(state: State<'_, Arc<AppState>>) -> Result<Vec<LimitGroup>, String> {
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    Ok(cfg.limit_groups.clone())
+}
+
+#[tauri::command]
+pub fn add_limit_group(
+    state: State<'_, Arc<AppState>>,
+    input: LimitGroupInput,
+) -> Result<LimitGroup, String> {
+    let id = {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::insert_limit_group(&conn, &input).map_err(|e| e.to_string())?
+    };
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    state.inner().refresh_tray();
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    cfg.limit_groups
+        .iter()
+        .find(|g| g.id == id)
+        .cloned()
+        .ok_or("limit group not found after insert".into())
+}
+
+#[tauri::command]
+pub fn update_limit_group(
+    state: State<'_, Arc<AppState>>,
+    id: i64,
+    input: LimitGroupInput,
+) -> Result<LimitGroup, String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::update_limit_group(&conn, id, &input).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    state.inner().refresh_tray();
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    cfg.limit_groups
+        .iter()
+        .find(|g| g.id == id)
+        .cloned()
+        .ok_or("limit group not found after update".into())
+}
+
+#[tauri::command]
+pub fn delete_limit_group(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::delete_limit_group(&conn, id).map_err(|e| e.to_string())?;
+        let new_cfg = db::load_config(&conn).map_err(|e| e.to_string())?;
+        drop(conn);
+        *state.inner().config.write().map_err(|e| e.to_string())? = new_cfg;
+    }
+    state.inner().refresh_tray();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_limit_group_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<LimitGroupStatusDto>, String> {
+    let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+    let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for group in &cfg.limit_groups {
+        if !group.enabled {
+            continue;
+        }
+        let used = db::usage_for_limit_group(&conn, group).unwrap_or(0.0);
+        let ratio = if group.cap > 0.0 {
+            used / group.cap
+        } else {
+            0.0
+        };
+        out.push(LimitGroupStatusDto {
+            group: group.clone(),
+            used,
+            ratio,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
 pub fn get_limit_status(state: State<'_, Arc<AppState>>) -> Result<Vec<LimitStatusDto>, String> {
     let conn = state.inner().db.get().map_err(|e| e.to_string())?;
     let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
@@ -1228,6 +1326,7 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             },
         },
         LimitPreset {
@@ -1245,6 +1344,7 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             },
         },
         LimitPreset {
@@ -1262,6 +1362,7 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             },
         },
         LimitPreset {
@@ -1279,6 +1380,7 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             },
         },
         LimitPreset {
@@ -1296,6 +1398,7 @@ pub fn get_limit_presets() -> Vec<LimitPreset> {
                 active_hours_start: None,
                 active_hours_end: None,
                 active_days: 0b1111111,
+                model_pattern: None,
             },
         },
     ]

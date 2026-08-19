@@ -9,8 +9,16 @@ type LimitMetric =
   | "time_sec"
   | "requests_per_minute"
   | "tokens_per_minute";
-type LimitPeriod = "once" | "hourly" | "daily" | "weekly" | "monthly" | { custom_sec: number };
-type LimitScope = "global" | "provider" | "project";
+type LimitPeriod =
+  | "once"
+  | "hourly"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "calendar_week"
+  | "calendar_month"
+  | { custom_sec: number };
+type LimitScope = "global" | "provider" | "project" | "model";
 type LimitAction = "warn" | "block" | "pause";
 
 type Limit = {
@@ -27,6 +35,7 @@ type Limit = {
   active_hours_start: string | null;
   active_hours_end: string | null;
   active_days: number;
+  model_pattern: string | null;
 };
 
 type LimitInput = Omit<Limit, "id">;
@@ -40,6 +49,32 @@ type LimitStatus = {
 type LimitPreset = {
   name: string;
   input: LimitInput;
+};
+
+type LimitGroup = {
+  id: number;
+  name: string;
+  metric: LimitMetric;
+  period: LimitPeriod;
+  cap: number;
+  warning_threshold: number;
+  scope: LimitScope;
+  scope_id: number | null;
+  action: LimitAction;
+  enabled: boolean;
+  active_hours_start: string | null;
+  active_hours_end: string | null;
+  active_days: number;
+  model_pattern: string | null;
+  member_limit_ids: number[];
+};
+
+type LimitGroupInput = Omit<LimitGroup, "id">;
+
+type LimitGroupStatus = {
+  group: LimitGroup;
+  used: number;
+  ratio: number;
 };
 
 type SimpleProvider = { id: number; name: string };
@@ -61,7 +96,13 @@ function formatMetricValue(metric: LimitMetric, value: number): string {
 
 function periodLabel(period: LimitPeriod, t: (key: keyof typeof import("../i18n").translations.en) => string): string {
   if (typeof period === "string") {
-    return t(period);
+    const key: keyof typeof import("../i18n").translations.en =
+      period === "calendar_week"
+        ? "calendarWeek"
+        : period === "calendar_month"
+        ? "calendarMonth"
+        : period;
+    return t(key);
   }
   const sec = period.custom_sec;
   if (sec < 60) return `${sec}${t("secondsShort")}`;
@@ -104,6 +145,26 @@ function blankLimit(): LimitInput {
     active_hours_start: null,
     active_hours_end: null,
     active_days: 0b1111111,
+    model_pattern: null,
+  };
+}
+
+function blankGroup(): LimitGroupInput {
+  return {
+    name: "",
+    metric: "money",
+    period: "daily",
+    cap: 0,
+    warning_threshold: 0.8,
+    scope: "global",
+    scope_id: null,
+    action: "warn",
+    enabled: true,
+    active_hours_start: null,
+    active_hours_end: null,
+    active_days: 0b1111111,
+    model_pattern: null,
+    member_limit_ids: [],
   };
 }
 
@@ -124,12 +185,15 @@ export default function Limits({ onChange }: { onChange: () => void }) {
     { id: "daily", label: t("daily") },
     { id: "weekly", label: t("weekly") },
     { id: "monthly", label: t("monthly") },
+    { id: "calendar_week", label: t("calendarWeek") },
+    { id: "calendar_month", label: t("calendarMonth") },
   ];
 
   const SCOPES: { id: LimitScope; label: string }[] = [
     { id: "global", label: t("global") },
     { id: "provider", label: t("provider") },
     { id: "project", label: t("project") },
+    { id: "model", label: t("model") },
   ];
 
   const ACTIONS: { id: LimitAction; label: string }[] = [
@@ -149,6 +213,14 @@ export default function Limits({ onChange }: { onChange: () => void }) {
   const [isCustomPeriod, setIsCustomPeriod] = useState(false);
   const [customPeriodSec, setCustomPeriodSec] = useState("");
 
+  const [groups, setGroups] = useState<LimitGroup[]>([]);
+  const [groupStatus, setGroupStatus] = useState<LimitGroupStatus[]>([]);
+  const [groupForm, setGroupForm] = useState<LimitGroupInput>(blankGroup());
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [isCustomGroupPeriod, setIsCustomGroupPeriod] = useState(false);
+  const [customGroupPeriodSec, setCustomGroupPeriodSec] = useState("");
+
   const refresh = useCallback(() => {
     invoke<Limit[]>("list_limits").then(setLimits).catch(console.error);
     invoke<LimitStatus[]>("get_limit_status").then(setStatus).catch(console.error);
@@ -157,6 +229,10 @@ export default function Limits({ onChange }: { onChange: () => void }) {
       .catch(console.error);
     invoke<SimpleProject[]>("list_projects").then(setProjects).catch(console.error);
     invoke<LimitPreset[]>("get_limit_presets").then(setPresets).catch(console.error);
+    invoke<LimitGroup[]>("list_limit_groups").then(setGroups).catch(console.error);
+    invoke<LimitGroupStatus[]>("get_limit_group_status")
+      .then(setGroupStatus)
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -206,7 +282,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
       period,
       cap: Number(form.cap) || 0,
       warning_threshold: Number(form.warning_threshold) || 0,
-      scope_id: form.scope === "global" ? null : form.scope_id,
+      scope_id: form.scope === "global" || form.scope === "model" ? null : form.scope_id,
     };
   };
 
@@ -233,6 +309,72 @@ export default function Limits({ onChange }: { onChange: () => void }) {
     if (!confirm(t("deleteLimitConfirm").replace("{name}", name))) return;
     if (editingId === id) cancelEdit();
     await invoke("delete_limit", { id });
+    refresh();
+    onChange();
+  };
+
+  const groupStatusFor = (id: number) => groupStatus.find((s) => s.group.id === id);
+
+  const startEditGroup = (g: LimitGroup) => {
+    setGroupForm({ ...g });
+    setEditingGroupId(g.id);
+    if (typeof g.period !== "string") {
+      setIsCustomGroupPeriod(true);
+      setCustomGroupPeriodSec(String(g.period.custom_sec));
+    } else {
+      setIsCustomGroupPeriod(false);
+      setCustomGroupPeriodSec("");
+    }
+    setGroupError(null);
+  };
+
+  const cancelEditGroup = () => {
+    setGroupForm(blankGroup());
+    setEditingGroupId(null);
+    setIsCustomGroupPeriod(false);
+    setCustomGroupPeriodSec("");
+  };
+
+  const buildGroupInput = (): LimitGroupInput | null => {
+    const period: LimitPeriod = isCustomGroupPeriod
+      ? { custom_sec: Number(customGroupPeriodSec) || 0 }
+      : (groupForm.period as Exclude<LimitPeriod, { custom_sec: number }>);
+    if (isCustomGroupPeriod && (Number(customGroupPeriodSec) || 0) <= 0) {
+      setGroupError(t("customPeriodPositive"));
+      return null;
+    }
+    return {
+      ...groupForm,
+      period,
+      cap: Number(groupForm.cap) || 0,
+      warning_threshold: Number(groupForm.warning_threshold) || 0,
+      scope_id: groupForm.scope === "global" || groupForm.scope === "model" ? null : groupForm.scope_id,
+    };
+  };
+
+  const submitGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGroupError(null);
+    const input = buildGroupInput();
+    if (!input) return;
+    try {
+      if (editingGroupId !== null) {
+        await invoke("update_limit_group", { id: editingGroupId, input });
+      } else {
+        await invoke("add_limit_group", { input });
+      }
+      cancelEditGroup();
+      refresh();
+      onChange();
+    } catch (err) {
+      setGroupError(String(err));
+    }
+  };
+
+  const removeGroup = async (id: number, name: string) => {
+    if (!confirm(t("deleteLimitConfirm").replace("{name}", name))) return;
+    if (editingGroupId === id) cancelEditGroup();
+    await invoke("delete_limit_group", { id });
     refresh();
     onChange();
   };
@@ -284,6 +426,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                     </div>
                     <div className="truncate font-mono text-[11px] text-neutral-500">
                       {formatMetricValue(l.metric, l.cap)} / {periodLabel(l.period, t)} · {SCOPES.find((s) => s.id === l.scope)?.label ?? l.scope}
+                      {l.model_pattern && ` · ${t("modelPattern")}: ${l.model_pattern}`}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -479,7 +622,7 @@ export default function Limits({ onChange }: { onChange: () => void }) {
                 ))}
               </select>
             </Field>
-            {form.scope !== "global" && (
+            {form.scope !== "global" && form.scope !== "model" && (
               <Field label={form.scope === "provider" ? t("provider") : t("project")}>
                 <select
                   value={form.scope_id ?? ""}
@@ -499,6 +642,21 @@ export default function Limits({ onChange }: { onChange: () => void }) {
               </Field>
             )}
           </div>
+
+          <Field label={t("modelPattern")}>
+            <input
+              type="text"
+              value={form.model_pattern ?? ""}
+              placeholder={t("modelPatternHint")}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  model_pattern: e.target.value.trim() || null,
+                })
+              }
+              className={inputCls}
+            />
+          </Field>
 
           <div className="grid grid-cols-2 gap-2">
             <Field label={t("actionWhenExceeded")}>
@@ -597,6 +755,154 @@ export default function Limits({ onChange }: { onChange: () => void }) {
             <li>{t("limitsHelp4")}</li>
           </ul>
         </section>
+      </div>
+
+      <div className="lg:col-span-2">
+        <h2 className="mb-3 text-sm font-semibold text-neutral-900 dark:text-neutral-200">{t("limitGroups")}</h2>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="space-y-2">
+            {groups.length === 0 && <p className="text-xs text-neutral-600">{t("noLimitsYet")}</p>}
+            {groups.map((g) => {
+              const s = groupStatusFor(g.id);
+              const ratio = s ? Math.min(s.ratio, 1) : 0;
+              const color = ratio >= 1 ? "bg-red-500" : ratio >= g.warning_threshold ? "bg-amber-500" : "bg-emerald-500";
+              return (
+                <div
+                  key={g.id}
+                  className={`rounded-lg border px-3 py-2 ${
+                    editingGroupId === g.id
+                      ? "border-emerald-600 bg-emerald-50/60 dark:bg-neutral-900/60"
+                      : "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-neutral-900 dark:text-neutral-200">{g.name}</span>
+                        {!g.enabled && (
+                          <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+                            {t("disabled")}
+                          </span>
+                        )}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] ${
+                            g.action === "block"
+                              ? "bg-red-500/20 text-red-700 dark:text-red-300"
+                              : g.action === "pause"
+                              ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                              : "bg-sky-500/20 text-sky-700 dark:text-sky-300"
+                          }`}
+                        >
+                          {t(g.action)}
+                        </span>
+                      </div>
+                      <div className="truncate font-mono text-[11px] text-neutral-500">
+                        {formatMetricValue(g.metric, g.cap)} / {periodLabel(g.period, t)} · {SCOPES.find((s) => s.id === g.scope)?.label ?? g.scope}
+                        {g.model_pattern && ` · ${t("modelPattern")}: ${g.model_pattern}`}
+                        {g.member_limit_ids.length > 0 && ` · ${t("groupMembers")}: ${g.member_limit_ids.join(",")}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => startEditGroup(g)} title="Edit" className="text-neutral-500 hover:text-emerald-400">✎</button>
+                      <button onClick={() => removeGroup(g.id, g.name)} className="text-neutral-500 hover:text-red-400">✕</button>
+                    </div>
+                  </div>
+                  {s && g.enabled && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-[10px] text-neutral-500 dark:text-neutral-400">
+                        <span>
+                          {formatMetricValue(g.metric, s.used)} / {formatMetricValue(g.metric, g.cap)}
+                        </span>
+                        <span>{(ratio * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                        <div className={`h-full transition-all ${color}`} style={{ width: `${ratio * 100}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <form onSubmit={submitGroup} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-200">
+                {editingGroupId !== null ? t("editLimitGroup") : t("addLimitGroup")}
+              </h2>
+              {editingGroupId !== null && (
+                <button type="button" onClick={cancelEditGroup} className="text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">{t("cancel")}</button>
+              )}
+            </div>
+            <Field label={t("name")}>
+              <input required value={groupForm.name} onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })} className={inputCls} placeholder="Shared token cap" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("metric")}>
+                <select value={groupForm.metric} onChange={(e) => setGroupForm({ ...groupForm, metric: e.target.value as LimitMetric })} className={inputCls}>
+                  {METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </Field>
+              <Field label={`${t("cap")} (${METRICS.find((m) => m.id === groupForm.metric)!.unit})`}>
+                <input type="number" step={METRICS.find((m) => m.id === groupForm.metric)!.step} min={0} value={displayCap(groupForm.metric, groupForm.cap)} onChange={(e) => setGroupForm({ ...groupForm, cap: storeCap(groupForm.metric, Number(e.target.value)) })} className={inputCls} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("period")}>
+                {!isCustomGroupPeriod ? (
+                  <select value={groupForm.period as string} onChange={(e) => { if (e.target.value === "custom") { setIsCustomGroupPeriod(true); } else { setGroupForm({ ...groupForm, period: e.target.value as any }); } }} className={inputCls}>
+                    {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    <option value="custom">{t("customSeconds")}</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2">
+                    <input type="number" min={1} value={customGroupPeriodSec} onChange={(e) => setCustomGroupPeriodSec(e.target.value)} placeholder={t("seconds")} className={inputCls} />
+                    <button type="button" onClick={() => setIsCustomGroupPeriod(false)} className="text-[11px] text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">{t("presets")}</button>
+                  </div>
+                )}
+              </Field>
+              <Field label={t("warningAt")}>
+                <input type="number" step="5" min={0} max={100} value={Math.round((groupForm.warning_threshold || 0) * 100)} onChange={(e) => setGroupForm({ ...groupForm, warning_threshold: Number(e.target.value) / 100 })} className={inputCls} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("scope")}>
+                <select value={groupForm.scope} onChange={(e) => setGroupForm({ ...groupForm, scope: e.target.value as LimitScope, scope_id: e.target.value === "global" || e.target.value === "model" ? null : groupForm.scope_id })} className={inputCls}>
+                  {SCOPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </Field>
+              {groupForm.scope !== "global" && groupForm.scope !== "model" && (
+                <Field label={groupForm.scope === "provider" ? t("provider") : t("project")}>
+                  <select value={groupForm.scope_id ?? ""} onChange={(e) => setGroupForm({ ...groupForm, scope_id: Number(e.target.value) || null })} className={inputCls} required>
+                    <option value="">{t("select")}</option>
+                    {(groupForm.scope === "provider" ? providers : projects).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  </select>
+                </Field>
+              )}
+            </div>
+            <Field label={t("modelPattern")}>
+              <input type="text" value={groupForm.model_pattern ?? ""} placeholder={t("modelPatternHint")} onChange={(e) => setGroupForm({ ...groupForm, model_pattern: e.target.value.trim() || null })} className={inputCls} />
+            </Field>
+            <Field label={t("groupMembers")}>
+              <input type="text" value={groupForm.member_limit_ids.join(",")} placeholder={t("groupMembersHint")} onChange={(e) => setGroupForm({ ...groupForm, member_limit_ids: e.target.value.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n) && n > 0) })} className={inputCls} />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("actionWhenExceeded")}>
+                <select value={groupForm.action} onChange={(e) => setGroupForm({ ...groupForm, action: e.target.value as LimitAction })} className={inputCls}>
+                  {ACTIONS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+                </select>
+              </Field>
+              <label className="flex items-center gap-2 self-end text-xs text-neutral-600 dark:text-neutral-400">
+                <input type="checkbox" checked={groupForm.enabled} onChange={(e) => setGroupForm({ ...groupForm, enabled: e.target.checked })} />
+                {t("enabled")}
+              </label>
+            </div>
+            {groupError && <p className="text-xs text-red-600 dark:text-red-400">{groupError}</p>}
+            <button type="submit" className="w-full rounded-md bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300">
+              {editingGroupId !== null ? t("saveChanges") : t("addLimitGroup")}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
