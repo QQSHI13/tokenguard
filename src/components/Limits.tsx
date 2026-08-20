@@ -5,6 +5,10 @@ import { useI18n } from "../i18n";
 type LimitMetric =
   | "money"
   | "tokens"
+  | "input_tokens"
+  | "output_tokens"
+  | "cost_per_request"
+  | "concurrent_requests"
   | "requests"
   | "time_sec"
   | "requests_per_minute"
@@ -173,6 +177,10 @@ export default function Limits({ onChange }: { onChange: () => void }) {
   const METRICS: { id: LimitMetric; label: string; unit: string; step: string }[] = [
     { id: "money", label: t("money"), unit: "$", step: "0.01" },
     { id: "tokens", label: t("tokens"), unit: t("tokens").toLowerCase(), step: "1" },
+    { id: "input_tokens", label: t("inputTokens"), unit: t("tokens").toLowerCase(), step: "1" },
+    { id: "output_tokens", label: t("outputTokens"), unit: t("tokens").toLowerCase(), step: "1" },
+    { id: "cost_per_request", label: t("costPerRequest"), unit: "$", step: "0.01" },
+    { id: "concurrent_requests", label: t("concurrentRequests"), unit: t("requests").toLowerCase(), step: "1" },
     { id: "requests", label: t("requests"), unit: t("requests").toLowerCase(), step: "1" },
     { id: "time_sec", label: t("time"), unit: t("hours"), step: "0.1" },
     { id: "requests_per_minute", label: t("requestsPerMinute"), unit: t("rpm"), step: "1" },

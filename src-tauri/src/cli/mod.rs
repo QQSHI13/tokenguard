@@ -1,6 +1,7 @@
 //! Token Guard CLI — admin tool and headless gateway.
 
 use crate::backend;
+use crate::cli::share::ShareCommands;
 use crate::notifier::Notifier;
 use crate::state::AppState;
 use anyhow::{Context, Result};
@@ -21,6 +22,7 @@ mod providers;
 mod proxy;
 mod secrets;
 mod settings;
+mod share;
 mod update;
 mod usage;
 
@@ -101,6 +103,9 @@ enum Commands {
         #[command(subcommand)]
         command: SecretsCommands,
     },
+    /// Share the gateway with your team over Tailscale.
+    #[command(subcommand)]
+    Share(ShareCommands),
 }
 
 #[derive(Subcommand, Debug)]
@@ -455,6 +460,11 @@ enum SettingsCommands {
         #[arg(value_name = "true|false", action = clap::ArgAction::Set)]
         expose: bool,
     },
+    /// Share with your team over Tailscale.
+    SetShareTailscale {
+        #[arg(value_name = "true|false", action = clap::ArgAction::Set)]
+        enabled: bool,
+    },
     /// Set global budget.
     SetBudget { budget: f64 },
     /// Set log retention in days (0 disables cleanup).
@@ -657,6 +667,7 @@ pub async fn run() -> Result<()> {
         Some(Commands::Usage(cmd)) => usage(cli.data_dir, cmd).await,
         Some(Commands::Models) => models_cmd(cli.data_dir).await,
         Some(Commands::Secrets { command }) => secrets_cmd(command).await,
+        Some(Commands::Share(cmd)) => share_cmd(cli.data_dir, cmd).await,
         None => {
             show_help_and_banner();
             Ok(())
@@ -704,6 +715,7 @@ async fn start(data_dir: Option<PathBuf>, port: Option<u16>, expose_to_lan: bool
         state,
         port: db_port,
         expose_to_lan: db_expose,
+        share_over_tailscale: db_share,
     } = backend::init_backend(
         data_dir
             .or_else(default_data_dir)
@@ -718,8 +730,24 @@ async fn start(data_dir: Option<PathBuf>, port: Option<u16>, expose_to_lan: bool
     if expose_to_lan {
         tracing::info!("proxy exposed to LAN on http://0.0.0.0:{port}");
     }
+    if db_share {
+        match crate::proxy::server::tailscale_ipv4() {
+            Some(ip) => tracing::info!("proxy shared over Tailscale on http://{ip}:{port}"),
+            None => {
+                anyhow::bail!(
+                    "Tailscale sharing is enabled but no Tailscale interface (100.x.x.x) was found. \
+                     Install Tailscale, sign in, and try again — or disable sharing."
+                )
+            }
+        }
+    }
 
-    let mut proxy_handle = tokio::spawn(backend::serve_proxy(state.clone(), port, expose_to_lan));
+    let mut proxy_handle = tokio::spawn(backend::serve_proxy(
+        state.clone(),
+        port,
+        expose_to_lan,
+        db_share,
+    ));
 
     tokio::select! {
         result = &mut proxy_handle => {
@@ -1053,6 +1081,9 @@ async fn settings(data_dir: Option<PathBuf>, cmd: SettingsCommands) -> Result<()
         SettingsCommands::Show => settings::show(&state),
         SettingsCommands::SetPort { port } => settings::set_port(&state, port),
         SettingsCommands::SetExposeToLan { expose } => settings::set_expose_to_lan(&state, expose),
+        SettingsCommands::SetShareTailscale { enabled } => {
+            settings::set_share_over_tailscale(&state, enabled)
+        }
         SettingsCommands::SetBudget { budget } => settings::set_budget(&state, budget),
         SettingsCommands::SetLogRetention { days } => settings::set_log_retention(&state, days),
         SettingsCommands::SetWebhook { url } => settings::set_webhook(&state, url),
@@ -1159,4 +1190,9 @@ async fn secrets_cmd(command: SecretsCommands) -> Result<()> {
     match command {
         SecretsCommands::Selftest => secrets::selftest(),
     }
+}
+
+async fn share_cmd(data_dir: Option<PathBuf>, command: ShareCommands) -> Result<()> {
+    let state = init_state(data_dir)?;
+    share::run(&state, command)
 }

@@ -12,6 +12,14 @@ pub fn show(state: &Arc<AppState>) -> Result<()> {
     println!("Settings");
     println!("  port: {}", cfg.port);
     println!("  expose_to_lan: {}", cfg.expose_to_lan);
+    println!("  share_over_tailscale: {}", cfg.share_over_tailscale);
+    if cfg.share_over_tailscale {
+        if let Some(ip) = crate::proxy::server::tailscale_ipv4() {
+            println!("  share_url: http://{}:{}", ip, cfg.port);
+        } else {
+            println!("  share_url: (no Tailscale interface detected)");
+        }
+    }
     println!("  budget: {:.2}", cfg.budget);
     println!("  log_retention_days: {}", cfg.log_retention_days);
     println!(
@@ -47,6 +55,30 @@ pub fn set_expose_to_lan(state: &Arc<AppState>, expose: bool) -> Result<()> {
         cfg.expose_to_lan = expose
     })?;
     println!("Set expose_to_lan to {}", expose);
+    Ok(())
+}
+
+pub fn set_share_over_tailscale(state: &Arc<AppState>, enabled: bool) -> Result<()> {
+    let value = if enabled { "1" } else { "0" };
+    set_and_update(state, "share_over_tailscale", value, |cfg| {
+        cfg.share_over_tailscale = enabled
+    })?;
+    if enabled {
+        match crate::proxy::server::tailscale_ipv4() {
+            Some(ip) => println!(
+                "Set share_over_tailscale to true — share URL: http://{ip}:{}",
+                {
+                    let cfg = state.config.read().map_err(|e| anyhow::anyhow!("{e}"))?;
+                    cfg.port
+                }
+            ),
+            None => println!(
+                "Set share_over_tailscale to true (warning: no Tailscale interface detected)"
+            ),
+        }
+    } else {
+        println!("Set share_over_tailscale to false");
+    }
     Ok(())
 }
 

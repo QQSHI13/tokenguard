@@ -123,14 +123,14 @@ impl PricingProfile {
     fn select_context_tier(&self, prompt_tokens: u64) -> Option<&ContextTier> {
         let tiers = self.context_tiers.as_ref()?;
         let mut indexed: Vec<_> = tiers.iter().enumerate().collect();
-        indexed.sort_by(|a, b| {
-            match (a.1.max_context_tokens, b.1.max_context_tokens) {
+        indexed.sort_by(
+            |a, b| match (a.1.max_context_tokens, b.1.max_context_tokens) {
                 (Some(a_max), Some(b_max)) => a_max.cmp(&b_max),
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,
                 (None, None) => a.0.cmp(&b.0),
-            }
-        });
+            },
+        );
         indexed
             .into_iter()
             .map(|(_, t)| t)
@@ -143,7 +143,10 @@ impl PricingProfile {
     /// Select the time tier that applies to the given UTC timestamp. Returns
     /// `None` if no timestamp is provided or no tier matches. Intervals may wrap
     /// across midnight (e.g. start 18:00, end 08:59).
-    fn select_time_tier(&self, timestamp: Option<chrono::DateTime<chrono::Utc>>) -> Option<&TimeTier> {
+    fn select_time_tier(
+        &self,
+        timestamp: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Option<&TimeTier> {
         let ts = timestamp?;
         let tiers = self.time_tiers.as_ref()?;
         let weekday = ts.weekday().num_days_from_monday() as u8;
@@ -222,8 +225,7 @@ pub fn estimate(
     // 3. Compute token costs.
     let regular_input = usage.prompt_tokens.saturating_sub(usage.cached_tokens);
     let mut token_cost =
-        regular_input as f64 * input_per_1k
-            + usage.cached_tokens as f64 * cached_input_per_1k;
+        regular_input as f64 * input_per_1k + usage.cached_tokens as f64 * cached_input_per_1k;
 
     // Resolve remaining dimensions: reasoning, batch discount, request fee.
     let reasoning_per_1k = override_profile
@@ -474,7 +476,10 @@ mod tests {
             &profile,
         );
         // (200000 * 0.5 + 500 * 1.0) / 1000 = 100.5
-        assert!((large - 100.5).abs() < 0.0001, "expected ~100.5, got {large}");
+        assert!(
+            (large - 100.5).abs() < 0.0001,
+            "expected ~100.5, got {large}"
+        );
     }
 
     #[test]
@@ -502,7 +507,8 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let peak_ts = chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 1, 5, 12, 0, 0).unwrap();
+        let peak_ts =
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 1, 5, 12, 0, 0).unwrap();
         let peak = estimate(
             "time-tiered-model",
             "time-tiered-model",
@@ -518,7 +524,8 @@ mod tests {
         // (1000 * 2.0 + 500 * 4.0) / 1000 = 4.0
         assert!((peak - 4.0).abs() < 0.0001, "expected ~4.0, got {peak}");
 
-        let off_peak_ts = chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 1, 5, 20, 0, 0).unwrap();
+        let off_peak_ts =
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 1, 5, 20, 0, 0).unwrap();
         let off_peak = estimate(
             "time-tiered-model",
             "time-tiered-model",
@@ -532,7 +539,10 @@ mod tests {
             &profile,
         );
         // (1000 * 0.5 + 500 * 1.0) / 1000 = 1.0
-        assert!((off_peak - 1.0).abs() < 0.0001, "expected ~1.0, got {off_peak}");
+        assert!(
+            (off_peak - 1.0).abs() < 0.0001,
+            "expected ~1.0, got {off_peak}"
+        );
     }
 
     #[test]
@@ -644,24 +654,38 @@ mod tests {
             if let Some(tiers) = e.get("context_tiers").and_then(|t| t.as_array()) {
                 for tier in tiers {
                     for field in ["input_per_1k", "output_per_1k"] {
-                        let v = tier[field].as_f64().expect("context tier price must be a number");
+                        let v = tier[field]
+                            .as_f64()
+                            .expect("context tier price must be a number");
                         assert!(v.is_finite() && v >= 0.0, "bad context tier {field}: {v}");
                     }
                     if let Some(ci) = tier.get("cached_input_per_1k") {
-                        let v = ci.as_f64().expect("context tier cached price must be a number");
-                        assert!(v.is_finite() && v >= 0.0, "bad context tier cached price: {v}");
+                        let v = ci
+                            .as_f64()
+                            .expect("context tier cached price must be a number");
+                        assert!(
+                            v.is_finite() && v >= 0.0,
+                            "bad context tier cached price: {v}"
+                        );
                     }
                 }
             }
             if let Some(tiers) = e.get("time_tiers").and_then(|t| t.as_array()) {
                 for tier in tiers {
-                    assert!(tier["name"].as_str().is_some(), "time tier name must be a string");
+                    assert!(
+                        tier["name"].as_str().is_some(),
+                        "time tier name must be a string"
+                    );
                     for field in ["input_per_1k", "output_per_1k"] {
-                        let v = tier[field].as_f64().expect("time tier price must be a number");
+                        let v = tier[field]
+                            .as_f64()
+                            .expect("time tier price must be a number");
                         assert!(v.is_finite() && v >= 0.0, "bad time tier {field}: {v}");
                     }
                     if let Some(ci) = tier.get("cached_input_per_1k") {
-                        let v = ci.as_f64().expect("time tier cached price must be a number");
+                        let v = ci
+                            .as_f64()
+                            .expect("time tier cached price must be a number");
                         assert!(v.is_finite() && v >= 0.0, "bad time tier cached price: {v}");
                     }
                 }
@@ -695,12 +719,8 @@ mod tests {
     fn estimate_request_multiplication_saturates() {
         // 2^32 * 2^32 would wrap to 0 in u64, faking a $0 estimate.
         let body = serde_json::json!({"max_tokens": 4294967296u64, "n": 4294967296u64});
-        let (cost, tokens) = estimate_request(
-            &body,
-            "gpt-4o",
-            "gpt-4o",
-            &PricingProfile::default(),
-        );
+        let (cost, tokens) =
+            estimate_request(&body, "gpt-4o", "gpt-4o", &PricingProfile::default());
         assert_eq!(tokens, u64::MAX);
         assert!(cost > 0.0, "expected a non-zero estimate, got {cost}");
     }
@@ -708,12 +728,8 @@ mod tests {
     #[test]
     fn estimate_request_normal_values() {
         let body = serde_json::json!({"max_tokens": 1000u64, "n": 2u64});
-        let (cost, tokens) = estimate_request(
-            &body,
-            "gpt-4o",
-            "gpt-4o",
-            &PricingProfile::default(),
-        );
+        let (cost, tokens) =
+            estimate_request(&body, "gpt-4o", "gpt-4o", &PricingProfile::default());
         assert_eq!(tokens, 2000);
         // gpt-4o output: $0.01 / 1K -> 2000 * 0.01 / 1000 = $0.02
         assert!((cost - 0.02).abs() < 0.0001, "expected ~0.02, got {cost}");

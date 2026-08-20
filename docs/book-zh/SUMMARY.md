@@ -8,6 +8,7 @@
 - [服务商配置示例](./provider-examples.md)
 - [限额与订阅](./limits.md)
 - [限额配方](./limits-recipes.md)
+- [通过 Tailscale 与团队共享](./team.md)
 - [托盘图标与通知](./tray.md)
 - [客户端集成示例](./clients.md)
 - [高级功能](./advanced.md)

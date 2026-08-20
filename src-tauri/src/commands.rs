@@ -28,6 +28,8 @@ pub struct SettingsDto {
     pub auto_start: bool,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
+    pub share_over_tailscale: bool,
+    pub share_url: Option<String>,
     pub auto_update_interval_minutes: u32,
     pub onboarding_completed: bool,
 }
@@ -366,6 +368,14 @@ pub fn update_provider(
     })
 }
 
+/// The URL team members should point their clients at when sharing is on.
+fn share_url(cfg: &crate::config::Config) -> Option<String> {
+    if !cfg.share_over_tailscale {
+        return None;
+    }
+    crate::proxy::server::tailscale_ipv4().map(|ip| format!("http://{ip}:{}", cfg.port))
+}
+
 fn preferred_lan_ip() -> Option<String> {
     let interfaces = local_ip_address::list_afinet_netifas().ok()?;
     let mut candidates: Vec<(String, IpAddr)> = interfaces
@@ -502,6 +512,8 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsDto, Stri
             .read()
             .map_err(|e| e.to_string())?
             .expose_to_lan,
+        share_over_tailscale: cfg.share_over_tailscale,
+        share_url: share_url(&cfg),
         auto_update_interval_minutes: state
             .inner()
             .config
@@ -741,6 +753,35 @@ pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Resu
         .write()
         .map_err(|e| e.to_string())?
         .expose_to_lan = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_share_over_tailscale(
+    state: State<'_, Arc<AppState>>,
+    enabled: bool,
+) -> Result<(), String> {
+    if enabled && crate::proxy::server::tailscale_ipv4().is_none() {
+        return Err(
+            "No Tailscale interface (100.x.x.x) found — install Tailscale and sign in first".into(),
+        );
+    }
+    {
+        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
+        db::set_setting(
+            &conn,
+            "share_over_tailscale",
+            if enabled { "1" } else { "0" },
+        )
+        .map_err(|e| e.to_string())?;
+        drop(conn);
+    }
+    state
+        .inner()
+        .config
+        .write()
+        .map_err(|e| e.to_string())?
+        .share_over_tailscale = enabled;
     Ok(())
 }
 

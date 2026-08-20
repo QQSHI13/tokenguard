@@ -15,12 +15,40 @@ use crate::proxy::forwarder;
 use crate::state::{pricing_profile, remote_model_name, AppState};
 
 /// Bind the loopback proxy and serve until the app exits.
+///
+/// Binding modes, in order of preference:
+/// - `share_over_tailscale`: bind to the host's Tailscale IPv4 (100.64.0.0/10)
+///   *and* loopback, so only devices on the same tailnet can reach the gateway.
+/// - `expose_to_lan`: bind `0.0.0.0` (any interface).
+/// - otherwise: loopback only.
 pub async fn serve(
     state: Arc<AppState>,
     port: u16,
     expose_to_lan: bool,
+    share_over_tailscale: bool,
     shutdown: tokio::sync::watch::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let app = router(state);
+    if share_over_tailscale {
+        let Some(ip) = tailscale_ipv4() else {
+            return Err(
+                "Tailscale sharing is enabled but no Tailscale interface (100.x.x.x) was found. \
+                 Install Tailscale, sign in, and try again — or disable sharing."
+                    .into(),
+            );
+        };
+        tracing::info!("Token Guard proxy sharing over Tailscale on http://{ip}:{port}");
+        let tailnet_listener = tokio::net::TcpListener::bind((ip, port)).await?;
+        let loopback_listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+        let app2 = app.clone();
+        let shutdown2 = shutdown.clone();
+        let tailnet_srv =
+            axum::serve(tailnet_listener, app).with_graceful_shutdown(shutdown_signal(shutdown));
+        let loopback_srv =
+            axum::serve(loopback_listener, app2).with_graceful_shutdown(shutdown_signal(shutdown2));
+        tokio::try_join!(tailnet_srv, loopback_srv)?;
+        return Ok(());
+    }
     let bind_addr = if expose_to_lan {
         "0.0.0.0"
     } else {
@@ -28,12 +56,29 @@ pub async fn serve(
     };
     let listener = tokio::net::TcpListener::bind((bind_addr, port)).await?;
     tracing::info!("Token Guard proxy listening on http://{bind_addr}:{port}");
-    let app = router(state);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(shutdown))
         .await?;
     tracing::info!("Token Guard proxy shut down gracefully");
     Ok(())
+}
+
+/// Find the host's Tailscale IPv4 address (100.64.0.0/10 CGNAT range).
+/// Returns `None` when Tailscale is not installed or not connected.
+pub fn tailscale_ipv4() -> Option<std::net::IpAddr> {
+    let interfaces = local_ip_address::list_afinet_netifas().ok()?;
+    interfaces
+        .into_iter()
+        .map(|(_, ip)| ip)
+        .find(|ip| is_tailscale_ip(*ip))
+}
+
+/// True for addresses in the Tailscale CGNAT range 100.64.0.0/10.
+pub fn is_tailscale_ip(ip: std::net::IpAddr) -> bool {
+    matches!(ip, std::net::IpAddr::V4(v4) if {
+        let o = v4.octets();
+        o[0] == 100 && o[1] & 0b1100_0000 == 0b0100_0000
+    })
 }
 
 async fn shutdown_signal(mut rx: tokio::sync::watch::Receiver<()>) {
@@ -652,5 +697,24 @@ mod tests {
     #[test]
     fn extract_model_from_path_returns_none_for_list() {
         assert_eq!(extract_model_from_path("models"), None);
+    }
+
+    #[test]
+    fn tailscale_range_detection() {
+        use std::net::IpAddr;
+        assert!(is_tailscale_ip(
+            "100.100.100.100".parse::<IpAddr>().unwrap()
+        ));
+        assert!(is_tailscale_ip("100.64.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_tailscale_ip(
+            "100.127.255.254".parse::<IpAddr>().unwrap()
+        ));
+        assert!(!is_tailscale_ip(
+            "100.63.255.255".parse::<IpAddr>().unwrap()
+        ));
+        assert!(!is_tailscale_ip("100.128.0.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_tailscale_ip("192.168.1.5".parse::<IpAddr>().unwrap()));
+        assert!(!is_tailscale_ip("127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_tailscale_ip("::1".parse::<IpAddr>().unwrap()));
     }
 }

@@ -1012,18 +1012,22 @@ fn scope_name_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<Op
         LimitScope::Provider => {
             if let Some(id) = limit.scope_id {
                 return conn
-                    .query_row("SELECT name FROM providers WHERE id = ?1", params![id], |r| {
-                        r.get(0)
-                    })
+                    .query_row(
+                        "SELECT name FROM providers WHERE id = ?1",
+                        params![id],
+                        |r| r.get(0),
+                    )
                     .map(Some);
             }
         }
         LimitScope::Project => {
             if let Some(id) = limit.scope_id {
                 return conn
-                    .query_row("SELECT name FROM projects WHERE id = ?1", params![id], |r| {
-                        r.get(0)
-                    })
+                    .query_row(
+                        "SELECT name FROM projects WHERE id = ?1",
+                        params![id],
+                        |r| r.get(0),
+                    )
                     .map(Some);
             }
         }
@@ -1044,6 +1048,11 @@ fn usage_for_params(
     let column = match metric {
         LimitMetric::Money => "cost",
         LimitMetric::Tokens | LimitMetric::TokensPerMinute => "prompt_tokens + completion_tokens",
+        LimitMetric::InputTokens => "prompt_tokens",
+        LimitMetric::OutputTokens => "completion_tokens",
+        // Per-request metrics have no history: the usage comes from the request
+        // itself (estimated cost / in-flight concurrency), never from the log.
+        LimitMetric::CostPerRequest | LimitMetric::ConcurrentRequests => "0.0",
         LimitMetric::Requests | LimitMetric::RequestsPerMinute => "1",
         LimitMetric::TimeSec => "duration_ms / 1000.0",
     };
@@ -1115,12 +1124,20 @@ pub fn usage_for_limit(conn: &Connection, limit: &Limit) -> rusqlite::Result<f64
 pub fn usage_for_limit_group(conn: &Connection, group: &LimitGroup) -> rusqlite::Result<f64> {
     let scope_name = match group.scope {
         LimitScope::Provider => group.scope_id.and_then(|id| {
-            conn.query_row("SELECT name FROM providers WHERE id = ?1", params![id], |r| r.get(0))
-                .ok()
+            conn.query_row(
+                "SELECT name FROM providers WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .ok()
         }),
         LimitScope::Project => group.scope_id.and_then(|id| {
-            conn.query_row("SELECT name FROM projects WHERE id = ?1", params![id], |r| r.get(0))
-                .ok()
+            conn.query_row(
+                "SELECT name FROM projects WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .ok()
         }),
         LimitScope::Global | LimitScope::Model => None,
     };
@@ -1269,7 +1286,10 @@ pub fn update_limit_group(conn: &Connection, id: i64, g: &LimitGroupInput) -> ru
 }
 
 pub fn delete_limit_group(conn: &Connection, id: i64) -> rusqlite::Result<()> {
-    conn.execute("DELETE FROM limit_group_members WHERE group_id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM limit_group_members WHERE group_id = ?1",
+        params![id],
+    )?;
     conn.execute("DELETE FROM limit_groups WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -1355,6 +1375,9 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
     let expose_to_lan = get_setting(conn, "expose_to_lan")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    let share_over_tailscale = get_setting(conn, "share_over_tailscale")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     let auto_update_interval_minutes = get_setting(conn, "auto_update_interval_minutes")
         .and_then(|v| v.parse().ok())
         .or_else(|| {
@@ -1384,6 +1407,7 @@ pub fn load_config(conn: &Connection) -> rusqlite::Result<Config> {
         auto_start,
         log_retention_days,
         expose_to_lan,
+        share_over_tailscale,
         auto_update_interval_minutes,
         beta_channel,
     })
@@ -1585,6 +1609,23 @@ mod tests {
         let used = usage_for_limit(&conn, &limits[0]).unwrap();
         assert_eq!(used, 50.0);
 
+        // Input/output token metrics read the right columns.
+        let mut input = limits[0].clone();
+        input.metric = LimitMetric::InputTokens;
+        let input_used = usage_for_limit(&conn, &input).unwrap();
+        assert_eq!(input_used, 30.0);
+        let mut output = limits[0].clone();
+        output.metric = LimitMetric::OutputTokens;
+        let output_used = usage_for_limit(&conn, &output).unwrap();
+        assert_eq!(output_used, 20.0);
+
+        // Per-request metrics have no history.
+        let mut per_req = limits[0].clone();
+        per_req.metric = LimitMetric::CostPerRequest;
+        assert_eq!(usage_for_limit(&conn, &per_req).unwrap(), 0.0);
+        per_req.metric = LimitMetric::ConcurrentRequests;
+        assert_eq!(usage_for_limit(&conn, &per_req).unwrap(), 0.0);
+
         let mut updated = limit.clone();
         updated.cap = 200.0;
         update_limit(&conn, id, &updated).unwrap();
@@ -1728,8 +1769,30 @@ mod tests {
         let found = limits.iter().find(|l| l.id == id).unwrap();
         assert_eq!(found.model_pattern.as_deref(), Some("gpt-4"));
 
-        insert_log(&conn, "OpenAI", "gpt-4o", 30, 20, 0.001, 100, None, Some(200)).unwrap();
-        insert_log(&conn, "OpenAI", "claude-sonnet", 100, 100, 0.0, 100, None, Some(200)).unwrap();
+        insert_log(
+            &conn,
+            "OpenAI",
+            "gpt-4o",
+            30,
+            20,
+            0.001,
+            100,
+            None,
+            Some(200),
+        )
+        .unwrap();
+        insert_log(
+            &conn,
+            "OpenAI",
+            "claude-sonnet",
+            100,
+            100,
+            0.0,
+            100,
+            None,
+            Some(200),
+        )
+        .unwrap();
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 50.0);
     }

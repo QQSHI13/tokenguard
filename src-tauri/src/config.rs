@@ -193,6 +193,10 @@ pub struct ProjectInput {
 pub enum LimitMetric {
     Money,
     Tokens,
+    InputTokens,
+    OutputTokens,
+    CostPerRequest,
+    ConcurrentRequests,
     Requests,
     TimeSec,
     RequestsPerMinute,
@@ -204,6 +208,10 @@ impl LimitMetric {
         match self {
             Self::Money => "money",
             Self::Tokens => "tokens",
+            Self::InputTokens => "input_tokens",
+            Self::OutputTokens => "output_tokens",
+            Self::CostPerRequest => "cost_per_request",
+            Self::ConcurrentRequests => "concurrent_requests",
             Self::Requests => "requests",
             Self::TimeSec => "time_sec",
             Self::RequestsPerMinute => "requests_per_minute",
@@ -213,6 +221,10 @@ impl LimitMetric {
     pub fn from_db_str(s: &str) -> Self {
         match s {
             "tokens" => Self::Tokens,
+            "input_tokens" => Self::InputTokens,
+            "output_tokens" => Self::OutputTokens,
+            "cost_per_request" => Self::CostPerRequest,
+            "concurrent_requests" => Self::ConcurrentRequests,
             "requests" => Self::Requests,
             "time_sec" => Self::TimeSec,
             "requests_per_minute" => Self::RequestsPerMinute,
@@ -223,6 +235,11 @@ impl LimitMetric {
     /// True for rate-based metrics that use a fixed rolling window.
     pub fn is_rate(self) -> bool {
         matches!(self, Self::RequestsPerMinute | Self::TokensPerMinute)
+    }
+    /// True for metrics whose usage is measured per single request rather than
+    /// summed over a period (enforced from the request itself, not history).
+    pub fn is_per_request(self) -> bool {
+        matches!(self, Self::CostPerRequest | Self::ConcurrentRequests)
     }
 }
 
@@ -280,7 +297,10 @@ impl LimitPeriod {
     }
 
     /// Calendar-aligned start of the current period, if applicable.
-    pub fn calendar_start(self, now: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub fn calendar_start(
+        self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
         match self {
             Self::CalendarWeek => {
                 // ISO week starts on Monday.
@@ -462,6 +482,7 @@ pub struct Config {
     pub auto_start: bool,
     pub log_retention_days: u32,
     pub expose_to_lan: bool,
+    pub share_over_tailscale: bool,
     pub auto_update_interval_minutes: u32,
     pub beta_channel: bool,
 }
@@ -481,6 +502,7 @@ impl Default for Config {
             auto_start: false,
             log_retention_days: 0,
             expose_to_lan: false,
+            share_over_tailscale: false,
             auto_update_interval_minutes: 240,
             beta_channel: false,
         }

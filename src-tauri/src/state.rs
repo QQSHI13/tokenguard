@@ -486,14 +486,29 @@ impl AppState {
                 let reserved = self.limit_counters.increment(limit.id, tokens as f64);
                 result.reservations.push((limit.id, tokens as f64));
                 (tokens as f64, persisted + reserved - tokens as f64)
+            } else if limit.metric == LimitMetric::ConcurrentRequests {
+                // In-flight concurrency: the reservation lives for the whole
+                // request and is released when the proxy finishes forwarding.
+                let reserved = self.limit_counters.increment(limit.id, 1.0);
+                result.reservations.push((limit.id, 1.0));
+                (1.0, reserved - 1.0)
             } else {
                 let current = match limit.metric {
                     LimitMetric::Money => cost,
                     LimitMetric::Tokens => tokens as f64,
+                    // Prompt size is unknown until the response arrives; the
+                    // persisted sum covers the period, the current request is
+                    // counted by the DB after forwarding.
+                    LimitMetric::InputTokens => 0.0,
+                    LimitMetric::OutputTokens => tokens as f64,
+                    // Per-request cost cap compares the estimated cost of this
+                    // single request against the cap; there is no history.
+                    LimitMetric::CostPerRequest => cost,
                     LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
                     LimitMetric::Requests
                     | LimitMetric::RequestsPerMinute
-                    | LimitMetric::TokensPerMinute => unreachable!(),
+                    | LimitMetric::TokensPerMinute
+                    | LimitMetric::ConcurrentRequests => unreachable!(),
                 };
                 (current, persisted)
             };
@@ -599,14 +614,22 @@ impl AppState {
                 let reserved = self.group_counters.increment(group.id, tokens as f64);
                 result.group_reservations.push((group.id, tokens as f64));
                 (tokens as f64, persisted + reserved - tokens as f64)
+            } else if group.metric == LimitMetric::ConcurrentRequests {
+                let reserved = self.group_counters.increment(group.id, 1.0);
+                result.group_reservations.push((group.id, 1.0));
+                (1.0, reserved - 1.0)
             } else {
                 let current = match group.metric {
                     LimitMetric::Money => cost,
                     LimitMetric::Tokens => tokens as f64,
+                    LimitMetric::InputTokens => 0.0,
+                    LimitMetric::OutputTokens => tokens as f64,
+                    LimitMetric::CostPerRequest => cost,
                     LimitMetric::TimeSec => duration_ms as f64 / 1000.0,
                     LimitMetric::Requests
                     | LimitMetric::RequestsPerMinute
-                    | LimitMetric::TokensPerMinute => unreachable!(),
+                    | LimitMetric::TokensPerMinute
+                    | LimitMetric::ConcurrentRequests => unreachable!(),
                 };
                 (current, persisted)
             };
@@ -1117,7 +1140,11 @@ fn parse_minutes(s: &str) -> Option<u32> {
 /// Return true if the current UTC time falls inside the limit's optional
 /// schedule. A missing schedule means always active.
 pub fn is_limit_active(limit: &Limit) -> bool {
-    is_schedule_active(limit.active_days, limit.active_hours_start.as_deref(), limit.active_hours_end.as_deref())
+    is_schedule_active(
+        limit.active_days,
+        limit.active_hours_start.as_deref(),
+        limit.active_hours_end.as_deref(),
+    )
 }
 
 fn is_schedule_active(
@@ -1461,7 +1488,13 @@ mod tests {
             Some("m"),
             &projects
         ));
-        assert!(!limit_scope_matches(&limit, 1, Some("other"), Some("m"), &projects));
+        assert!(!limit_scope_matches(
+            &limit,
+            1,
+            Some("other"),
+            Some("m"),
+            &projects
+        ));
         assert!(!limit_scope_matches(&limit, 1, None, Some("m"), &projects));
     }
 
@@ -1478,7 +1511,13 @@ mod tests {
     fn limit_model_pattern_narrows_other_scopes() {
         let mut limit = mk_limit(LimitScope::Global, None);
         limit.model_pattern = Some("claude".into());
-        assert!(limit_scope_matches(&limit, 1, None, Some("claude-sonnet"), &[]));
+        assert!(limit_scope_matches(
+            &limit,
+            1,
+            None,
+            Some("claude-sonnet"),
+            &[]
+        ));
         assert!(!limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
     }
 

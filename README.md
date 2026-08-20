@@ -52,9 +52,10 @@ OpenRouter and LiteLLM are great products — they're just not private.
   Manager, macOS Keychain, or Linux Secret Service — not in `~/.cursorrc`, not in
   an `.env` file, and not in Token Guard's SQLite database.
 - **Projects, budgets, and smart limits.** Tag requests by project, set per-project
-  budgets, and enforce limits on money, tokens, requests, RPM, TPM, or elapsed time.
-  Scope limits globally, per provider, per project, or per model pattern; schedule
-  active hours and days; choose warn, block, or pause on breach. Calendar-aligned
+  budgets, and enforce limits on money, tokens (total, input-only, or output-only),
+  requests, RPM, TPM, wall-clock time, **max cost per request**, or **max concurrent
+  requests**. Scope limits globally, per provider, per project, or per model pattern;
+  schedule active hours and days; choose warn, block, or pause on breach. Calendar-aligned
   weekly/monthly periods and shared-cap limit groups are also supported.
 - **Real-time cost tracking.** Per-project, per-provider, per-model spend with a
   local SQLite history. Built-in pricing table plus per-model overrides; no network
@@ -64,6 +65,11 @@ OpenRouter and LiteLLM are great products — they're just not private.
 - **GUI + CLI, same engine.** Configure everything in the desktop tray app or run
   headless with the `tokenguard` CLI. Both use the same Rust backend and the same
   local database.
+- **Team sharing over Tailscale.** One member hosts the gateway, the whole team
+  uses it. Token Guard binds only to the host's Tailscale IP (100.x.x.x), so the
+  gateway is unreachable from the LAN or internet. Teammates authenticate with a
+  project label key — their requests are tagged to that project and count against
+  its budgets and limits. `tokenguard share on` prints the team endpoint.
 
 ## Architecture
 
@@ -187,8 +193,17 @@ tokenguard project add --name my-app --label-key tg-myapp \
 # limits (interactive: tokenguard limit add)
 tokenguard limit add --name "daily-tokens" --metric tokens --cap 1000000 \
   --action pause --period daily --warning-threshold 0.9 --scope global
+tokenguard limit add --name "max-concurrency" --metric concurrent_requests \
+  --cap 8 --action block --scope global
+tokenguard limit add --name "single-request-cost" --metric cost_per_request \
+  --cap 2 --action block --scope global
 tokenguard limit status
 tokenguard limit update 1 --cap 2000000 --enabled true
+
+# team sharing over Tailscale
+tokenguard share on      # prints http://100.x.x.x:3742/v1 for teammates
+tokenguard share status
+tokenguard share off
 
 # settings
 tokenguard settings show
@@ -247,6 +262,28 @@ secure storage”*:
 Linux secret-service provider. To use Windows Credential Manager, build and run
 from PowerShell or CMD on Windows.
 
+## Team sharing over Tailscale
+
+Share one gateway with your whole team. One member hosts, everyone else points
+their clients at the host's Tailscale IP:
+
+```bash
+# host machine
+tokenguard share on
+# → Team endpoint: http://100.100.100.5:3742/v1
+
+# teammate machine
+OPENAI_BASE_URL=http://100.100.100.5:3742/v1
+OPENAI_API_KEY=tg_team-project   # a project label key created on the host
+```
+
+- Token Guard binds **only** to the host's Tailscale IP (100.64.0.0/10) plus
+  loopback — never to the LAN or internet.
+- Teammates authenticate with project label keys; their requests are tagged to
+  that project and count against its budget and limits. Revoke access by
+  deleting the project, or cut everyone off with `tokenguard share off`.
+- Full guide: **Docs → Team sharing over Tailscale** (English + 中文).
+
 ## Cost accuracy
 
 Cost estimates use a built-in pricing table (`pricing.json`) that is embedded
@@ -271,8 +308,10 @@ the internet at runtime.
 The **Limits** tab lets you set caps on:
 
 - **Money** ($)
-- **Tokens** (prompt + completion)
+- **Tokens** (prompt + completion, or input-only / output-only)
 - **Requests** (count)
+- **Cost per request** (a single request can never cost more than the cap)
+- **Concurrent requests** (max in-flight; extras get HTTP 429 before reaching the provider)
 - **Time** (wall-clock seconds)
 
 Each limit has a reset period (one-time, hourly, daily, weekly, monthly, or

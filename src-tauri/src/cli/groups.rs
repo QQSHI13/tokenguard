@@ -1,8 +1,6 @@
 //! Limit group management commands for the CLI.
 
-use crate::config::{
-    LimitAction, LimitGroupInput, LimitMetric, LimitPeriod, LimitScope,
-};
+use crate::config::{LimitAction, LimitGroupInput, LimitMetric, LimitPeriod, LimitScope};
 use crate::db;
 use crate::state::AppState;
 use anyhow::{Context, Result};
@@ -273,7 +271,10 @@ fn parse_scope(s: &str) -> Result<LimitScope> {
         "provider" => Ok(LimitScope::Provider),
         "project" => Ok(LimitScope::Project),
         "model" => Ok(LimitScope::Model),
-        _ => anyhow::bail!("unknown scope '{}'; use global, provider, project, or model", s),
+        _ => anyhow::bail!(
+            "unknown scope '{}'; use global, provider, project, or model",
+            s
+        ),
     }
 }
 

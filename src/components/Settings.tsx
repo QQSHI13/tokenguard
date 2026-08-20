@@ -18,6 +18,8 @@ type Settings = {
   auto_start: boolean;
   log_retention_days: number;
   expose_to_lan: boolean;
+  share_over_tailscale: boolean;
+  share_url: string | null;
   auto_update_interval_minutes: number;
   beta_channel: boolean;
 } | null;
@@ -39,6 +41,9 @@ export default function SettingsTab({
   const [autoStart, setAutoStart] = useState(settings?.auto_start ?? false);
   const [autoStartStatus, setAutoStartStatus] = useState<string | null>(null);
   const [exposeToLan, setExposeToLan] = useState(settings?.expose_to_lan ?? false);
+  const [shareTailscale, setShareTailscale] = useState(settings?.share_over_tailscale ?? false);
+  const [shareUrl, setShareUrl] = useState(settings?.share_url ?? null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [budget, setBudget] = useState(String(settings?.budget ?? 0));
   const [webhookUrl, setWebhookUrl] = useState(settings?.webhook_url ?? "");
@@ -79,6 +84,11 @@ export default function SettingsTab({
   }, [settings?.expose_to_lan]);
 
   useEffect(() => {
+    setShareTailscale(settings?.share_over_tailscale ?? false);
+    setShareUrl(settings?.share_url ?? null);
+  }, [settings?.share_over_tailscale, settings?.share_url]);
+
+  useEffect(() => {
     setBetaChannel(settings?.beta_channel ?? false);
   }, [settings?.beta_channel]);
 
@@ -88,6 +98,18 @@ export default function SettingsTab({
       setExposeToLan(enabled);
     } catch (e) {
       alert(String(e));
+    }
+  };
+
+  const handleShareTailscaleChange = async (enabled: boolean) => {
+    setShareStatus(null);
+    try {
+      await invoke("set_share_over_tailscale", { enabled });
+      setShareTailscale(enabled);
+      if (enabled) setShareStatus(t("shareSaved"));
+      onChanged();
+    } catch (e) {
+      setShareStatus(String(e));
     }
   };
 
@@ -295,6 +317,29 @@ export default function SettingsTab({
             </span>
           </span>
         </label>
+
+        <label className="mt-3 flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+          <input
+            type="checkbox"
+            checked={shareTailscale}
+            onChange={(e) => handleShareTailscaleChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            {t("shareTailscale")}
+            <span className="block text-[10px] text-neutral-500">
+              {t("shareTailscaleHelp")}
+            </span>
+          </span>
+        </label>
+        {shareTailscale && shareUrl && (
+          <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-[10px] text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+            {t("shareUrl")} <code className="font-mono">{shareUrl}</code>
+          </div>
+        )}
+        {shareStatus && (
+          <div className="mt-2 text-[10px] text-neutral-500">{shareStatus}</div>
+        )}
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">

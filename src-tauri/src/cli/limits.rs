@@ -259,7 +259,10 @@ fn parse_scope(s: &str) -> Result<LimitScope> {
         "provider" => Ok(LimitScope::Provider),
         "project" => Ok(LimitScope::Project),
         "model" => Ok(LimitScope::Model),
-        _ => anyhow::bail!("unknown scope '{}'; use global, provider, project, or model", s),
+        _ => anyhow::bail!(
+            "unknown scope '{}'; use global, provider, project, or model",
+            s
+        ),
     }
 }
 

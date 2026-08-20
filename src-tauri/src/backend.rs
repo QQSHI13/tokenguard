@@ -12,6 +12,7 @@ pub struct BackendInit {
     pub state: Arc<AppState>,
     pub port: u16,
     pub expose_to_lan: bool,
+    pub share_over_tailscale: bool,
 }
 
 /// Initialize the backend: data dir, SQLite pool, config, and state.
@@ -37,6 +38,7 @@ pub fn init_backend(
         db::load_config(&conn).map_err(|e| anyhow::anyhow!("load config from database: {e}"))?;
     let port = config.port;
     let expose_to_lan = config.expose_to_lan;
+    let share_over_tailscale = config.share_over_tailscale;
 
     if config.log_retention_days > 0 {
         match db::cleanup_old_logs(&conn, config.log_retention_days) {
@@ -66,15 +68,27 @@ pub fn init_backend(
         state,
         port,
         expose_to_lan,
+        share_over_tailscale,
     })
 }
 
 /// Run the proxy server until the shutdown signal fires.
-pub async fn serve_proxy(state: Arc<AppState>, port: u16, expose_to_lan: bool) -> Result<()> {
+pub async fn serve_proxy(
+    state: Arc<AppState>,
+    port: u16,
+    expose_to_lan: bool,
+    share_over_tailscale: bool,
+) -> Result<()> {
     let shutdown_rx = state.shutdown_rx();
-    server::serve(state, port, expose_to_lan, shutdown_rx)
-        .await
-        .map_err(|e| anyhow::anyhow!("proxy server error: {e}"))
+    server::serve(
+        state,
+        port,
+        expose_to_lan,
+        share_over_tailscale,
+        shutdown_rx,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("proxy server error: {e}"))
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,8 @@ type Settings = {
   auto_start: boolean;
   log_retention_days: number;
   expose_to_lan: boolean;
+  share_over_tailscale: boolean;
+  share_url: string | null;
   auto_update_interval_minutes: number;
   beta_channel: boolean;
 };

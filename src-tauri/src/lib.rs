@@ -117,6 +117,7 @@ pub fn run() {
             commands::set_auto_start,
             commands::set_auto_update_interval_minutes,
             commands::set_beta_channel,
+            commands::set_share_over_tailscale,
             commands::set_onboarding_completed,
         ])
         .setup(|app| {
@@ -128,6 +129,7 @@ pub fn run() {
                 state,
                 port,
                 expose_to_lan,
+                share_over_tailscale,
             } = backend::init_backend(dir, notifier)?;
 
             // Native tray (left-click toggles pause; menu items below).
@@ -139,7 +141,10 @@ pub fn run() {
             let s = state.clone();
             let shutdown_rx = state.shutdown_rx();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = proxy::server::serve(s, port, expose_to_lan, shutdown_rx).await {
+                if let Err(e) =
+                    proxy::server::serve(s, port, expose_to_lan, share_over_tailscale, shutdown_rx)
+                        .await
+                {
                     tracing::error!("proxy server error: {e}");
                 }
             });

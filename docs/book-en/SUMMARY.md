@@ -8,6 +8,7 @@
 - [Provider setup examples](./provider-examples.md)
 - [Limits & subscriptions](./limits.md)
 - [Limit recipes](./limits-recipes.md)
+- [Team sharing over Tailscale](./team.md)
 - [Tray icon & notifications](./tray.md)
 - [Client integration examples](./clients.md)
 - [Advanced features](./advanced.md)
