@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Token Guard — local LLM gateway &amp; cost tracker</title>
-  <meta name="description" content="Token Guard is a free, open-source LLM gateway. Use the GUI or CLI to convert between OpenAI, Anthropic, Gemini, and OpenAI Responses SDK formats — all locally. Universal provider support coming.">
-  <meta property="og:title" content="Token Guard — local LLM gateway &amp; cost tracker">
-  <meta property="og:description" content="Local LLM gateway with GUI or CLI. 4 × 4 SDK conversion, universal provider support, budgets, and OS-keychain key storage — all on your machine.">
+  <title>Token Guard — the only LLM gateway that can't see your prompts</title>
+  <meta name="description" content="Token Guard is a free, open-source local LLM gateway. Convert between OpenAI, Anthropic, Gemini, and OpenAI Responses SDK formats, enforce budgets and limits, and track spend — without any cloud, account, or prompt logging.">
+  <meta property="og:title" content="Token Guard — the only LLM gateway that can't see your prompts">
+  <meta property="og:description" content="Free, open-source, 100% local LLM gateway. 4 × 4 SDK conversion, enforced budgets, OS-keychain keys. No cloud, no account, no prompt logging — by design.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tokenguard.pages.dev/">
   <meta property="og:image" content="https://tokenguard.pages.dev/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Token Guard — local LLM gateway &amp; cost tracker">
-  <meta name="twitter:description" content="Local LLM gateway with GUI or CLI. 4 × 4 SDK conversion, universal provider support, budgets, and OS-keychain key storage — all on your machine.">
+  <meta name="twitter:title" content="Token Guard — the only LLM gateway that can't see your prompts">
+  <meta name="twitter:description" content="Free, open-source, 100% local LLM gateway. 4 × 4 SDK conversion, enforced budgets, OS-keychain keys. No cloud, no account, no prompt logging — by design.">
   <meta name="twitter:image" content="https://tokenguard.pages.dev/og-image.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
@@ -39,7 +39,8 @@
       </a>
       <nav class="hidden items-center gap-8 text-sm font-medium md:flex">
         <a href="#features" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Features</a>
-        <a href="#how-it-works" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">How it works</a>
+        <a href="#quickstart" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Quick start</a>
+        <a href="#comparison" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Compare</a>
         <a href="#support" class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">Pro license</a>
       </nav>
       <div class="flex items-center gap-2">
@@ -67,10 +68,10 @@
           Free &amp; open source · Apache-2.0
         </p>
         <h1 class="mx-auto mt-7 max-w-3xl text-5xl font-extrabold tracking-tight sm:text-6xl">
-          Stop leaking API keys and overspending on LLMs.
+          The only LLM gateway that <span class="text-emerald-600 dark:text-emerald-400">cannot see your prompts</span>.
         </h1>
         <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
-          A local LLM gateway with a desktop GUI and a headless CLI. Use any of the four major SDK shapes — OpenAI Chat, OpenAI Responses, Anthropic Messages, or Gemini — and route any client to any provider. Track spend per project, enforce smart budgets and limits, and never store API keys in plain text again.
+          A local LLM gateway with a desktop GUI and a headless CLI. Use any of the four major SDK shapes — OpenAI Chat, OpenAI Responses, Anthropic Messages, or Gemini — and route any client to any provider. Track spend per project, enforce smart budgets and limits, and never store API keys in plain text again. No cloud, no account, no prompt logging — by design.
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href="https://github.com/QQSHI13/tokenguard/releases" class="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-3 text-base font-semibold text-white shadow-lg transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">
@@ -202,6 +203,131 @@
             <div class="text-4xl font-black text-zinc-200 dark:text-zinc-700">03</div>
             <h3 class="mt-2 text-lg font-bold">Tag projects</h3>
             <p class="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">Use a label key like <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">tg_your-project</code> as <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">OPENAI_API_KEY</code>. Token Guard tags and forwards.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="comparison" class="px-6 py-20">
+      <div class="mx-auto max-w-6xl">
+        <div class="mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight">Why not just use something else?</h2>
+          <p class="mt-3 text-zinc-600 dark:text-zinc-400">Cloud proxies see your prompts. Self-hosted proxies don't enforce budgets. Direct SDKs don't track spend. Token Guard is the one tool that does all three — on your machine.</p>
+        </div>
+        <div class="mt-12 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <table class="w-full min-w-[640px] text-left text-sm">
+            <thead>
+              <tr class="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-700">
+                <th class="px-6 py-4 font-semibold">What you get</th>
+                <th class="px-6 py-4 font-bold text-emerald-600 dark:text-emerald-400">Token Guard</th>
+                <th class="px-6 py-4 font-medium">Cloud proxy (OpenRouter, LiteLLM Cloud)</th>
+                <th class="px-6 py-4 font-medium">Self-hosted proxy (LiteLLM)</th>
+                <th class="px-6 py-4 font-medium">Direct SDKs</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">Prompts stay on your machine</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓ By design</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">Enforced budgets &amp; limits (block / pause / warn)</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">API keys in your OS keychain</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">No account, no signup, no credit card</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">4 × 4 SDK conversion (OpenAI ↔ Anthropic ↔ Gemini)</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">Real-time cost tracking per project / provider / model</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">GUI + headless CLI, one config</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-4 text-zinc-600 dark:text-zinc-400">Free &amp; open source (Apache-2.0)</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 text-zinc-500">✗</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+                <td class="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-400">✓</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-500">Feature lists summarized for comparison. OpenRouter and LiteLLM are great products — they're just not private.</p>
+      </div>
+    </section>
+
+    <section id="quickstart" class="px-6 py-20">
+      <div class="mx-auto max-w-5xl">
+        <div class="mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight">Up and running in 1 second</h2>
+          <p class="mt-3 text-zinc-600 dark:text-zinc-400">Install the CLI, start the gateway, point any client at it. That's it.</p>
+        </div>
+        <div class="mt-12 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-900 text-left shadow-2xl dark:border-zinc-700">
+          <div class="flex items-center gap-1.5 border-b border-zinc-700 bg-zinc-800 px-4 py-2.5">
+            <span class="h-3 w-3 rounded-full bg-red-500"></span>
+            <span class="h-3 w-3 rounded-full bg-amber-500"></span>
+            <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
+            <span class="ml-3 text-xs text-zinc-400">terminal</span>
+          </div>
+          <pre class="overflow-x-auto p-6 font-mono text-sm leading-relaxed text-zinc-100"><span class="text-zinc-500">$</span> curl -fsSL https://raw.githubusercontent.com/QQSHI13/tokenguard/main/scripts/install-cli.sh | bash
+<span class="text-zinc-500">$</span> tokenguard start
+<span class="text-emerald-400">✓</span> Gateway listening on http://127.0.0.1:3742
+    OpenAI · Anthropic · Gemini · OpenAI-compatible — all through one port
+
+<span class="text-zinc-500">$</span> OPENAI_BASE_URL=http://127.0.0.1:3742/v1 OPENAI_API_KEY=tg-my-project \
+  your-agent --model claude-sonnet-4        <span class="text-zinc-500"># client speaks OpenAI, gateway speaks Anthropic</span>
+
+<span class="text-zinc-500">$</span> tokenguard usage monthly
+<span class="text-zinc-400">Project my-project: $12.40 this month · 1.2M tokens · 3,412 requests</span></pre>
+        </div>
+        <div class="mt-8 grid gap-6 md:grid-cols-3">
+          <div class="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="text-2xl">🔌</div>
+            <h3 class="mt-3 text-lg font-bold">No SDK changes</h3>
+            <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">One env var. Cursor, Cline, Roo Code, your own scripts — anything that speaks OpenAI works, even against Anthropic or Gemini models.</p>
+          </div>
+          <div class="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="text-2xl">🛡️</div>
+            <h3 class="mt-3 text-lg font-bold">Keys never in files</h3>
+            <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Your real provider keys live in the OS keychain. Your client only ever sees a label key like <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">tg-my-project</code>.</p>
+          </div>
+          <div class="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="text-2xl">💸</div>
+            <h3 class="mt-3 text-lg font-bold">Budgets that bite</h3>
+            <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Set a $10/day cap and Token Guard blocks or pauses when it's hit — not next month when the invoice arrives.</p>
           </div>
         </div>
       </div>

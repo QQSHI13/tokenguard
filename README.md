@@ -7,6 +7,12 @@
 
 > The local LLM gateway. Your keys, your machine, your tokens.
 
+> **Why Token Guard?** Cloud proxies (OpenRouter, LiteLLM Cloud) see every prompt you
+> send. Self-hosted proxies (LiteLLM) can't enforce budgets. Direct SDKs give you no
+> spend visibility. Token Guard is the one tool that keeps prompts on your machine,
+> enforces real budgets (block / pause / warn), and tracks cost per project — with a
+> GUI and a CLI. Free, open source, Apache-2.0.
+
 > [!NOTE]
 > 🎁 **Launch offer:** the first 20 people to email **qingquanshi65@gmail.com** with feedback on Token Guard get a **free Pro license** (no banner, automatic updates, up to 2 devices).
 
@@ -25,6 +31,19 @@ and records only metadata (tokens, model, cost) to a local SQLite database.
 </p>
 
 ## What makes Token Guard different
+
+| | **Token Guard** | Cloud proxy (OpenRouter / LiteLLM Cloud) | Self-hosted proxy (LiteLLM) | Direct SDKs |
+|---|---|---|---|---|
+| Prompts stay on your machine | ✅ by design | ❌ | ✅ | ✅ |
+| Enforced budgets (block / pause / warn) | ✅ | ✅ | ❌ | ❌ |
+| Keys in OS keychain, never in files | ✅ | ❌ | ❌ | ❌ |
+| No account, no signup | ✅ | ❌ | ✅ | ✅ |
+| 4 × 4 SDK conversion (OpenAI ↔ Anthropic ↔ Gemini) | ✅ | ✅ | ❌ | ❌ |
+| Cost per project / provider / model | ✅ | ✅ | ❌ | ❌ |
+| GUI + headless CLI, one config | ✅ | ❌ | ❌ | ❌ |
+| Free & open source (Apache-2.0) | ✅ | ❌ | ✅ | ✅ |
+
+OpenRouter and LiteLLM are great products — they're just not private.
 
 - **4 × 4 SDK conversion.** Use OpenAI Chat, OpenAI Responses, Anthropic Messages,
   or Gemini client code, and route any of those four shapes to any supported
