@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod backup;
+mod doctor;
 mod groups;
 mod health;
 mod interactive;
@@ -23,6 +24,7 @@ mod proxy;
 mod secrets;
 mod settings;
 mod share;
+mod smoke_test;
 mod update;
 mod usage;
 
@@ -106,6 +108,23 @@ enum Commands {
     /// Share the gateway with your team over Tailscale.
     #[command(subcommand)]
     Share(ShareCommands),
+    /// Run environment diagnostics (database, keychain, port, Tailscale).
+    Doctor,
+    /// Send a test chat request through the running gateway.
+    Test {
+        /// Project label key (tg_...) used to authenticate the request.
+        #[arg(short = 'k', long, env = "TOKENGUARD_TEST_KEY")]
+        key: String,
+        /// Model to request.
+        #[arg(short, long, default_value = "gpt-4o-mini")]
+        model: String,
+        /// Prompt text.
+        #[arg(short, long, default_value = "Say OK")]
+        prompt: String,
+        /// Gateway base URL (defaults to loopback on the configured port).
+        #[arg(short, long)]
+        base_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -668,11 +687,39 @@ pub async fn run() -> Result<()> {
         Some(Commands::Models) => models_cmd(cli.data_dir).await,
         Some(Commands::Secrets { command }) => secrets_cmd(command).await,
         Some(Commands::Share(cmd)) => share_cmd(cli.data_dir, cmd).await,
+        Some(Commands::Doctor) => doctor_cmd(cli.data_dir).await,
+        Some(Commands::Test {
+            key,
+            model,
+            prompt,
+            base_url,
+        }) => {
+            let state = init_state(cli.data_dir)?;
+            smoke_test::run(
+                &state,
+                smoke_test::TestArgs {
+                    key,
+                    model,
+                    prompt,
+                    base_url,
+                },
+            )
+            .await
+        }
         None => {
             show_help_and_banner();
             Ok(())
         }
     }
+}
+
+async fn doctor_cmd(data_dir: Option<PathBuf>) -> Result<()> {
+    let state = init_state(data_dir)?;
+    let failures = doctor::run(&state)?;
+    if failures > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 fn show_help_and_banner() {
@@ -733,12 +780,19 @@ async fn start(data_dir: Option<PathBuf>, port: Option<u16>, expose_to_lan: bool
     if db_share {
         match crate::share::detect_mode() {
             crate::share::ShareMode::Direct(ip) => {
-                tracing::info!("proxy shared over Tailscale on http://{ip}:{port}")
+                tracing::info!("proxy shared over Tailscale on http://{ip}:{port}");
+                println!("Team endpoint: http://{ip}:{port}/v1");
             }
-            crate::share::ShareMode::Serve(fqdn) => tracing::info!(
-                "proxy shared over Tailscale via `tailscale serve` at https://{fqdn}{}/",
-                crate::share::SERVE_PATH
-            ),
+            crate::share::ShareMode::Serve(fqdn) => {
+                tracing::info!(
+                    "proxy shared over Tailscale via `tailscale serve` at https://{fqdn}{}/",
+                    crate::share::SERVE_PATH
+                );
+                println!(
+                    "Team endpoint: https://{fqdn}{}/v1",
+                    crate::share::SERVE_PATH
+                );
+            }
             crate::share::ShareMode::Unavailable => {
                 anyhow::bail!(
                     "Tailscale sharing is enabled but Tailscale is not available. \
