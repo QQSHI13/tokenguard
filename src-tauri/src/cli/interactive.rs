@@ -81,7 +81,7 @@ pub fn project_prompt(
     let label_key = match label_key {
         Some(k) => k,
         None => {
-            let bytes: Vec<u8> = (0..16).map(|_| rand::random()).collect();
+            let bytes: Vec<u8> = (0..16).map(|_| rand::random::<u8>()).collect();
             let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
             Input::new()
                 .with_prompt("Label key")
