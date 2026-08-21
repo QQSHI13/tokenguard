@@ -731,11 +731,17 @@ async fn start(data_dir: Option<PathBuf>, port: Option<u16>, expose_to_lan: bool
         tracing::info!("proxy exposed to LAN on http://0.0.0.0:{port}");
     }
     if db_share {
-        match crate::proxy::server::tailscale_ipv4() {
-            Some(ip) => tracing::info!("proxy shared over Tailscale on http://{ip}:{port}"),
-            None => {
+        match crate::share::detect_mode() {
+            crate::share::ShareMode::Direct(ip) => {
+                tracing::info!("proxy shared over Tailscale on http://{ip}:{port}")
+            }
+            crate::share::ShareMode::Serve(fqdn) => tracing::info!(
+                "proxy shared over Tailscale via `tailscale serve` at https://{fqdn}{}/",
+                crate::share::SERVE_PATH
+            ),
+            crate::share::ShareMode::Unavailable => {
                 anyhow::bail!(
-                    "Tailscale sharing is enabled but no Tailscale interface (100.x.x.x) was found. \
+                    "Tailscale sharing is enabled but Tailscale is not available. \
                      Install Tailscale, sign in, and try again — or disable sharing."
                 )
             }

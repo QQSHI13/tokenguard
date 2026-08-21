@@ -7,9 +7,25 @@ the gateway, your keys, and the logs stay on the host's machine.
 ## Why Tailscale?
 
 Tailscale creates an encrypted private network (a *tailnet*) between your
-devices. Token Guard binds **only** to the host's Tailscale IP — it is not
-reachable from the LAN or the internet. Every teammate needs Tailscale
+devices. Token Guard is **not** reachable from the LAN or the internet — it
+either binds only to the host's Tailscale IP and loopback, or (see below)
+stays on loopback behind `tailscale serve`. Every teammate needs Tailscale
 installed and signed in to the same tailnet to reach the gateway.
+
+## Two exposure modes
+
+Token Guard picks the mode automatically when you enable sharing:
+
+- **Direct** — the normal case. The gateway binds to the host's Tailscale IP
+  (`100.x.x.x`) plus loopback. Teammates use `http://<tailscale-ip>:3742/v1`.
+- **Serve** — fallback for hosts where Tailscale runs in *userspace
+  networking* mode (common in WSL) and has no `100.x` interface. The gateway
+  stays on loopback and a `tailscale serve` route exposes it at the `/tg`
+  path: `https://<host>.ts.net/tg/v1`. The path prefix keeps the route
+  independent of anything else served on the same host, and only tailnet
+  devices can reach it.
+
+`tokenguard share status` shows which mode is active.
 
 ## Set up the host
 
@@ -25,9 +41,11 @@ installed and signed in to the same tailnet to reach the gateway.
    **GUI** — Settings → *Share with team over Tailscale*.
 
    The command prints the team endpoint, for example
-   `http://100.100.100.5:3742/v1`.
+   `http://100.100.100.5:3742/v1` (direct mode) or
+   `https://my-host.tail1234.ts.net/tg/v1` (serve mode).
 
-4. Restart the app so the gateway binds to the tailnet address.
+4. Restart the app so the gateway binds to the tailnet address (direct mode
+   only — serve mode needs no restart).
 
 ## Connect teammates
 
@@ -79,7 +97,7 @@ GEMINI_API_KEY=tg_team-project
 
 ```bash
 tokenguard share on      # enable, prints the team endpoint
-tokenguard share off     # disable (loopback only)
-tokenguard share status  # show state and tailnet IP
+tokenguard share off     # disable (loopback only, removes the serve route)
+tokenguard share status  # show state, mode, and team endpoint
 tokenguard settings set-share-tailscale true   # same as `share on`
 ```

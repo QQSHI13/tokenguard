@@ -30,24 +30,25 @@ pub async fn serve(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app = router(state);
     if share_over_tailscale {
-        let Some(ip) = tailscale_ipv4() else {
-            return Err(
-                "Tailscale sharing is enabled but no Tailscale interface (100.x.x.x) was found. \
-                 Install Tailscale, sign in, and try again — or disable sharing."
-                    .into(),
-            );
-        };
-        tracing::info!("Token Guard proxy sharing over Tailscale on http://{ip}:{port}");
-        let tailnet_listener = tokio::net::TcpListener::bind((ip, port)).await?;
-        let loopback_listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-        let app2 = app.clone();
-        let shutdown2 = shutdown.clone();
-        let tailnet_srv =
-            axum::serve(tailnet_listener, app).with_graceful_shutdown(shutdown_signal(shutdown));
-        let loopback_srv =
-            axum::serve(loopback_listener, app2).with_graceful_shutdown(shutdown_signal(shutdown2));
-        tokio::try_join!(tailnet_srv, loopback_srv)?;
-        return Ok(());
+        if let Some(ip) = tailscale_ipv4() {
+            tracing::info!("Token Guard proxy sharing over Tailscale on http://{ip}:{port}");
+            let tailnet_listener = tokio::net::TcpListener::bind((ip, port)).await?;
+            let loopback_listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+            let app2 = app.clone();
+            let shutdown2 = shutdown.clone();
+            let tailnet_srv = axum::serve(tailnet_listener, app)
+                .with_graceful_shutdown(shutdown_signal(shutdown));
+            let loopback_srv = axum::serve(loopback_listener, app2)
+                .with_graceful_shutdown(shutdown_signal(shutdown2));
+            tokio::try_join!(tailnet_srv, loopback_srv)?;
+            return Ok(());
+        }
+        // Tailscale in userspace networking mode (e.g. WSL): there is no
+        // tailnet interface to bind; `tailscale serve` (see crate::share)
+        // forwards the `/tg` path to loopback instead.
+        tracing::warn!(
+            "Tailscale sharing enabled but no tailnet interface found — assuming `tailscale serve` mode (loopback only)"
+        );
     }
     let bind_addr = if expose_to_lan {
         "0.0.0.0"

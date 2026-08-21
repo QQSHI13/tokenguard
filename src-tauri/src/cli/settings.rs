@@ -59,24 +59,11 @@ pub fn set_expose_to_lan(state: &Arc<AppState>, expose: bool) -> Result<()> {
 }
 
 pub fn set_share_over_tailscale(state: &Arc<AppState>, enabled: bool) -> Result<()> {
-    let value = if enabled { "1" } else { "0" };
-    set_and_update(state, "share_over_tailscale", value, |cfg| {
-        cfg.share_over_tailscale = enabled
-    })?;
     if enabled {
-        match crate::proxy::server::tailscale_ipv4() {
-            Some(ip) => println!(
-                "Set share_over_tailscale to true — share URL: http://{ip}:{}",
-                {
-                    let cfg = state.config.read().map_err(|e| anyhow::anyhow!("{e}"))?;
-                    cfg.port
-                }
-            ),
-            None => println!(
-                "Set share_over_tailscale to true (warning: no Tailscale interface detected)"
-            ),
-        }
+        let endpoint = crate::share::enable(state).map_err(|e| anyhow::anyhow!("{e}"))?;
+        println!("Set share_over_tailscale to true — endpoint: {endpoint}");
     } else {
+        crate::share::disable(state).map_err(|e| anyhow::anyhow!("{e}"))?;
         println!("Set share_over_tailscale to false");
     }
     Ok(())

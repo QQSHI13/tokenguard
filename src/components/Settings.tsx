@@ -104,9 +104,12 @@ export default function SettingsTab({
   const handleShareTailscaleChange = async (enabled: boolean) => {
     setShareStatus(null);
     try {
-      await invoke("set_share_over_tailscale", { enabled });
+      const endpoint = (await invoke("set_share_over_tailscale", { enabled })) as string;
       setShareTailscale(enabled);
-      if (enabled) setShareStatus(t("shareSaved"));
+      if (enabled) {
+        setShareUrl(endpoint);
+        setShareStatus(t("shareSaved"));
+      }
       onChanged();
     } catch (e) {
       setShareStatus(String(e));

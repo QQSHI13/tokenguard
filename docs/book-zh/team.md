@@ -4,7 +4,16 @@
 
 ## 为什么选择 Tailscale？
 
-Tailscale 会在你的设备之间创建加密的私有网络（*tailnet*）。Token Guard **只**绑定到主机的 Tailscale IP——无法从局域网或互联网访问。每位团队成员都需要安装 Tailscale 并登录到同一 tailnet 才能访问网关。
+Tailscale 会在你的设备之间创建加密的私有网络（*tailnet*）。Token Guard **无法**从局域网或互联网访问——它要么只绑定到主机的 Tailscale IP 和回环地址，要么（见下文）留在回环地址后面由 `tailscale serve` 转发。每位团队成员都需要安装 Tailscale 并登录到同一 tailnet 才能访问网关。
+
+## 两种暴露模式
+
+启用共享时，Token Guard 会自动选择模式：
+
+- **直连**——常规情况。网关绑定到主机的 Tailscale IP（`100.x.x.x`）和回环地址。团队成员使用 `http://<tailscale-ip>:3742/v1`。
+- **Serve**——当 Tailscale 以*用户空间网络*模式运行（WSL 中常见）、没有 `100.x` 接口时的回退方案。网关保持在回环地址上，由一条 `tailscale serve` 路由通过 `/tg` 路径暴露：`https://<host>.ts.net/tg/v1`。路径前缀让这条路由与同一主机上的其他服务互不冲突，且只有 tailnet 内的设备可以访问。
+
+`tokenguard share status` 会显示当前使用的模式。
 
 ## 设置主机
 
@@ -19,9 +28,9 @@ Tailscale 会在你的设备之间创建加密的私有网络（*tailnet*）。T
 
    **GUI** —— 设置 → *通过 Tailscale 与团队共享*。
 
-   命令会打印团队端点，例如 `http://100.100.100.5:3742/v1`。
+   命令会打印团队端点，例如 `http://100.100.100.5:3742/v1`（直连模式）或 `https://my-host.tail1234.ts.net/tg/v1`（serve 模式）。
 
-4. 重启应用，让网关绑定到 tailnet 地址。
+4. 重启应用，让网关绑定到 tailnet 地址（仅直连模式需要——serve 模式无需重启）。
 
 ## 连接团队成员
 
@@ -66,7 +75,7 @@ GEMINI_API_KEY=tg_team-project
 
 ```bash
 tokenguard share on      # 启用并打印团队端点
-tokenguard share off     # 禁用（仅回环）
-tokenguard share status  # 显示状态和 tailnet IP
+tokenguard share off     # 禁用（仅回环，并移除 serve 路由）
+tokenguard share status  # 显示状态、模式和团队端点
 tokenguard settings set-share-tailscale true   # 等同于 `share on`
 ```

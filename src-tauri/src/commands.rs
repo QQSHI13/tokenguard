@@ -373,7 +373,8 @@ fn share_url(cfg: &crate::config::Config) -> Option<String> {
     if !cfg.share_over_tailscale {
         return None;
     }
-    crate::proxy::server::tailscale_ipv4().map(|ip| format!("http://{ip}:{}", cfg.port))
+    let mode = crate::share::detect_mode();
+    crate::share::endpoint(&mode, cfg.port).into()
 }
 
 fn preferred_lan_ip() -> Option<String> {
@@ -760,29 +761,14 @@ pub fn set_expose_to_lan(state: State<'_, Arc<AppState>>, enabled: bool) -> Resu
 pub fn set_share_over_tailscale(
     state: State<'_, Arc<AppState>>,
     enabled: bool,
-) -> Result<(), String> {
-    if enabled && crate::proxy::server::tailscale_ipv4().is_none() {
-        return Err(
-            "No Tailscale interface (100.x.x.x) found — install Tailscale and sign in first".into(),
-        );
+) -> Result<String, String> {
+    let state = state.inner();
+    if enabled {
+        crate::share::enable(state).map_err(|e| e.to_string())
+    } else {
+        crate::share::disable(state).map_err(|e| e.to_string())?;
+        Ok(String::new())
     }
-    {
-        let conn = state.inner().db.get().map_err(|e| e.to_string())?;
-        db::set_setting(
-            &conn,
-            "share_over_tailscale",
-            if enabled { "1" } else { "0" },
-        )
-        .map_err(|e| e.to_string())?;
-        drop(conn);
-    }
-    state
-        .inner()
-        .config
-        .write()
-        .map_err(|e| e.to_string())?
-        .share_over_tailscale = enabled;
-    Ok(())
 }
 
 #[tauri::command]

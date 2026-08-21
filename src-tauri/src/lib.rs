@@ -16,6 +16,7 @@ mod notifications;
 pub mod notifier;
 mod proxy;
 mod secrets;
+mod share;
 mod state;
 #[cfg(feature = "gui")]
 mod updater;
