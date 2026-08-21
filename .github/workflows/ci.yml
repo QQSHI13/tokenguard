@@ -122,3 +122,7 @@ jobs:
 
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # The release pipeline ships a headless CLI binary; keep it compiling.
+      - name: Check headless CLI build
+        run: cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard

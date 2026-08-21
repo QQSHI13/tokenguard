@@ -96,7 +96,6 @@ pub fn send_limit_group_event(
     });
 }
 
-#[cfg(feature = "gui")]
 #[derive(Debug, Clone, Serialize)]
 struct TestWebhookPayload {
     event: &'static str,
@@ -104,7 +103,6 @@ struct TestWebhookPayload {
     timestamp: String,
 }
 
-#[cfg(feature = "gui")]
 pub async fn send_test(client: &Client, url: &str) -> Result<(), String> {
     if url.is_empty() {
         return Err("webhook URL is empty".into());
