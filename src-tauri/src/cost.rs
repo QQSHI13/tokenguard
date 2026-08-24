@@ -274,24 +274,85 @@ const ASSUMED_MAX_COMPLETION_TOKENS: u64 = 4096;
 /// provider in the response and are what we actually bill and log.
 const CHARS_PER_TOKEN: u64 = 4;
 
-/// Sum the lengths of every string *value* in the body (object keys excluded).
+/// Ratio for scripts where one character is roughly one token (CJK, and by
+/// extension most non-Latin scripts). BPE tokenizers spend about a token per
+/// Han/Hiragana/Hangul character, so dividing those by [`CHARS_PER_TOKEN`] would
+/// under-count a Chinese prompt ~4x — the direction that lets a request slip
+/// past a `Money` or `Tokens` limit.
+const WIDE_CHARS_PER_TOKEN: u64 = 1;
+
+/// True for characters a BPE tokenizer typically spends a whole token on.
+///
+/// Covers CJK ideographs and the Japanese/Korean syllabaries; deliberately not
+/// an exhaustive Unicode script test, since this only feeds an estimate.
+fn is_wide_script(c: char) -> bool {
+    matches!(c,
+        '\u{3040}'..='\u{30ff}'      // Hiragana + Katakana
+        | '\u{3400}'..='\u{4dbf}'    // CJK Ext A
+        | '\u{4e00}'..='\u{9fff}'    // CJK Unified
+        | '\u{ac00}'..='\u{d7af}'    // Hangul syllables
+        | '\u{f900}'..='\u{faff}'    // CJK compatibility
+        | '\u{20000}'..='\u{2ffff}'  // CJK Ext B-F
+    )
+}
+
+/// Estimated tokens for one string, counting *characters* rather than bytes.
+///
+/// `s.len()` is the UTF-8 byte length, so a Chinese prompt (3 bytes per char)
+/// estimated ~3x too high and a Cyrillic one ~2x — the estimate is what
+/// `CostPerRequest` and pre-flight `Money` limits enforce against, so inflating
+/// it blocks requests that would have been affordable.
+fn string_tokens(s: &str) -> u64 {
+    let mut narrow: u64 = 0;
+    let mut wide: u64 = 0;
+    for c in s.chars() {
+        if is_wide_script(c) {
+            wide += 1;
+        } else {
+            narrow += 1;
+        }
+    }
+    narrow / CHARS_PER_TOKEN + wide / WIDE_CHARS_PER_TOKEN
+}
+
+/// Keys whose string values are opaque blobs, not prompt text.
+///
+/// A base64 data URL for a 1 MB image is ~1.4 M characters, which the generic
+/// walk would price as ~350 k prompt tokens — enough to trip a per-request cap on
+/// a request that actually bills a few hundred tokens for the image. Providers
+/// price images by dimensions, not by the length of the encoding, so the blob is
+/// better excluded than counted.
+fn is_opaque_blob_key(key: &str) -> bool {
+    matches!(
+        key,
+        // OpenAI/Anthropic image + file payloads, Google inlineData.
+        "b64_json" | "data" | "image_url" | "url" | "source" | "inline_data" | "inlineData"
+    )
+}
+
+/// Sum the estimated tokens of every string *value* in the body (object keys
+/// excluded, opaque blobs skipped — see [`is_opaque_blob_key`]).
 ///
 /// Deliberately format-agnostic: OpenAI `messages[].content`, Anthropic `system`,
 /// Google `contents[].parts[].text` and Responses `input` all reduce to strings
 /// somewhere in the tree, as do tool schemas, so one walk covers all four
 /// dialects and any future field without a per-format extractor to keep in sync.
-fn text_bytes(v: &serde_json::Value) -> u64 {
+fn text_tokens(v: &serde_json::Value) -> u64 {
     match v {
-        serde_json::Value::String(s) => s.len() as u64,
-        serde_json::Value::Array(items) => items.iter().map(text_bytes).sum(),
-        serde_json::Value::Object(map) => map.values().map(text_bytes).sum(),
+        serde_json::Value::String(s) => string_tokens(s),
+        serde_json::Value::Array(items) => items.iter().map(text_tokens).sum(),
+        serde_json::Value::Object(map) => map
+            .iter()
+            .filter(|(k, _)| !is_opaque_blob_key(k))
+            .map(|(_, v)| text_tokens(v))
+            .sum(),
         _ => 0,
     }
 }
 
 /// Approximate the prompt size without a tokenizer.
 fn estimate_prompt_tokens(body: &serde_json::Value) -> u64 {
-    text_bytes(body) / CHARS_PER_TOKEN
+    text_tokens(body)
 }
 
 /// Pre-flight cost/token estimate from the request body.
@@ -823,6 +884,109 @@ mod tests {
             "expected the 40k-char prompt to dominate, got {big_tokens} vs {small_tokens}"
         );
         assert!(big_cost > small_cost);
+    }
+
+    #[test]
+    fn prompt_estimate_counts_characters_not_bytes() {
+        // "héllo wörld" is 11 chars but 13 UTF-8 bytes. Byte counting made every
+        // accented prompt look bigger than it is, and the estimate is what the
+        // pre-flight Money / CostPerRequest checks enforce against.
+        let ascii = "hello world";
+        let accented = "héllo wörld";
+        assert_eq!(accented.chars().count(), ascii.chars().count());
+        assert_ne!(accented.len(), ascii.len(), "sanity: byte lengths differ");
+        assert_eq!(string_tokens(ascii), string_tokens(accented));
+    }
+
+    #[test]
+    fn cjk_costs_about_one_token_per_character() {
+        // A BPE tokenizer spends roughly a token per Han character. Dividing the
+        // char count by 4 (the Latin ratio) would under-count ~4x, which is the
+        // direction that lets a request slip past a limit.
+        let han = "今天天气很好我想去公园散步"; // 13 chars
+        assert_eq!(han.chars().count(), 13);
+        assert_eq!(string_tokens(han), 13);
+
+        // 13 ASCII chars, by contrast, are ~3 tokens.
+        assert_eq!(string_tokens("abcdefghijklm"), 3);
+    }
+
+    #[test]
+    fn mixed_script_text_splits_by_character_class() {
+        // Latin at 1/4 token per char, Han at 1 per char, summed independently.
+        let mixed = "model 模型"; // 6 narrow ("model ") + 2 wide
+        assert_eq!(string_tokens(mixed), 6 / CHARS_PER_TOKEN + 2);
+    }
+
+    #[test]
+    fn base64_image_payloads_are_not_priced_as_prompt_text() {
+        // A 1 MB image is ~1.4M base64 chars. Counted as text it would read as
+        // ~350k prompt tokens and trip a per-request cap, while the provider
+        // actually bills the image by its dimensions.
+        let blob = "A".repeat(200_000);
+        let with_image = serde_json::json!({
+            "max_tokens": 16u64,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is in this image?"},
+                    {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{blob}")}},
+                ],
+            }],
+        });
+        let text_only = serde_json::json!({
+            "max_tokens": 16u64,
+            "messages": [{
+                "role": "user",
+                "content": [{"type": "text", "text": "what is in this image?"}],
+            }],
+        });
+        let (_, with_tokens) =
+            estimate_request(&with_image, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        let (_, text_tokens_) =
+            estimate_request(&text_only, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        // Not exactly equal: the `"type": "image_url"` discriminator is a real
+        // string in the body and is legitimately counted. What matters is that
+        // the 200k-char blob contributes nothing.
+        assert!(
+            with_tokens - text_tokens_ < 10,
+            "the base64 blob inflated the estimate: {with_tokens} vs {text_tokens_}"
+        );
+
+        // The same for Anthropic's `source` and Google's `inlineData` shapes.
+        for body in [
+            serde_json::json!({"messages": [{"content": [
+                {"type": "image", "source": {"type": "base64", "data": blob.clone()}}
+            ]}]}),
+            serde_json::json!({"contents": [{"parts": [
+                {"inlineData": {"mimeType": "image/png", "data": blob.clone()}}
+            ]}]}),
+        ] {
+            let (_, tokens) =
+                estimate_request(&body, "gpt-4o", "gpt-4o", &PricingProfile::default());
+            assert!(
+                tokens - ASSUMED_MAX_COMPLETION_TOKENS < 10,
+                "the blob leaked into the prompt estimate: {tokens}"
+            );
+        }
+    }
+
+    #[test]
+    fn prompt_estimate_still_walks_nested_text_in_every_dialect() {
+        // The walk is format-agnostic by design; a regression here would silently
+        // price large prompts at $0 in whichever dialect broke.
+        let long = "word ".repeat(2_000); // 10_000 chars => ~2_500 tokens
+        for body in [
+            serde_json::json!({"messages": [{"role": "user", "content": long.clone()}]}),
+            serde_json::json!({"system": long.clone(), "messages": []}),
+            serde_json::json!({"contents": [{"parts": [{"text": long.clone()}]}]}),
+            serde_json::json!({"input": long.clone()}),
+        ] {
+            assert!(
+                estimate_prompt_tokens(&body) > 2_000,
+                "prompt text not counted in {body:.60}"
+            );
+        }
     }
 
     #[test]
