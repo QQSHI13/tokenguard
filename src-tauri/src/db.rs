@@ -1116,7 +1116,12 @@ fn usage_for_params(
         LimitScope::Global | LimitScope::Model => {}
     }
 
-    if let Some(pattern) = model_pattern {
+    // A blank or whitespace-only pattern means "no model narrowing" — matching
+    // state::normalized_pattern, which treats it as match-all. Without the
+    // filter here, such a limit would enforce against every model while summing
+    // history as $0 (LIKE '%   %' matches no real model name), so a period
+    // budget would read empty no matter how much had been spent.
+    if let Some(pattern) = model_pattern.map(str::trim).filter(|p| !p.is_empty()) {
         // Enforcement (state::model_pattern_matches) treats the pattern as a
         // literal substring, so accounting must too: escape LIKE wildcards or a
         // pattern containing % or _ would sum rows the limit never matches.
@@ -1819,6 +1824,62 @@ mod tests {
         .unwrap();
         let used = usage_for_limit(&conn, found).unwrap();
         assert_eq!(used, 50.0);
+    }
+
+    #[test]
+    fn blank_model_pattern_accounts_like_no_pattern() {
+        // Enforcement (state::normalized_pattern) treats a blank pattern as
+        // match-all. Accounting must agree: appending LIKE '%   %' matches no
+        // real model name, so the limit would enforce against every request
+        // while reading its period history as zero — a daily budget that never
+        // fills up no matter how much is spent.
+        let (conn, _path) = temp_db();
+        insert_log(
+            &conn,
+            "OpenAI",
+            "gpt-4o",
+            100,
+            100,
+            5.0,
+            10,
+            None,
+            Some(200),
+        )
+        .unwrap();
+
+        let mut limit = Limit {
+            id: 1,
+            name: "spend".into(),
+            metric: LimitMetric::Money,
+            period: LimitPeriod::Daily,
+            cap: 10.0,
+            warning_threshold: 0.8,
+            scope: LimitScope::Global,
+            scope_id: None,
+            action: LimitAction::Block,
+            enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
+            model_pattern: None,
+        };
+        let baseline = usage_for_limit(&conn, &limit).unwrap();
+        assert_eq!(baseline, 5.0, "sanity: the log row is inside the period");
+
+        for blank in ["", "   ", "\t"] {
+            limit.model_pattern = Some(blank.into());
+            assert_eq!(
+                usage_for_limit(&conn, &limit).unwrap(),
+                baseline,
+                "blank pattern {blank:?} must not filter out real usage"
+            );
+        }
+
+        // A real pattern still narrows.
+        limit.model_pattern = Some("claude".into());
+        assert_eq!(usage_for_limit(&conn, &limit).unwrap(), 0.0);
+        limit.model_pattern = Some("gpt".into());
+        assert_eq!(usage_for_limit(&conn, &limit).unwrap(), 5.0);
     }
 
     #[test]

@@ -49,6 +49,7 @@ dirs = "5"
 dialoguer = { version = "0.11", default-features = false }
 rand = "0.8"
 anyhow = "1"
+semver = "1"
 
 [[bin]]
 name = "tokenguard-desktop"

@@ -20,6 +20,7 @@ mod share;
 mod state;
 #[cfg(feature = "gui")]
 mod updater;
+mod version;
 mod webhook;
 
 #[cfg(feature = "gui")]

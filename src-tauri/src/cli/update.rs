@@ -11,11 +11,23 @@ pub async fn check(beta: bool) -> Result<()> {
     let current = env!("CARGO_PKG_VERSION");
     println!("Current version: v{current}");
     println!("Latest release:  {latest_tag}");
-    if latest_tag == format!("v{current}") {
-        println!("You are up to date.");
-    } else {
+    // Compare versions, not tag strings: a string match calls a *newer* local
+    // build "up to date" only by luck, and reports every prerelease mismatch as
+    // an available update even when it is older than what is installed.
+    let newer = match (
+        crate::version::parse_release_version(latest_tag),
+        crate::version::parse_release_version(current),
+    ) {
+        (Some(latest), Some(current)) => latest > current,
+        // Unparseable tag: fall back to a string comparison rather than staying
+        // silent about a release we cannot rank.
+        _ => latest_tag != format!("v{current}"),
+    };
+    if newer {
         println!("Update available: {latest_tag}");
         println!("  https://github.com/{REPO}/releases/{latest_tag}");
+    } else {
+        println!("You are up to date.");
     }
     Ok(())
 }

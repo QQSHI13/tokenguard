@@ -2,6 +2,9 @@
 //! verification of the downloaded asset.
 
 use crate::license;
+// Release-tag ranking is shared with the CLI's `update check`; see crate::version
+// for why full semver ordering is required rather than a major.minor.patch triple.
+use crate::version::parse_release_version;
 use tauri::{AppHandle, Manager};
 use tokio_stream::StreamExt;
 
@@ -16,15 +19,6 @@ pub struct UpdateInfo {
     /// (`"digest": "sha256:<hex>"`). `None` if GitHub did not provide one.
     pub digest: Option<String>,
     pub downloaded_path: Option<String>,
-}
-
-fn parse_version_triple(s: &str) -> Option<(u64, u64, u64)> {
-    let s = s.trim_start_matches('v');
-    let mut parts = s.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    let patch = parts.next()?.parse().ok()?;
-    Some((major, minor, patch))
 }
 
 fn linux_package_family() -> &'static str {
@@ -58,6 +52,25 @@ fn linux_package_family() -> &'static str {
     ""
 }
 
+/// Pick the release to offer from a `/releases` list response.
+///
+/// Returns the highest-versioned non-draft release rather than the first array
+/// entry: GitHub orders the list by creation date, so a patch backport to an
+/// older line, or a re-cut tag, would otherwise be offered as "newest". Drafts
+/// are skipped because their assets are not publicly downloadable.
+fn best_release(releases: &serde_json::Value) -> Option<serde_json::Value> {
+    releases
+        .as_array()?
+        .iter()
+        .filter(|r| r["draft"].as_bool() != Some(true))
+        .filter_map(|r| {
+            let v = parse_release_version(r["tag_name"].as_str()?)?;
+            Some((v, r))
+        })
+        .max_by(|(a, _), (b, _)| a.cmp(b))
+        .map(|(_, r)| r.clone())
+}
+
 #[tauri::command]
 pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let beta_channel = app
@@ -67,21 +80,24 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
 
     let client = reqwest::Client::new();
     let json = if beta_channel {
-        let releases = client
+        // /releases includes prereleases; /releases/latest deliberately excludes
+        // them, which is why the stable channel cannot serve a beta.
+        let resp = client
             .get(format!(
                 "https://api.github.com/repos/{GITHUB_REPO}/releases"
             ))
             .header("User-Agent", "tokenguard")
             .send()
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("GitHub API returned {}", resp.status()));
+        }
+        let releases = resp
             .json::<serde_json::Value>()
             .await
             .map_err(|e| e.to_string())?;
-        releases
-            .as_array()
-            .and_then(|arr| arr.first().cloned())
-            .ok_or("no releases found")?
+        best_release(&releases).ok_or("no releases found")?
     } else {
         let resp = client
             .get(format!(
@@ -100,11 +116,12 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
     let tag_name = json["tag_name"]
         .as_str()
         .ok_or("missing tag_name in release")?;
-    let latest_ver = parse_version_triple(tag_name)
+    let latest_ver = parse_release_version(tag_name)
         .ok_or_else(|| format!("invalid release version: {tag_name}"))?;
 
-    let current = app.package_info().version.clone();
-    let current_ver = (current.major, current.minor, current.patch);
+    // `package_info().version` is already a semver::Version, so a prerelease in
+    // the installed version (e.g. running 0.2.0-beta.6) compares correctly too.
+    let current_ver = app.package_info().version.clone();
     if latest_ver <= current_ver {
         return Ok(None);
     }
