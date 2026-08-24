@@ -186,19 +186,12 @@ pub fn update(
             secrets::delete(&old_name).ok();
         }
     } else if new_name != old_name {
-        // move key to new name
-        match secrets::get(&old_name) {
-            Ok(k) => {
-                secrets::set(&new_name, &k)
-                    .map_err(|e| anyhow::anyhow!("move provider key: {e}"))?;
-                secrets::delete(&old_name).ok();
-            }
-            Err(e) => {
-                let lower = e.to_lowercase();
-                if !lower.contains("noentry") && !lower.contains("no entry") {
-                    anyhow::bail!("could not read API key from keychain: {e}");
-                }
-            }
+        // move key to new name; a missing key is fine, anything else aborts
+        if let Some(k) = secrets::get_optional(&old_name)
+            .map_err(|e| anyhow::anyhow!("could not read API key from keychain: {e}"))?
+        {
+            secrets::set(&new_name, &k).map_err(|e| anyhow::anyhow!("move provider key: {e}"))?;
+            secrets::delete(&old_name).ok();
         }
     }
 

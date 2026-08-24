@@ -7,17 +7,7 @@ pub const WORKER_BASE: &str = "https://tokenguard-license.qingquanshi65.workers.
 
 #[tauri::command]
 pub fn get_license_key() -> Result<Option<String>, String> {
-    match secrets::get("license") {
-        Ok(k) => Ok(Some(k)),
-        Err(e) => {
-            let lower = e.to_lowercase();
-            if lower.contains("noentry") || lower.contains("no entry") {
-                Ok(None)
-            } else {
-                Err(e)
-            }
-        }
-    }
+    secrets::get_optional("license")
 }
 
 #[tauri::command]

@@ -260,33 +260,77 @@ pub fn estimate(
     token_cost
 }
 
+/// Fallback output budget when the client declares no maximum.
+///
+/// Anthropic requires `max_tokens`, but the OpenAI, Responses and Google formats
+/// all make it optional — and with no declared cap the pre-flight estimate would
+/// be zero tokens for zero dollars, so `Money`/`Tokens`/`CostPerRequest` limits
+/// would never fire on exactly the requests most able to blow through them.
+/// Assume a typical response instead.
+const ASSUMED_MAX_COMPLETION_TOKENS: u64 = 4096;
+
+/// Rough characters-per-token ratio for English-weighted prompts. Only used for
+/// the pre-flight estimate — the authoritative token counts come back from the
+/// provider in the response and are what we actually bill and log.
+const CHARS_PER_TOKEN: u64 = 4;
+
+/// Sum the lengths of every string *value* in the body (object keys excluded).
+///
+/// Deliberately format-agnostic: OpenAI `messages[].content`, Anthropic `system`,
+/// Google `contents[].parts[].text` and Responses `input` all reduce to strings
+/// somewhere in the tree, as do tool schemas, so one walk covers all four
+/// dialects and any future field without a per-format extractor to keep in sync.
+fn text_bytes(v: &serde_json::Value) -> u64 {
+    match v {
+        serde_json::Value::String(s) => s.len() as u64,
+        serde_json::Value::Array(items) => items.iter().map(text_bytes).sum(),
+        serde_json::Value::Object(map) => map.values().map(text_bytes).sum(),
+        _ => 0,
+    }
+}
+
+/// Approximate the prompt size without a tokenizer.
+fn estimate_prompt_tokens(body: &serde_json::Value) -> u64 {
+    text_bytes(body) / CHARS_PER_TOKEN
+}
+
 /// Pre-flight cost/token estimate from the request body.
 ///
-/// We can't tokenize the prompt locally, so we only use the declared maximum
-/// output tokens (`max_tokens`, `max_completion_tokens`, `max_output_tokens`)
-/// multiplied by the provider's output price. This gives a safe upper bound for
-/// money/token limit checks. Returns `(estimated_cost, estimated_tokens)`.
+/// We can't tokenize the prompt locally, so the prompt side is approximated from
+/// the request's text length and the output side from the declared maximum
+/// (`max_tokens`, `max_completion_tokens`, `max_output_tokens`,
+/// `generationConfig.maxOutputTokens`), falling back to
+/// `ASSUMED_MAX_COMPLETION_TOKENS`. Returns `(estimated_cost, estimated_tokens)`.
 pub fn estimate_request(
     body: &serde_json::Value,
     model_local: &str,
     model_remote: &str,
     profile: &PricingProfile,
 ) -> (f64, u64) {
+    let generation_config = body.get("generationConfig");
     let max_completion = body
         .get("max_tokens")
         .or_else(|| body.get("max_completion_tokens"))
-        .or(body.get("max_output_tokens"))
+        .or_else(|| body.get("max_output_tokens"))
+        .or_else(|| generation_config.and_then(|g| g.get("maxOutputTokens")))
         .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let n = body.get("n").and_then(|v| v.as_u64()).unwrap_or(1).max(1);
+        .filter(|n| *n > 0)
+        .unwrap_or(ASSUMED_MAX_COMPLETION_TOKENS);
+    let n = body
+        .get("n")
+        .or_else(|| generation_config.and_then(|g| g.get("candidateCount")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1)
+        .max(1);
     // Attacker-controlled values: saturate instead of wrapping to a low number
     // (which would bypass the pre-flight cost check with a ~$0 estimate).
     let total_completion = max_completion.saturating_mul(n);
+    let prompt_tokens = estimate_prompt_tokens(body);
     let cost = estimate(
         model_local,
         model_remote,
         &UsageBreakdown {
-            prompt_tokens: 0,
+            prompt_tokens,
             completion_tokens: total_completion,
             cached_tokens: 0,
             reasoning_tokens: 0,
@@ -294,7 +338,7 @@ pub fn estimate_request(
         },
         profile,
     );
-    (cost, total_completion)
+    (cost, prompt_tokens.saturating_add(total_completion))
 }
 
 #[cfg(test)]
@@ -733,6 +777,71 @@ mod tests {
         assert_eq!(tokens, 2000);
         // gpt-4o output: $0.01 / 1K -> 2000 * 0.01 / 1000 = $0.02
         assert!((cost - 0.02).abs() < 0.0001, "expected ~0.02, got {cost}");
+    }
+
+    #[test]
+    fn estimate_request_assumes_output_budget_without_max_tokens() {
+        // max_tokens is optional in every format except Anthropic. A zero
+        // estimate here would let Money/Tokens/CostPerRequest limits pass
+        // unconditionally, so the assumed budget must produce real numbers.
+        let body = serde_json::json!({
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+        });
+        let (cost, tokens) =
+            estimate_request(&body, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        assert!(
+            tokens >= ASSUMED_MAX_COMPLETION_TOKENS,
+            "expected at least the assumed output budget, got {tokens}"
+        );
+        assert!(cost > 0.0, "expected a non-zero estimate, got {cost}");
+    }
+
+    #[test]
+    fn estimate_request_zero_max_tokens_falls_back() {
+        // An explicit 0 is not a promise to emit nothing — treat it like absent.
+        let body = serde_json::json!({"max_tokens": 0u64});
+        let (_, tokens) = estimate_request(&body, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        assert_eq!(tokens, ASSUMED_MAX_COMPLETION_TOKENS);
+    }
+
+    #[test]
+    fn estimate_request_counts_prompt_text() {
+        // A long prompt costs money even with a small output cap.
+        let long = "x".repeat(40_000);
+        let small = serde_json::json!({"max_tokens": 1u64, "messages": []});
+        let big = serde_json::json!({
+            "max_tokens": 1u64,
+            "messages": [{"role": "user", "content": long}],
+        });
+        let (small_cost, small_tokens) =
+            estimate_request(&small, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        let (big_cost, big_tokens) =
+            estimate_request(&big, "gpt-4o", "gpt-4o", &PricingProfile::default());
+        assert!(
+            big_tokens > small_tokens + 9_000,
+            "expected the 40k-char prompt to dominate, got {big_tokens} vs {small_tokens}"
+        );
+        assert!(big_cost > small_cost);
+    }
+
+    #[test]
+    fn estimate_request_reads_google_generation_config() {
+        let body = serde_json::json!({
+            "contents": [{"parts": [{"text": "hi"}]}],
+            "generationConfig": {"maxOutputTokens": 100u64, "candidateCount": 3u64},
+        });
+        let (_, tokens) = estimate_request(
+            &body,
+            "gemini-2.5-pro",
+            "gemini-2.5-pro",
+            &PricingProfile::default(),
+        );
+        // 100 * 3 output, plus a handful of prompt tokens.
+        assert!(
+            (300..320).contains(&tokens),
+            "expected ~300 tokens, got {tokens}"
+        );
     }
 
     #[test]

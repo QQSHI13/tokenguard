@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::db;
 use crate::proxy::{convert, forwarder};
-use crate::state::{remote_model_name, AppState};
+use crate::state::{remote_model_name, AppState, LimitCheckResult, RequestSettlement};
 use axum::body::to_bytes;
 use axum::http::HeaderMap;
 use bytes::Bytes;
@@ -278,10 +278,19 @@ async fn four_by_four_forward_matrix() {
             let provider = provider_by_format(&state, provider_fmt);
             let remote_model = remote_model_name(&provider, "test-model");
             let body_bytes = Bytes::from(serde_json::to_vec(&client_body).unwrap());
+            let start = Instant::now();
+            let settlement = RequestSettlement::new(
+                state.clone(),
+                start,
+                provider.id,
+                Some("test-project".to_string()),
+                "test-model".to_string(),
+                &LimitCheckResult::default(),
+            );
 
             let resp = forwarder::forward(
                 state.clone(),
-                Instant::now(),
+                start,
                 client_path.to_string(),
                 body_bytes,
                 HeaderMap::new(),
@@ -290,6 +299,7 @@ async fn four_by_four_forward_matrix() {
                 "fake-api-key".to_string(),
                 Some("test-project".to_string()),
                 "test-model".to_string(),
+                settlement,
             )
             .await;
 
@@ -311,4 +321,130 @@ async fn four_by_four_forward_matrix() {
             assert_eq!(upstream_body, expected_upstream_body, "{label}");
         }
     }
+}
+
+/// A hand-rolled SSE upstream that holds the connection open until told to
+/// finish. wiremock delivers a whole body at once, which cannot express "the
+/// response has started but is not done" — the exact state this test is about.
+struct SlowSseUpstream {
+    addr: std::net::SocketAddr,
+    finish: tokio::sync::oneshot::Sender<()>,
+}
+
+impl SlowSseUpstream {
+    async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (finish, wait) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut sock, _) = listener.accept().await.unwrap();
+            // Read the request head; the body length does not matter here.
+            let mut buf = [0u8; 8192];
+            let _ = sock.read(&mut buf).await;
+            sock.write_all(
+                b"HTTP/1.1 200 OK\r\n\
+                  content-type: text/event-stream\r\n\
+                  transfer-encoding: chunked\r\n\r\n",
+            )
+            .await
+            .unwrap();
+            // One chunk, then hold the stream open.
+            let first = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n";
+            sock.write_all(format!("{:x}\r\n{}\r\n", first.len(), first).as_bytes())
+                .await
+                .unwrap();
+            sock.flush().await.unwrap();
+            let _ = wait.await;
+            let last = "data: {\"choices\":[{\"delta\":{\"content\":\"!\"}}],\
+                        \"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n\
+                        data: [DONE]\n\n";
+            sock.write_all(format!("{:x}\r\n{}\r\n0\r\n\r\n", last.len(), last).as_bytes())
+                .await
+                .unwrap();
+            sock.flush().await.unwrap();
+        });
+        Self { addr, finish }
+    }
+
+    fn uri(&self) -> String {
+        format!("http://{}", self.addr)
+    }
+}
+
+/// The bug this guards: a streaming response used to release its in-flight
+/// reservations when `forward` returned — which for SSE is the *first* byte. A
+/// `ConcurrentRequests` limit therefore stopped counting streams that were still
+/// open, and `TimeSec` measured time-to-first-byte.
+#[tokio::test]
+async fn streaming_holds_reservation_until_stream_ends() {
+    let (state, _mocks) = setup().await;
+    let upstream = SlowSseUpstream::start().await;
+
+    let mut provider = provider_by_format(&state, ProviderFormat::OpenAI);
+    provider.base_url = upstream.uri();
+    const LIMIT_ID: i64 = 42;
+
+    // Stand in for what check_limits would have reserved for a
+    // ConcurrentRequests limit.
+    let check = LimitCheckResult {
+        reservations: vec![(LIMIT_ID, 1.0)],
+        ..LimitCheckResult::default()
+    };
+    state.check_limits_test_reserve(LIMIT_ID, 1.0);
+    assert_eq!(state.in_flight_for_limit(LIMIT_ID), 1.0);
+
+    let settlement = RequestSettlement::new(
+        state.clone(),
+        Instant::now(),
+        provider.id,
+        Some("test-project".to_string()),
+        "test-model".to_string(),
+        &check,
+    );
+
+    let body = serde_json::json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "stream": true,
+    });
+    let resp = forwarder::forward(
+        state.clone(),
+        Instant::now(),
+        "/v1/chat/completions".to_string(),
+        Bytes::from(serde_json::to_vec(&body).unwrap()),
+        HeaderMap::new(),
+        ProviderFormat::OpenAI,
+        provider,
+        "fake-api-key".to_string(),
+        Some("test-project".to_string()),
+        "test-model".to_string(),
+        settlement,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    // forward() has returned, but the upstream stream is still open: the request
+    // is in flight and must still be counted.
+    assert_eq!(
+        state.in_flight_for_limit(LIMIT_ID),
+        1.0,
+        "reservation released before the stream ended"
+    );
+
+    // Let the upstream finish, drain the response, then wait for the pump task
+    // to log and settle.
+    upstream.finish.send(()).unwrap();
+    let _ = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    for _ in 0..200 {
+        if state.in_flight_for_limit(LIMIT_ID) == 0.0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        state.in_flight_for_limit(LIMIT_ID),
+        0.0,
+        "reservation was never released after the stream ended"
+    );
 }

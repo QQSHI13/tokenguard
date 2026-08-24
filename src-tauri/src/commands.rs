@@ -238,19 +238,13 @@ fn migrate_provider_key(old_name: &str, input: &ProviderInput) -> Result<(), Str
             let _ = secrets::delete(old_name);
         }
     } else if old_name != input.name {
-        match secrets::get(old_name) {
-            Ok(k) => {
-                secrets::set(&input.name, &k)?;
-                let _ = secrets::delete(old_name);
-            }
-            Err(e) => {
-                // No stored key is fine (nothing to move); any other error
-                // aborts so the key is not stranded under the old name.
-                let lower = e.to_lowercase();
-                if !lower.contains("noentry") && !lower.contains("no entry") {
-                    return Err(format!("could not read API key from keychain: {e}"));
-                }
-            }
+        // No stored key is fine (nothing to move); any other error aborts so the
+        // key is not stranded under the old name.
+        if let Some(k) = secrets::get_optional(old_name)
+            .map_err(|e| format!("could not read API key from keychain: {e}"))?
+        {
+            secrets::set(&input.name, &k)?;
+            let _ = secrets::delete(old_name);
         }
     }
     Ok(())
@@ -1158,6 +1152,17 @@ pub fn delete_project(state: State<'_, Arc<AppState>>, id: i64) -> Result<(), St
 
 // ---- limits ----
 
+/// A `Model`-scope limit is enforced by substring-matching the requested model
+/// against `model_pattern`; with no pattern there is nothing to match, so the
+/// limit would silently enforce nothing. Reject it at the boundary rather than
+/// storing a row that looks active in the UI but never fires.
+fn validate_model_pattern(scope: LimitScope, model_pattern: Option<&str>) -> Result<(), String> {
+    if scope == LimitScope::Model && model_pattern.map(|p| p.trim().is_empty()).unwrap_or(true) {
+        return Err("a model-scoped limit requires a model pattern".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn list_limits(state: State<'_, Arc<AppState>>) -> Result<Vec<Limit>, String> {
     let cfg = state.inner().config.read().map_err(|e| e.to_string())?;
@@ -1166,6 +1171,7 @@ pub fn list_limits(state: State<'_, Arc<AppState>>) -> Result<Vec<Limit>, String
 
 #[tauri::command]
 pub fn add_limit(state: State<'_, Arc<AppState>>, input: LimitInput) -> Result<Limit, String> {
+    validate_model_pattern(input.scope, input.model_pattern.as_deref())?;
     let id = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::insert_limit(&conn, &input).map_err(|e| e.to_string())?
@@ -1191,6 +1197,7 @@ pub fn update_limit(
     id: i64,
     input: LimitInput,
 ) -> Result<Limit, String> {
+    validate_model_pattern(input.scope, input.model_pattern.as_deref())?;
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::update_limit(&conn, id, &input).map_err(|e| e.to_string())?;
@@ -1231,6 +1238,7 @@ pub fn add_limit_group(
     state: State<'_, Arc<AppState>>,
     input: LimitGroupInput,
 ) -> Result<LimitGroup, String> {
+    validate_model_pattern(input.scope, input.model_pattern.as_deref())?;
     let id = {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::insert_limit_group(&conn, &input).map_err(|e| e.to_string())?
@@ -1256,6 +1264,7 @@ pub fn update_limit_group(
     id: i64,
     input: LimitGroupInput,
 ) -> Result<LimitGroup, String> {
+    validate_model_pattern(input.scope, input.model_pattern.as_deref())?;
     {
         let conn = state.inner().db.get().map_err(|e| e.to_string())?;
         db::update_limit_group(&conn, id, &input).map_err(|e| e.to_string())?;

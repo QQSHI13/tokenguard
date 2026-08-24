@@ -112,12 +112,25 @@ pub async fn send_test(client: &Client, url: &str) -> Result<(), String> {
         message: "Token Guard webhook test",
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
-    client
+    let resp = client
         .post(url)
         .timeout(Duration::from_secs(15))
         .json(&payload)
         .send()
         .await
         .map_err(|e| format!("webhook test failed: {e}"))?;
+    // A delivered request is not a successful test: report the endpoint's own
+    // rejection instead of claiming success on a 4xx/5xx.
+    let status = resp.status();
+    if !status.is_success() {
+        let body: String = resp
+            .text()
+            .await
+            .unwrap_or_default()
+            .chars()
+            .take(200)
+            .collect();
+        return Err(format!("webhook endpoint returned {status}: {body}"));
+    }
     Ok(())
 }
