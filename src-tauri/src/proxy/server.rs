@@ -12,7 +12,10 @@ use tracing::Instrument;
 
 use crate::config::{LimitAction, ProviderFormat};
 use crate::proxy::forwarder;
-use crate::state::{pricing_profile, remote_model_name, AppState};
+use crate::state::{
+    pricing_profile, remote_model_name, AppState, LimitPhase, RequestSettlement, ViolationAction,
+    ViolationOutcome,
+};
 
 /// Bind the loopback proxy and serve until the app exits.
 ///
@@ -299,99 +302,37 @@ async fn handle(
             estimated_tokens,
             0,
         );
-        for v in &check.violations {
-            match v.limit.action {
-                LimitAction::Block => {
-                    if v.should_notify {
-                        state.notify_limit_blocked(
-                            &v.limit.name,
-                            v.used,
-                            v.limit.cap,
-                        );
-                        state.mark_block_notified(v.limit.id);
-                    }
-                    state.release_request_limits(&check.reservations);
-                    return super::error_resp(
-                        StatusCode::TOO_MANY_REQUESTS,
-                        &format!(
-                            "limit exceeded: {} ({:.0}/{:.0})",
-                            v.limit.name, v.used, v.limit.cap
-                        ),
-                    );
+        // Owns the reservations from here on. Dropping it releases them, so an
+        // early return below can't leak an in-flight count.
+        let settlement = RequestSettlement::new(
+            state.clone(),
+            start,
+            provider.id,
+            project_tag.clone(),
+            model.clone(),
+            &check,
+        );
+
+        let violations = check
+            .violations
+            .iter()
+            .map(ViolationAction::from)
+            .chain(check.group_violations.iter().map(ViolationAction::from));
+        for v in violations {
+            match state.apply_violation(&v, LimitPhase::PreFlight) {
+                ViolationOutcome::Continue => {}
+                ViolationOutcome::Blocked(msg) => {
+                    return super::error_resp(StatusCode::TOO_MANY_REQUESTS, &msg)
                 }
-                LimitAction::Pause => {
-                    if v.should_notify {
-                        state.notify_limit_paused(&v.limit.name, v.used, v.limit.cap);
-                        state.mark_block_notified(v.limit.id);
-                    }
-                    state.release_request_limits(&check.reservations);
-                    state.set_paused(true);
-                    return super::error_resp(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        &format!("limit exceeded: {} — proxy paused", v.limit.name),
-                    );
-                }
-                LimitAction::Warn => {
-                    if v.should_notify {
-                        state.notify_limit_warning(&v.limit.name, v.used, v.limit.cap);
-                        state.mark_warning_notified(v.limit.id);
-                    }
-                    tracing::warn!(
-                        "limit warning: {} ({:.0}/{:.0})",
-                        v.limit.name,
-                        v.used,
-                        v.limit.cap
-                    );
-                }
-            }
-        }
-        for v in &check.group_violations {
-            match v.group.action {
-                LimitAction::Block => {
-                    if v.should_notify {
-                        state.notify_limit_blocked(&v.group.name, v.used, v.group.cap);
-                        state.mark_block_notified(v.group.id);
-                    }
-                    state.release_request_limits(&check.reservations);
-                    state.release_group_limits(&check.group_reservations);
-                    return super::error_resp(
-                        StatusCode::TOO_MANY_REQUESTS,
-                        &format!(
-                            "limit group exceeded: {} ({:.0}/{:.0})",
-                            v.group.name, v.used, v.group.cap
-                        ),
-                    );
-                }
-                LimitAction::Pause => {
-                    if v.should_notify {
-                        state.notify_limit_paused(&v.group.name, v.used, v.group.cap);
-                        state.mark_block_notified(v.group.id);
-                    }
-                    state.release_request_limits(&check.reservations);
-                    state.release_group_limits(&check.group_reservations);
-                    state.set_paused(true);
-                    return super::error_resp(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        &format!("limit group exceeded: {} — proxy paused", v.group.name),
-                    );
-                }
-                LimitAction::Warn => {
-                    if v.should_notify {
-                        state.notify_limit_warning(&v.group.name, v.used, v.group.cap);
-                        state.mark_warning_notified(v.group.id);
-                    }
-                    tracing::warn!(
-                        "limit group warning: {} ({:.0}/{:.0})",
-                        v.group.name,
-                        v.used,
-                        v.group.cap
-                    );
+                ViolationOutcome::Paused(msg) => {
+                    return super::error_resp(StatusCode::SERVICE_UNAVAILABLE, &msg)
                 }
             }
         }
 
-        let provider_id = provider.id;
-        let response = forwarder::forward(
+        // The settlement moves into the forwarder so a streaming response can
+        // settle when the stream ends rather than at the first byte.
+        forwarder::forward(
             state.clone(),
             start,
             path,
@@ -402,95 +343,9 @@ async fn handle(
             api_key,
             project_tag.clone(),
             model.clone(),
+            settlement,
         )
-        .await;
-        // The request completed and its usage is persisted; release the
-        // in-flight reservations so it isn't counted twice.
-        state.release_request_limits(&check.reservations);
-        state.release_group_limits(&check.group_reservations);
-
-        // Post-flight: time-based limits can only be evaluated now that the
-        // real wall-clock duration is known. The current request is already
-        // through, so Block/Pause here affects subsequent requests.
-        let duration_ms = start.elapsed().as_millis() as u64;
-        let time_check = state.check_time_limits(
-            provider_id,
-            project_tag.as_deref(),
-            Some(&model),
-            duration_ms,
-        );
-        for v in &time_check.violations {
-            match v.limit.action {
-                LimitAction::Block => {
-                    if v.should_notify {
-                        state.notify_limit_blocked(
-                            &v.limit.name,
-                            v.used,
-                            v.limit.cap,
-                        );
-                        state.mark_block_notified(v.limit.id);
-                    }
-                }
-                LimitAction::Pause => {
-                    if v.should_notify {
-                        state.notify_limit_paused(
-                            &v.limit.name,
-                            v.used,
-                            v.limit.cap,
-                        );
-                        state.mark_block_notified(v.limit.id);
-                    }
-                    state.set_paused(true);
-                }
-                LimitAction::Warn => {
-                    if v.should_notify {
-                        state.notify_limit_warning(
-                            &v.limit.name,
-                            v.used,
-                            v.limit.cap,
-                        );
-                        state.mark_warning_notified(v.limit.id);
-                    }
-                    tracing::warn!(
-                        "time limit warning: {} ({:.0}/{:.0})",
-                        v.limit.name,
-                        v.used,
-                        v.limit.cap
-                    );
-                }
-            }
-        }
-        for v in &time_check.group_violations {
-            match v.group.action {
-                LimitAction::Block => {
-                    if v.should_notify {
-                        state.notify_limit_blocked(&v.group.name, v.used, v.group.cap);
-                        state.mark_block_notified(v.group.id);
-                    }
-                }
-                LimitAction::Pause => {
-                    if v.should_notify {
-                        state.notify_limit_paused(&v.group.name, v.used, v.group.cap);
-                        state.mark_block_notified(v.group.id);
-                    }
-                    state.set_paused(true);
-                }
-                LimitAction::Warn => {
-                    if v.should_notify {
-                        state.notify_limit_warning(&v.group.name, v.used, v.group.cap);
-                        state.mark_warning_notified(v.group.id);
-                    }
-                    tracing::warn!(
-                        "time limit group warning: {} ({:.0}/{:.0})",
-                        v.group.name,
-                        v.used,
-                        v.group.cap
-                    );
-                }
-            }
-        }
-
-        response
+        .await
     }
     .instrument(span)
     .await

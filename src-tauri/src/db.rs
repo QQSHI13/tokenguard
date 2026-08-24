@@ -134,6 +134,59 @@ fn migration_002_logs_duration_ms(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn migration_003_provider_costs_into_models(conn: &Connection) -> rusqlite::Result<()> {
+    // Move per-provider input/output costs into each model mapping, then drop
+    // the provider-level columns.
+    let mut stmt = conn.prepare("SELECT id, input_cost, output_cost, models FROM providers")?;
+    let rows: Vec<(i64, Option<f64>, Option<f64>, String)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<f64>>(1)?,
+                row.get::<_, Option<f64>>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for (id, input_cost, output_cost, models_json) in rows {
+        let mut models: Vec<crate::config::ModelMapping> =
+            serde_json::from_str(&models_json).unwrap_or_default();
+        for m in &mut models {
+            if m.pricing.input_per_1k.is_none() {
+                m.pricing.input_per_1k = input_cost;
+            }
+            if m.pricing.output_per_1k.is_none() {
+                m.pricing.output_per_1k = output_cost;
+            }
+        }
+        let new_json = serde_json::to_string(&models).unwrap_or_default();
+        conn.execute(
+            "UPDATE providers SET models = ?1 WHERE id = ?2",
+            params![new_json, id],
+        )?;
+    }
+
+    // SQLite supports dropping columns only in newer versions; ignore failures.
+    let _ = conn.execute("ALTER TABLE providers DROP COLUMN input_cost", []);
+    let _ = conn.execute("ALTER TABLE providers DROP COLUMN output_cost", []);
+    Ok(())
+}
+
+fn migration_004_provider_fallback(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute(
+        "ALTER TABLE providers ADD COLUMN fallback_provider_id INTEGER",
+        [],
+    );
+    Ok(())
+}
+
+fn migration_005_logs_status(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = conn.execute("ALTER TABLE logs ADD COLUMN status INTEGER", []);
+    Ok(())
+}
+
 fn migration_006_logs_bodies(conn: &Connection) -> rusqlite::Result<()> {
     let _ = conn.execute("ALTER TABLE logs ADD COLUMN request_body TEXT", []);
     let _ = conn.execute("ALTER TABLE logs ADD COLUMN response_body TEXT", []);
@@ -215,59 +268,6 @@ fn migration_011_limit_models_groups(conn: &Connection) -> rusqlite::Result<()> 
         CREATE INDEX IF NOT EXISTS idx_limit_group_members_group ON limit_group_members(group_id);
         ",
     )
-}
-
-fn migration_005_logs_status(conn: &Connection) -> rusqlite::Result<()> {
-    let _ = conn.execute("ALTER TABLE logs ADD COLUMN status INTEGER", []);
-    Ok(())
-}
-
-fn migration_004_provider_fallback(conn: &Connection) -> rusqlite::Result<()> {
-    let _ = conn.execute(
-        "ALTER TABLE providers ADD COLUMN fallback_provider_id INTEGER",
-        [],
-    );
-    Ok(())
-}
-
-fn migration_003_provider_costs_into_models(conn: &Connection) -> rusqlite::Result<()> {
-    // Move per-provider input/output costs into each model mapping, then drop
-    // the provider-level columns.
-    let mut stmt = conn.prepare("SELECT id, input_cost, output_cost, models FROM providers")?;
-    let rows: Vec<(i64, Option<f64>, Option<f64>, String)> = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<f64>>(1)?,
-                row.get::<_, Option<f64>>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(stmt);
-
-    for (id, input_cost, output_cost, models_json) in rows {
-        let mut models: Vec<crate::config::ModelMapping> =
-            serde_json::from_str(&models_json).unwrap_or_default();
-        for m in &mut models {
-            if m.pricing.input_per_1k.is_none() {
-                m.pricing.input_per_1k = input_cost;
-            }
-            if m.pricing.output_per_1k.is_none() {
-                m.pricing.output_per_1k = output_cost;
-            }
-        }
-        let new_json = serde_json::to_string(&models).unwrap_or_default();
-        conn.execute(
-            "UPDATE providers SET models = ?1 WHERE id = ?2",
-            params![new_json, id],
-        )?;
-    }
-
-    // SQLite supports dropping columns only in newer versions; ignore failures.
-    let _ = conn.execute("ALTER TABLE providers DROP COLUMN input_cost", []);
-    let _ = conn.execute("ALTER TABLE providers DROP COLUMN output_cost", []);
-    Ok(())
 }
 
 /// Apply pending migrations in order, tracked by the `migrations` table.
@@ -392,6 +392,19 @@ fn row_to_log(row: &rusqlite::Row) -> rusqlite::Result<LogRow> {
 /// RFC3339 cutoff `days` before now. ts values are stored as RFC3339 strings,
 /// so cutoffs must use the same format — mixing SQLite `datetime('now', …)`
 /// strings breaks lexicographic boundary comparisons ('T' > ' ').
+/// Escape `%`, `_` and the escape character itself so a user-supplied string
+/// matches literally under `LIKE ... ESCAPE '\'`.
+fn escape_like_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn cutoff_rfc3339(days: u64) -> String {
     (chrono::Utc::now() - chrono::TimeDelta::days(days as i64)).to_rfc3339()
 }
@@ -641,11 +654,19 @@ pub fn update_provider(
 }
 
 pub fn today_spend(conn: &Connection) -> rusqlite::Result<f64> {
-    // All timestamps are stored in UTC (chrono::Utc::now().to_rfc3339()).
-    // SQLite's 'now' is UTC, so 'start of day' is UTC midnight.
+    // `ts` holds RFC3339 strings ("2026-08-24T00:00:00+00:00"), so the cutoff
+    // must be RFC3339 too. SQLite's datetime() renders a space separator, and
+    // ' ' < 'T' makes such a comparison sort inconsistently — see the module
+    // note on cutoff_rfc3339(). Timestamps are UTC, so UTC midnight is the
+    // start of the local "today" the tray and dashboard display.
+    let start_of_day = chrono::Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .map(|d| d.and_utc().to_rfc3339())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     conn.query_row(
-        "SELECT COALESCE(SUM(cost), 0.0) FROM logs WHERE ts >= datetime('now','start of day')",
-        [],
+        "SELECT COALESCE(SUM(cost), 0.0) FROM logs WHERE ts >= ?1",
+        params![start_of_day],
         |row| row.get(0),
     )
 }
@@ -1096,8 +1117,11 @@ fn usage_for_params(
     }
 
     if let Some(pattern) = model_pattern {
-        sql.push_str(" AND LOWER(model) LIKE '%' || LOWER(?) || '%'");
-        params.push(Box::new(pattern.to_string()));
+        // Enforcement (state::model_pattern_matches) treats the pattern as a
+        // literal substring, so accounting must too: escape LIKE wildcards or a
+        // pattern containing % or _ would sum rows the limit never matches.
+        sql.push_str(" AND LOWER(model) LIKE '%' || LOWER(?) || '%' ESCAPE '\\'");
+        params.push(Box::new(escape_like_literal(pattern)));
     }
 
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();

@@ -14,11 +14,15 @@ use tokio_stream::StreamExt;
 use crate::config::{AuthScheme, Provider, ProviderFormat};
 use crate::cost;
 use crate::proxy::{convert, sse};
-use crate::state::{pricing_profile, remote_model_name, AppState};
+use crate::state::{pricing_profile, remote_model_name, AppState, RequestSettlement};
 
 /// Forward a request to the chosen provider, retrying transient failures with
 /// exponential backoff, then optionally falling back to another configured
 /// provider.
+///
+/// `settlement` carries the caller's in-flight limit reservations and is
+/// consumed when the response is complete — at the last byte for a streaming
+/// response, not the first.
 #[allow(clippy::too_many_arguments)]
 pub async fn forward(
     state: Arc<AppState>,
@@ -31,11 +35,11 @@ pub async fn forward(
     api_key: String,
     project_tag: Option<String>,
     model: String,
+    settlement: RequestSettlement,
 ) -> Response {
     // Retry the primary provider up to 2 extra times with exponential backoff.
     const BACKOFFS: [u64; 3] = [0, 200, 500];
     let mut used_provider = provider.clone();
-    let mut used_key = api_key.clone();
     let mut final_resp: Option<reqwest::Response> = None;
 
     for delay_ms in BACKOFFS {
@@ -89,7 +93,6 @@ pub async fn forward(
                 .await
                 {
                     used_provider = fallback;
-                    used_key = key;
                     final_resp = Some(resp);
                 }
             }
@@ -105,12 +108,13 @@ pub async fn forward(
                 resp,
                 client_format,
                 used_provider,
-                used_key,
                 &model,
                 project_tag,
+                settlement,
             )
             .await
         }
+        // Nothing to log; dropping the settlement releases the reservations.
         None => super::error_resp(
             StatusCode::BAD_GATEWAY,
             "upstream request failed and no fallback succeeded",
@@ -195,9 +199,9 @@ async fn finalize_forward(
     resp: reqwest::Response,
     client_format: ProviderFormat,
     provider: Provider,
-    _api_key: String,
     model: &str,
     project_tag: Option<String>,
+    settlement: RequestSettlement,
 ) -> Response {
     let status = resp.status();
     let headers = resp.headers().clone();
@@ -267,6 +271,11 @@ async fn finalize_forward(
                 Some(status.as_u16()),
             )
             .await;
+            // The stream is finished and its usage is persisted. Settling here
+            // (rather than when `forward` returned, which for a stream is the
+            // first byte) is what makes ConcurrentRequests count open streams
+            // and TimeSec measure the full response.
+            settlement.settle();
         });
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
@@ -275,10 +284,12 @@ async fn finalize_forward(
         let bytes = match resp.bytes().await {
             Ok(b) => b,
             Err(e) => {
+                // Dropping the settlement releases the reservations; there is no
+                // usage to log.
                 return super::error_resp(
                     StatusCode::BAD_GATEWAY,
                     &format!("upstream response body failed: {e}"),
-                )
+                );
             }
         };
         // Upstream errors must not go through the success-path converter;
@@ -321,6 +332,7 @@ async fn finalize_forward(
                 Some(status.as_u16()),
             )
             .await;
+        settlement.settle();
         build_response(status, headers, Body::from(client_bytes))
     }
 }

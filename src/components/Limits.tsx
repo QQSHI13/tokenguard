@@ -285,6 +285,12 @@ export default function Limits({ onChange }: { onChange: () => void }) {
       setError(t("customPeriodPositive"));
       return null;
     }
+    // Model scope is enforced by matching the pattern; with none there is
+    // nothing to match, so the backend rejects it too.
+    if (form.scope === "model" && !form.model_pattern?.trim()) {
+      setError(t("modelPatternRequired"));
+      return null;
+    }
     return {
       ...form,
       period,
@@ -349,6 +355,10 @@ export default function Limits({ onChange }: { onChange: () => void }) {
       : (groupForm.period as Exclude<LimitPeriod, { custom_sec: number }>);
     if (isCustomGroupPeriod && (Number(customGroupPeriodSec) || 0) <= 0) {
       setGroupError(t("customPeriodPositive"));
+      return null;
+    }
+    if (groupForm.scope === "model" && !groupForm.model_pattern?.trim()) {
+      setGroupError(t("modelPatternRequired"));
       return null;
     }
     return {

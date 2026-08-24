@@ -7,8 +7,8 @@ const WORKER_URL: &str = "https://tokenguard-license.qingquanshi65.workers.dev";
 const BUY_URL: &str = "https://tokenguard.pages.dev/buy.html";
 
 pub fn show() -> Result<()> {
-    match secrets::get("license") {
-        Ok(k) => {
+    match secrets::get_optional("license").map_err(|e| anyhow::anyhow!("read license key: {e}"))? {
+        Some(k) => {
             let masked = if k.len() > 8 {
                 format!("{}...{}", &k[..4], &k[k.len() - 4..])
             } else {
@@ -16,15 +16,10 @@ pub fn show() -> Result<()> {
             };
             println!("License: {masked}");
         }
-        Err(e) => {
-            let lower = e.to_lowercase();
-            if lower.contains("noentry") || lower.contains("no entry") {
-                println!("No license activated.");
-                println!("  Activate: tokenguard license activate <KEY>");
-                println!("  Buy:      {BUY_URL}");
-            } else {
-                anyhow::bail!("read license key: {e}");
-            }
+        None => {
+            println!("No license activated.");
+            println!("  Activate: tokenguard license activate <KEY>");
+            println!("  Buy:      {BUY_URL}");
         }
     }
     Ok(())
@@ -48,15 +43,11 @@ pub fn fingerprint() -> Result<()> {
 }
 
 pub async fn devices() -> Result<()> {
-    let key = match secrets::get("license") {
-        Ok(k) => k,
-        Err(e) => {
-            let lower = e.to_lowercase();
-            if lower.contains("noentry") || lower.contains("no entry") {
-                anyhow::bail!("no license activated");
-            }
-            anyhow::bail!("read license key: {e}");
-        }
+    let key = match secrets::get_optional("license")
+        .map_err(|e| anyhow::anyhow!("read license key: {e}"))?
+    {
+        Some(k) => k,
+        None => anyhow::bail!("no license activated"),
     };
     let device = device_fingerprint()?;
     let res = reqwest::Client::new()

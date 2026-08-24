@@ -67,6 +67,31 @@ pub fn detect_mode() -> ShareMode {
     }
 }
 
+#[derive(Deserialize)]
+struct SelfNode {
+    #[serde(rename = "DNSName")]
+    dns_name: Option<String>,
+    #[serde(rename = "TailscaleIPs", default)]
+    tailscale_ips: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct TailscaleStatus {
+    #[serde(rename = "Self")]
+    self_node: Option<SelfNode>,
+}
+
+/// Pull the self node's name out of `tailscale status --json` output, preferring
+/// the MagicDNS name and falling back to the first tailnet IP.
+fn parse_self_dns_name(stdout: &[u8]) -> Option<String> {
+    let status: TailscaleStatus = serde_json::from_slice(stdout).ok()?;
+    let node = status.self_node?;
+    node.dns_name
+        .map(|n| n.trim_end_matches('.').to_string())
+        .filter(|n| !n.is_empty())
+        .or_else(|| node.tailscale_ips.first().cloned())
+}
+
 /// `tailscale status --json` → the self node's DNS name (e.g.
 /// `desktop-host.tailXXXX.ts.net.`). MagicDNS does not resolve inside WSL
 /// userspace networking, so the name comes from the daemon, not the resolver.
@@ -79,23 +104,7 @@ fn tailscale_self_dns_name() -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    #[derive(Deserialize)]
-    struct SelfNode {
-        #[serde(rename = "DNSName")]
-        dns_name: Option<String>,
-        #[serde(rename = "TailscaleIPs", default)]
-        tailscale_ips: Vec<String>,
-    }
-    #[derive(Deserialize)]
-    struct Status {
-        #[serde(rename = "Self")]
-        self_node: Option<SelfNode>,
-    }
-    let status: Status = serde_json::from_slice(&out.stdout).ok()?;
-    let node = status.self_node?;
-    node.dns_name
-        .map(|n| n.trim_end_matches('.').to_string())
-        .or_else(|| node.tailscale_ips.first().cloned())
+    parse_self_dns_name(&out.stdout)
 }
 
 /// Enable sharing. Persists the setting, and in serve mode claims the
@@ -204,24 +213,10 @@ mod tests {
         })
     }
 
+    /// Exercises the same parser the production path uses, fed the bytes
+    /// `tailscale status --json` would have written to stdout.
     fn parse(v: serde_json::Value) -> Option<String> {
-        #[derive(Deserialize)]
-        struct SelfNode {
-            #[serde(rename = "DNSName")]
-            dns_name: Option<String>,
-            #[serde(rename = "TailscaleIPs", default)]
-            tailscale_ips: Vec<String>,
-        }
-        #[derive(Deserialize)]
-        struct Status {
-            #[serde(rename = "Self")]
-            self_node: Option<SelfNode>,
-        }
-        let status: Status = serde_json::from_value(v).ok()?;
-        let node = status.self_node?;
-        node.dns_name
-            .map(|n| n.trim_end_matches('.').to_string())
-            .or_else(|| node.tailscale_ips.first().cloned())
+        parse_self_dns_name(v.to_string().as_bytes())
     }
 
     #[test]
@@ -242,6 +237,18 @@ mod tests {
     #[test]
     fn handles_missing_self_node() {
         assert_eq!(parse(serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn handles_non_json_output() {
+        // e.g. the CLI printing a human-readable error on stdout.
+        assert_eq!(parse_self_dns_name(b"tailscale: not logged in"), None);
+    }
+
+    #[test]
+    fn falls_back_to_ip_when_dns_name_is_blank() {
+        let v = node(Some(""), Some("100.64.81.26"));
+        assert_eq!(parse(v), Some("100.64.81.26".to_string()));
     }
 
     #[test]

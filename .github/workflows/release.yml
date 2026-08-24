@@ -66,8 +66,8 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Check headless CLI build
-        run: cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin tokenguard
+      - name: Test headless CLI build
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features
 
   bump-version:
     needs: test

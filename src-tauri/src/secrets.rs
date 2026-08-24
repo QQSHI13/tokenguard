@@ -2,7 +2,7 @@
 //! Windows Credential Manager, macOS Keychain, Linux Secret Service.
 //! Keys never touch disk or SQLite.
 //!
-//! `set` verifies persistence via a *fresh` `Entry` (not the one that wrote),
+//! `set` verifies persistence via a *fresh* `Entry` (not the one that wrote),
 //! so a non-persistent backend fails loudly instead of silently losing keys.
 
 use keyring::Entry;
@@ -106,21 +106,33 @@ fn env_key(name: &str) -> Option<String> {
 }
 
 pub fn get(name: &str) -> Result<String, String> {
+    match get_optional(name) {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => Err(keyring_err("get_password", keyring::Error::NoEntry)),
+        Err(e) => Err(e),
+    }
+}
+
+/// Like [`get`], but distinguishes "no key stored yet" (`Ok(None)`) from a
+/// backend failure (`Err`). Callers that treat absence as a normal state should
+/// use this instead of pattern-matching the text of `get`'s error string.
+pub fn get_optional(name: &str) -> Result<Option<String>, String> {
     let entry = match Entry::new(SERVICE, name) {
         Ok(e) => e,
         Err(e) => {
             if let Some(key) = env_key(name) {
-                return Ok(key);
+                return Ok(Some(key));
             }
             return Err(keyring_err("Entry::new", e));
         }
     };
     match entry.get_password() {
-        Ok(key) => Ok(key),
+        Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => Ok(env_key(name)),
         Err(e) => {
             if let Some(key) = env_key(name) {
                 tracing::info!("keyring read failed for '{name}'; using env fallback");
-                return Ok(key);
+                return Ok(Some(key));
             }
             Err(keyring_err("get_password", e))
         }

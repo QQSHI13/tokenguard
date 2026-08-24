@@ -91,17 +91,32 @@ pub fn limit_scope_matches(
         return false;
     }
 
-    // Model-scope limits only apply when the requested model matches.
+    let pattern = normalized_pattern(limit.model_pattern.as_deref());
+
+    // Model-scope limits only apply when the requested model matches. A blank
+    // pattern would match nothing, so the limit would silently enforce nothing;
+    // treat it as match-all instead. New limits are rejected at creation
+    // (commands::validate_model_pattern), so this only rescues rows written
+    // before that check existed.
     if limit.scope == LimitScope::Model {
-        return model_pattern_matches(limit.model_pattern.as_deref(), model);
+        return match pattern {
+            None => true,
+            Some(p) => model_pattern_matches(Some(p), model),
+        };
     }
 
     // Any scope can optionally be narrowed to a model pattern.
-    if let Some(pattern) = &limit.model_pattern {
-        return model_pattern_matches(Some(pattern), model);
+    if let Some(p) = pattern {
+        return model_pattern_matches(Some(p), model);
     }
 
     true
+}
+
+/// A pattern that is absent or blank means "no model narrowing" — blank strings
+/// arrive from UI fields the user left empty.
+fn normalized_pattern(pattern: Option<&str>) -> Option<&str> {
+    pattern.map(str::trim).filter(|p| !p.is_empty())
 }
 
 fn model_pattern_matches(pattern: Option<&str>, model: Option<&str>) -> bool {
@@ -139,12 +154,17 @@ fn limit_scope_matches_group(
         return false;
     }
 
+    let pattern = normalized_pattern(group.model_pattern.as_deref());
+
     if group.scope == LimitScope::Model {
-        return model_pattern_matches(group.model_pattern.as_deref(), model);
+        return match pattern {
+            None => true,
+            Some(p) => model_pattern_matches(Some(p), model),
+        };
     }
 
-    if let Some(pattern) = &group.model_pattern {
-        return model_pattern_matches(Some(pattern), model);
+    if let Some(p) = pattern {
+        return model_pattern_matches(Some(p), model);
     }
 
     true
@@ -197,6 +217,153 @@ pub struct LimitCheckResult {
 }
 
 const WARNING_COOLDOWN: Duration = Duration::from_secs(300);
+
+/// The parts of a violation the proxy has to act on. Individual limits and limit
+/// groups differ only in wording, so both collapse to this and share one
+/// handler instead of four near-identical match arms.
+#[derive(Debug)]
+pub struct ViolationAction {
+    pub id: i64,
+    pub name: String,
+    pub action: LimitAction,
+    pub used: f64,
+    pub cap: f64,
+    pub should_notify: bool,
+    /// "limit" or "limit group" — used in the client-facing message.
+    pub kind: &'static str,
+}
+
+impl From<&LimitViolation> for ViolationAction {
+    fn from(v: &LimitViolation) -> Self {
+        Self {
+            id: v.limit.id,
+            name: v.limit.name.clone(),
+            action: v.limit.action,
+            used: v.used,
+            cap: v.limit.cap,
+            should_notify: v.should_notify,
+            kind: "limit",
+        }
+    }
+}
+
+impl From<&GroupViolation> for ViolationAction {
+    fn from(v: &GroupViolation) -> Self {
+        Self {
+            id: v.group.id,
+            name: v.group.name.clone(),
+            action: v.group.action,
+            used: v.used,
+            cap: v.group.cap,
+            should_notify: v.should_notify,
+            kind: "limit group",
+        }
+    }
+}
+
+/// When a violation is being handled relative to the request that triggered it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitPhase {
+    /// Before forwarding: the request can still be refused.
+    PreFlight,
+    /// After forwarding: this request is already through, so `Block` only
+    /// notifies and any refusal applies to subsequent requests.
+    PostFlight,
+}
+
+/// What the caller should do with the request after a violation is handled.
+#[derive(Debug)]
+pub enum ViolationOutcome {
+    /// Nothing to refuse (a warning, or a post-flight violation).
+    Continue,
+    /// Refuse with 429 and this message.
+    Blocked(String),
+    /// Refuse with 503 and this message; the proxy is now paused.
+    Paused(String),
+}
+
+/// Post-flight bookkeeping for one forwarded request: release the in-flight
+/// reservations, then evaluate time limits against the real duration.
+///
+/// This is a value the proxy hands off rather than code it runs inline, because
+/// a streaming response resolves the forward at the *first* byte. The settlement
+/// travels into the task pumping the stream and runs when the last byte is
+/// through — otherwise `ConcurrentRequests` would stop counting a stream that is
+/// still open and `TimeSec` would measure time-to-first-byte.
+pub struct RequestSettlement {
+    state: Arc<AppState>,
+    start: Instant,
+    provider_id: i64,
+    project_tag: Option<String>,
+    model: String,
+    reservations: Vec<(i64, f64)>,
+    group_reservations: Vec<(i64, f64)>,
+    released: bool,
+}
+
+impl RequestSettlement {
+    pub fn new(
+        state: Arc<AppState>,
+        start: Instant,
+        provider_id: i64,
+        project_tag: Option<String>,
+        model: String,
+        check: &LimitCheckResult,
+    ) -> Self {
+        Self {
+            state,
+            start,
+            provider_id,
+            project_tag,
+            model,
+            reservations: check.reservations.clone(),
+            group_reservations: check.group_reservations.clone(),
+            released: false,
+        }
+    }
+
+    /// Release the reservations, then run the post-flight time-limit check.
+    /// Call this once the request's usage has been logged.
+    pub fn settle(mut self) {
+        self.release();
+        let duration_ms = self.start.elapsed().as_millis() as u64;
+        let time_check = self.state.check_time_limits(
+            self.provider_id,
+            self.project_tag.as_deref(),
+            Some(&self.model),
+            duration_ms,
+        );
+        for v in &time_check.violations {
+            self.state
+                .apply_violation(&v.into(), LimitPhase::PostFlight);
+        }
+        for v in &time_check.group_violations {
+            self.state
+                .apply_violation(&v.into(), LimitPhase::PostFlight);
+        }
+    }
+
+    fn release(&mut self) {
+        if self.released {
+            return;
+        }
+        self.released = true;
+        self.state.release_request_limits(&self.reservations);
+        self.state.release_group_limits(&self.group_reservations);
+    }
+}
+
+impl Drop for RequestSettlement {
+    /// Safety net for paths that never reach `settle` — a refused request, or a
+    /// handler future cancelled because the client hung up. Without this, a
+    /// `ConcurrentRequests` reservation would be held for the process lifetime.
+    fn drop(&mut self) {
+        if !self.released {
+            tracing::debug!("request limits released without settling (refused or cancelled)");
+            self.release();
+        }
+    }
+}
 
 pub struct AppState {
     pub db: DbPool,
@@ -924,6 +1091,72 @@ impl AppState {
         }
     }
 
+    /// Notify, pause and audit for one violation, and report whether the
+    /// request should be refused. Identical for limits and limit groups, and for
+    /// pre- and post-flight checks apart from whether refusal is still possible.
+    pub fn apply_violation(&self, v: &ViolationAction, phase: LimitPhase) -> ViolationOutcome {
+        let refusable = phase == LimitPhase::PreFlight;
+        match v.action {
+            LimitAction::Block => {
+                if v.should_notify {
+                    self.notify_limit_blocked(&v.name, v.used, v.cap);
+                    self.mark_block_notified(v.id);
+                }
+                let msg = format!(
+                    "{} exceeded: {} ({:.0}/{:.0})",
+                    v.kind, v.name, v.used, v.cap
+                );
+                if refusable {
+                    ViolationOutcome::Blocked(msg)
+                } else {
+                    tracing::warn!("{msg} (request already forwarded)");
+                    ViolationOutcome::Continue
+                }
+            }
+            LimitAction::Pause => {
+                if v.should_notify {
+                    self.notify_limit_paused(&v.name, v.used, v.cap);
+                    self.mark_block_notified(v.id);
+                }
+                self.set_paused(true);
+                let msg = format!("{} exceeded: {} — proxy paused", v.kind, v.name);
+                if refusable {
+                    ViolationOutcome::Paused(msg)
+                } else {
+                    tracing::warn!("{msg} (request already forwarded)");
+                    ViolationOutcome::Continue
+                }
+            }
+            LimitAction::Warn => {
+                if v.should_notify {
+                    self.notify_limit_warning(&v.name, v.used, v.cap);
+                    self.mark_warning_notified(v.id);
+                }
+                tracing::warn!(
+                    "{} warning: {} ({:.0}/{:.0})",
+                    v.kind,
+                    v.name,
+                    v.used,
+                    v.cap
+                );
+                ViolationOutcome::Continue
+            }
+        }
+    }
+
+    /// In-flight reservation total for one limit id. Test-only observability.
+    #[cfg(test)]
+    pub fn in_flight_for_limit(&self, limit_id: i64) -> f64 {
+        self.limit_counters.get(limit_id)
+    }
+
+    /// Reserve directly in the in-flight counter, standing in for what
+    /// `check_limits` would have reserved. Test-only.
+    #[cfg(test)]
+    pub fn check_limits_test_reserve(&self, limit_id: i64, amount: f64) {
+        self.limit_counters.increment(limit_id, amount);
+    }
+
     /// Compute the most critical active limit status for the tray.
     /// Returns (overall_ratio, critical_limit_name_or_none).
     pub fn limit_status(&self) -> (f64, Option<String>) {
@@ -1519,6 +1752,51 @@ mod tests {
             &[]
         ));
         assert!(!limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
+    }
+
+    #[test]
+    fn limit_model_scope_without_pattern_matches_everything() {
+        // Rows written before add_limit validated the pattern would otherwise
+        // enforce nothing at all, silently.
+        let limit = mk_limit(LimitScope::Model, None);
+        assert!(limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
+        assert!(limit_scope_matches(&limit, 1, None, None, &[]));
+    }
+
+    #[test]
+    fn limit_blank_model_pattern_is_ignored() {
+        // An empty text field arrives as Some("") from the UI.
+        let mut limit = mk_limit(LimitScope::Global, None);
+        limit.model_pattern = Some("   ".into());
+        assert!(limit_scope_matches(&limit, 1, None, Some("gpt-4o"), &[]));
+    }
+
+    #[test]
+    fn group_model_scope_without_pattern_matches_everything() {
+        let group = LimitGroup {
+            id: 1,
+            name: "g".into(),
+            metric: LimitMetric::Requests,
+            period: crate::config::LimitPeriod::Daily,
+            cap: 10.0,
+            warning_threshold: 0.8,
+            scope: LimitScope::Model,
+            scope_id: None,
+            action: crate::config::LimitAction::Warn,
+            enabled: true,
+            active_hours_start: None,
+            active_hours_end: None,
+            active_days: 0b1111111,
+            model_pattern: None,
+            member_limit_ids: Vec::new(),
+        };
+        assert!(limit_scope_matches_group(
+            &group,
+            1,
+            None,
+            Some("gpt-4o"),
+            &[]
+        ));
     }
 
     #[test]
